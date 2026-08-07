@@ -1,0 +1,27 @@
+// Quartz v0.1 demo
+let name = "Quartz"
+let version = 0.1
+const limit = 5
+
+print("welcome to {name} v{version}")
+
+let i = 0
+while i < limit {
+    if i % 2 == 0 {
+        print("{i} is even")
+    } else if i == 3 {
+        print("three!")
+    } else {
+        print("{i} is odd")
+    }
+    i += 1
+}
+
+let a = 2 + 3 * 4
+let b = (2 + 3) * 4
+print("precedence: {a} vs {b}")
+print("logic: {a > b && !false}")
+write("no ")
+write("newline ")
+print("here")
+print("100% {a}% done")

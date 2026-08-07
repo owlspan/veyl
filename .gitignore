@@ -1,0 +1,17 @@
+# compiler binary
+quartz
+quartz.exe
+qzc
+
+# programs built from examples
+examples/*.exe
+examples/demo
+examples/interactive
+examples/hello
+
+# editor / OS noise
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

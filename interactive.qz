@@ -1,0 +1,22 @@
+// interactive.qz -- shows input(), toInt() and pause()
+
+fn describe(age: int) -> str {
+    if age < 0 {
+        return "that's not a real age"
+    } else if age < 13 {
+        return "a kid"
+    } else if age < 20 {
+        return "a teenager"
+    } else {
+        return "an adult"
+    }
+}
+
+let name = input("What's your name? ")
+let age = toInt(input("How old are you? "))
+
+print("")
+print("Hi {name}, you are {describe(age)}.")
+print("Next year you'll be {age + 1}.")
+print("")
+pause()
