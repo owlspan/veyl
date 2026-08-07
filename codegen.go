@@ -70,22 +70,36 @@ var helperDefs = map[string]helperDef{
 		deps:    []string{"stdin"},
 	},
 	"toInt": {
-		code: `func __toInt(s string) int {
+		code: `func __toInt(s string, fallback int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
-		return 0
+		return fallback
 	}
 	return n
 }`,
 		imports: []string{"strconv", "strings"},
 	},
 	"toFloat": {
-		code: `func __toFloat(s string) float64 {
+		code: `func __toFloat(s string, fallback float64) float64 {
 	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	if err != nil {
-		return 0
+		return fallback
 	}
 	return f
+}`,
+		imports: []string{"strconv", "strings"},
+	},
+	"isInt": {
+		code: `func __isInt(s string) bool {
+	_, err := strconv.Atoi(strings.TrimSpace(s))
+	return err == nil
+}`,
+		imports: []string{"strconv", "strings"},
+	},
+	"isFloat": {
+		code: `func __isFloat(s string) bool {
+	_, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	return err == nil
 }`,
 		imports: []string{"strconv", "strings"},
 	},
@@ -119,12 +133,30 @@ func init() {
 			helpers: []string{"pause"}, minArgs: 0, maxArgs: 0,
 		},
 		"toInt": {
-			emit:    func(a []string) string { return "__toInt(" + a[0] + ")" },
-			helpers: []string{"toInt"}, minArgs: 1, maxArgs: 1,
+			emit: func(a []string) string {
+				if len(a) == 1 {
+					return "__toInt(" + a[0] + ", 0)"
+				}
+				return "__toInt(" + a[0] + ", " + a[1] + ")"
+			},
+			helpers: []string{"toInt"}, minArgs: 1, maxArgs: 2,
 		},
 		"toFloat": {
-			emit:    func(a []string) string { return "__toFloat(" + a[0] + ")" },
-			helpers: []string{"toFloat"}, minArgs: 1, maxArgs: 1,
+			emit: func(a []string) string {
+				if len(a) == 1 {
+					return "__toFloat(" + a[0] + ", 0)"
+				}
+				return "__toFloat(" + a[0] + ", " + a[1] + ")"
+			},
+			helpers: []string{"toFloat"}, minArgs: 1, maxArgs: 2,
+		},
+		"isInt": {
+			emit:    func(a []string) string { return "__isInt(" + a[0] + ")" },
+			helpers: []string{"isInt"}, minArgs: 1, maxArgs: 1,
+		},
+		"isFloat": {
+			emit:    func(a []string) string { return "__isFloat(" + a[0] + ")" },
+			helpers: []string{"isFloat"}, minArgs: 1, maxArgs: 1,
 		},
 		"str": {
 			emit:    func(a []string) string { return `fmt.Sprintf("%v", ` + a[0] + ")" },
