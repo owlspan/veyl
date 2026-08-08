@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.2** — the language as currently implemented.
+**Version 0.3** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -206,6 +206,13 @@ print("n squared is {n * n}")
 print("big: {n > 2 && name != ""}")
 ```
 
+String literals may appear inside an interpolation, so this works:
+
+```qz
+print("shouting: {upper("hello")}")
+print("fixed: {replace(path, "\\", "/")}")
+```
+
 For a literal brace, double it:
 
 ```qz
@@ -244,7 +251,42 @@ while i < 10 {
 }
 ```
 
-**Planned:** `for x in list`, `for i in 0..10`, `break`, `continue`.
+### for
+
+Counted loops use a range. `..` excludes the end, `..=` includes it.
+
+```qz
+for i in 0..5 { print(i) }      // 0 1 2 3 4
+for i in 1..=5 { print(i) }     // 1 2 3 4 5
+```
+
+`step` sets the increment. A negative step counts down.
+
+```qz
+for i in 0..=100 step 25 { print(i) }   // 0 25 50 75 100
+for i in 10..0 step -2 { print(i) }     // 10 8 6 4 2
+```
+
+The bounds are evaluated once, before the loop starts, so a function
+call in the range is not re-run on every iteration.
+
+The loop variable is scoped to the loop and may shadow an outer name
+without disturbing it.
+
+### break and continue
+
+```qz
+for i in 0..100 {
+    if i % 2 == 0 { continue }   // skip to the next iteration
+    if i > 20 { break }          // leave the loop
+    print(i)
+}
+```
+
+Both work in `for` and `while`, and both apply to the innermost loop.
+Using either outside a loop is a compile error.
+
+**Planned:** `for x in list` once collections exist.
 
 ---
 
@@ -340,21 +382,118 @@ pause()
 
 ### Conversion
 
-| Function       | Returns | Description                              |
-| -------------- | ------- | ---------------------------------------- |
-| `str(x)`       | `str`   | any value as text                         |
-| `toInt(s)`     | `int`   | parses text; `0` if it isn't a number     |
-| `toFloat(s)`   | `float` | parses text; `0` if it isn't a number     |
+| Function              | Returns | Description                                     |
+| --------------------- | ------- | ----------------------------------------------- |
+| `str(x)`              | `str`   | any value as text                                |
+| `toInt(s)`            | `int`   | parses text; `0` if it isn't a number            |
+| `toInt(s, fallback)`  | `int`   | parses text; `fallback` if it isn't a number     |
+| `toFloat(s)`          | `float` | parses text; `0` if it isn't a number            |
+| `toFloat(s, fallback)`| `float` | parses text; `fallback` if it isn't a number     |
+| `isInt(s)`            | `bool`  | whether the text parses as a whole number        |
+| `isFloat(s)`          | `bool`  | whether the text parses as a number              |
+
+Surrounding whitespace is ignored, so `toInt(" 7 ")` gives `7`.
+
+**Careful:** `toInt` never fails — it returns the fallback instead. If bad
+input should not be silently accepted, check it first:
 
 ```qz
-let age = toInt(input("Age: "))
+let raw = input("Age: ")
+while !isInt(raw) {
+    print("that isn't a number")
+    raw = input("Age: ")
+}
+let age = toInt(raw)
+```
+
+Or pick a fallback that cannot be mistaken for a real answer:
+
+```qz
+let age = toInt(input("Age: "), -1)
+if age < 0 {
+    print("I'll take that as a no.")
+}
+```
+
+### Math
+
+Every numeric builtin accepts `int` or `float` arguments.
+
+| Function                 | Returns | Description                          |
+| ------------------------ | ------- | ------------------------------------ |
+| `sqrt(x)` `cbrt(x)`      | `float` | square and cube roots                 |
+| `pow(x, y)`              | `float` | x to the power of y                   |
+| `exp(x)`                 | `float` | e to the power of x                   |
+| `hypot(x, y)`            | `float` | length of the hypotenuse              |
+| `log(x)` `log2(x)` `log10(x)` | `float` | logarithms                     |
+| `abs(x)`                 | `float` | absolute value                        |
+| `mod(x, y)`              | `float` | remainder that works on floats        |
+| `floor(x)` `ceil(x)`     | `int`   | round down / up                       |
+| `round(x)` `trunc(x)`    | `int`   | round to nearest / toward zero        |
+| `clamp(x, lo, hi)`       | `float` | constrain to a range                  |
+| `sign(x)`                | `int`   | `-1`, `0` or `1`                      |
+| `isNan(x)`               | `bool`  | whether x is not-a-number             |
+| `sin` `cos` `tan`        | `float` | trigonometry, in radians              |
+| `asin` `acos` `atan`     | `float` | inverse trigonometry                  |
+| `atan2(y, x)`            | `float` | angle of the point (x, y)             |
+
+Constants: `PI`, `E`, `INF`, `NAN`.
+
+```qz
+print("sqrt(2) is {sqrt(2)}")
+print("a full turn is {2 * PI} radians")
+print("{floor(3.7)} {ceil(3.2)} {round(2.6)}")
+```
+
+### Numbers and conversion
+
+| Function        | Returns | Description                              |
+| --------------- | ------- | ---------------------------------------- |
+| `int(x)`        | `int`   | drops the fractional part                 |
+| `float(x)`      | `float` | converts to a float                       |
+| `divf(a, b)`    | `float` | true division, even for two ints          |
+
+**Important:** `/` between two `int` values truncates, so `7 / 2` is `3`.
+This is inherited from the backend. Use `divf(7, 2)` for `3.5`, or make
+one side a float.
+
+### Randomness
+
+| Function            | Returns | Description                             |
+| ------------------- | ------- | --------------------------------------- |
+| `random()`          | `float` | between 0 and 1                          |
+| `randomInt(lo, hi)` | `int`   | between `lo` and `hi`, both included     |
+
+### Strings
+
+| Function                        | Returns | Description                      |
+| ------------------------------- | ------- | -------------------------------- |
+| `upper(s)` `lower(s)`           | `str`   | change case                       |
+| `trim(s)`                       | `str`   | remove surrounding whitespace     |
+| `contains(s, sub)`              | `bool`  | whether `sub` occurs in `s`       |
+| `startsWith(s, p)` `endsWith(s, p)` | `bool` | prefix / suffix test         |
+| `indexOf(s, sub)`               | `int`   | position of `sub`, or `-1`        |
+| `count(s, sub)`                 | `int`   | how many times `sub` occurs       |
+| `replace(s, old, new)`          | `str`   | replace every occurrence          |
+| `repeat(s, n)`                  | `str`   | `s` joined to itself `n` times    |
+| `charAt(s, i)`                  | `str`   | one character; `""` if out of range |
+| `substr(s, start, end)`         | `str`   | a slice; indexes are clamped      |
+| `padLeft(s, width)` `padRight(s, width)` | `str` | pad with spaces        |
+| `padLeft(s, width, fill)`       | `str`   | pad with a chosen character       |
+
+Index-based functions never crash — an out-of-range index gives `""`
+rather than stopping the program.
+
+```qz
+print(padLeft(str(7), 3, "0"))    // 007
+print(substr("Hello, world", 7, 12))
 ```
 
 ### Utility
 
 | Function        | Returns | Description                             |
 | --------------- | ------- | --------------------------------------- |
-| `len(s)`        | `int`   | length of a string                       |
+| `len(s)`        | `int`   | number of bytes in a string              |
 | `min(a, b, ...)`| —       | smallest of its arguments                |
 | `max(a, b, ...)`| —       | largest of its arguments                 |
 | `sleep(ms)`     | —       | pauses for `ms` milliseconds             |
@@ -364,20 +503,65 @@ Builtin names cannot be redefined.
 
 ---
 
+## Windows library
+
+These call into Win32 and are available only when building for Windows.
+Using one on another target is a compile error, not a runtime crash.
+
+| Function                              | Description                                   |
+| ------------------------------------- | --------------------------------------------- |
+| `setTitle(s)`                         | sets the console window title                  |
+| `beep(freq, ms)`                      | plays a tone at `freq` Hz for `ms` ms          |
+| `messageBox(title, text)`             | shows a native dialog and waits                |
+| `hideConsole()`                       | hides the console window                       |
+| `openWindow(title, w, h)`             | opens a real window and waits until it closes  |
+| `openWindow(title, w, h, rounded)`    | same, with rounded corners on or off           |
+
+```qz
+setTitle("My App")
+beep(880, 150)
+openWindow("Hello from Quartz", 800, 500)
+messageBox("Done", "The window was closed.")
+```
+
+`openWindow` **blocks** until the user closes the window — it runs the
+Win32 message loop internally. Rounded corners default to on; they need
+Windows 11, and on Windows 10 the request is ignored and the window is
+square.
+
+`hideConsole()` combined with `openWindow` gives a GUI-only program with
+no console behind it.
+
+These compile down to `syscall` calls that load DLLs at runtime, so a
+Quartz program with a window is still one self-contained `.exe` with no
+DLLs to ship and no C compiler involved.
+
+### Cross-compiling
+
+Set `QUARTZ_TARGET` to build for a different OS than the one you are on:
+
+```
+QUARTZ_TARGET=windows quartz build app.qz
+```
+
+`quartz run` needs the target to match your machine; use `quartz build`
+otherwise.
+
+---
+
 ## Reserved words
 
 In use:
 
 ```
-let const fn return if else while true false
+let const fn return if else while for in step break continue true false
 ```
 
 Reserved but not yet implemented — the lexer recognises them, so they
 cannot be used as names:
 
 ```
-struct impl self match in pub defer own unsafe
-import for break continue nil
+struct impl self match pub defer own unsafe import nil
 ```
 
 ---
@@ -411,11 +595,14 @@ Honest list of what v0.2 does not do yet.
   reported against your `.qz` line numbers. The messages use Go's
   vocabulary, so `str` appears as `string` and `float` as `float64`.
 - **No collections.** No lists, maps, or structs.
-- **No `for` loop.** Use `while`.
-- **No `break` or `continue`.**
 - **No modules.** One file per program; `import` does nothing.
 - **No global variables.** Top-level variables belong to `main`.
 - **Garbage collected.** Memory is managed automatically. Manual memory,
   pointers, and `unsafe` require a C backend and are not available.
+- **Windows library is Windows-only.** There is no Linux or macOS
+  equivalent for the window and console functions yet.
+- **Windows are blank.** `openWindow` opens and manages a real window,
+  but there is no drawing or event API yet — no buttons, no input
+  handling, no canvas.
 - **Go must be installed** to compile a Quartz program, since Quartz
   hands the generated code to the Go toolchain.

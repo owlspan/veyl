@@ -32,6 +32,8 @@ type builtin struct {
 	helpers []string
 	minArgs int
 	maxArgs int // -1 means unlimited
+	// osOnly restricts a builtin to one target OS; "" means portable.
+	osOnly string
 }
 
 var builtins map[string]builtin
@@ -185,6 +187,9 @@ func init() {
 			imports: []string{"os"}, minArgs: 1, maxArgs: 1,
 		},
 	}
+
+	registerStdlib()
+	registerWindowsRuntime()
 }
 
 // ---- the generator ----
@@ -193,14 +198,17 @@ type Codegen struct {
 	body    strings.Builder
 	indent  int
 	srcPath string // absolute path, used in //line directives
+	target  string // GOOS the program is being built for
+	tmp     int    // counter for generated temporary names
 	imports map[string]bool
 	helpers map[string]bool
 	Errors  []string
 }
 
-func NewCodegen(srcPath string) *Codegen {
+func NewCodegen(srcPath, target string) *Codegen {
 	return &Codegen{
 		srcPath: srcPath,
+		target:  target,
 		imports: map[string]bool{},
 		helpers: map[string]bool{},
 	}
@@ -405,11 +413,68 @@ func (c *Codegen) stmt(s Stmt) {
 		c.blockBody(st.Body)
 		c.w("}")
 
+	case *ForStmt:
+		c.forStmt(st)
+
+	case *BreakStmt:
+		c.line(st)
+		c.w("break")
+
+	case *ContinueStmt:
+		c.line(st)
+		c.w("continue")
+
 	case *Block:
 		c.w("{")
 		c.blockBody(st)
 		c.w("}")
 	}
+}
+
+// forStmt emits a counted loop. With no explicit step it produces the
+// plain idiomatic Go form. With a step it wraps the bounds in temporaries
+// and tests both directions, so a negative step counts downward and the
+// bounds are evaluated exactly once.
+func (c *Codegen) forStmt(st *ForStmt) {
+	cmp := "<"
+	if st.Inclusive {
+		cmp = "<="
+	}
+
+	c.line(st)
+
+	if st.Step == nil {
+		c.w("for %s := %s; %s %s %s; %s++ {",
+			st.Var, c.expr(st.Start), st.Var, cmp, c.expr(st.End), st.Var)
+		c.blockBody(st.Body)
+		c.w("}")
+		return
+	}
+
+	down := ">"
+	if st.Inclusive {
+		down = ">="
+	}
+
+	c.tmp++
+	lo := fmt.Sprintf("__lo%d", c.tmp)
+	hi := fmt.Sprintf("__hi%d", c.tmp)
+	step := fmt.Sprintf("__st%d", c.tmp)
+
+	c.w("{")
+	c.indent++
+	c.w("%s := %s", lo, c.expr(st.Start))
+	c.w("%s := %s", hi, c.expr(st.End))
+	c.w("%s := %s", step, c.expr(st.Step))
+	c.w("for %s := %s; (%s > 0 && %s %s %s) || (%s < 0 && %s %s %s); %s += %s {",
+		st.Var, lo,
+		step, st.Var, cmp, hi,
+		step, st.Var, down, hi,
+		st.Var, step)
+	c.blockBody(st.Body)
+	c.w("}")
+	c.indent--
+	c.w("}")
 }
 
 func (c *Codegen) blockBody(b *Block) {
@@ -455,6 +520,12 @@ func (c *Codegen) expr(e Expr) string {
 		return "false"
 
 	case *Ident:
+		if bc, ok := builtinConsts[x.Name]; ok {
+			for _, i := range bc.imports {
+				c.imports[i] = true
+			}
+			return bc.code
+		}
 		return x.Name
 
 	case *Unary:
@@ -521,6 +592,11 @@ func (c *Codegen) call(x *Call) string {
 	}
 
 	if b, isBuiltin := builtins[id.Name]; isBuiltin {
+		if b.osOnly != "" && b.osOnly != c.target {
+			c.errorAt(x, "%s() is only available on %s (building for %s)",
+				id.Name, b.osOnly, c.target)
+			return "nil"
+		}
 		c.need(b.imports, b.helpers)
 		return b.emit(args)
 	}

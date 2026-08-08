@@ -1,0 +1,13 @@
+// window.qz -- native Windows GUI from Quartz
+
+setTitle("Quartz Demo")
+
+print("Opening a native window with rounded corners...")
+print("Close it to continue.")
+beep(880, 150)
+
+openWindow("Hello from Quartz", 800, 500)
+
+print("Window closed.")
+messageBox("Quartz", "That window was created by your own language.")
+pause()

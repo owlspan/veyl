@@ -84,7 +84,10 @@ func (l *Lexer) number(line, col int) {
 
 func (l *Lexer) str(line, col int) {
 	l.advance() // opening quote
+
 	var sb strings.Builder
+	depth := 0     // {} nesting inside an interpolation
+	inner := false // inside a nested "..." within an interpolation
 
 	for {
 		if l.atEnd() || l.peek() == '\n' {
@@ -93,40 +96,69 @@ func (l *Lexer) str(line, col int) {
 			return
 		}
 		c := l.advance()
-		if c == '"' {
-			break
-		}
-		if c != '\\' {
-			sb.WriteByte(c)
+
+		// Escapes are handled first so that \" and \\ can never affect
+		// the nesting state below.
+		if c == '\\' {
+			if l.atEnd() {
+				l.errorf(l.line, l.col, "unterminated escape sequence")
+				l.emit(ILLEGAL, sb.String(), line, col)
+				return
+			}
+			eLine, eCol := l.line, l.col
+			switch e := l.advance(); e {
+			case 'n':
+				sb.WriteByte('\n')
+			case 't':
+				sb.WriteByte('\t')
+			case 'r':
+				sb.WriteByte('\r')
+			case '0':
+				sb.WriteByte(0)
+			case '\\':
+				sb.WriteByte('\\')
+			case '"':
+				sb.WriteByte('"')
+			default:
+				l.errorf(eLine, eCol, "unknown escape sequence \\%c", e)
+				sb.WriteByte(e)
+			}
 			continue
 		}
 
-		// escape sequence
-		if l.atEnd() {
-			l.errorf(l.line, l.col, "unterminated escape sequence")
-			l.emit(ILLEGAL, sb.String(), line, col)
+		switch {
+		case c == '"' && depth == 0:
+			// Only a quote at brace-depth zero ends the literal, which is
+			// what lets "{f("x")}" nest a string inside an interpolation.
+			l.emit(STRING, sb.String(), line, col)
 			return
+
+		case c == '"':
+			inner = !inner
+
+		case inner:
+			// plain text inside a nested string; braces here mean nothing
+
+		case c == '{':
+			if depth == 0 && l.peek() == '{' {
+				sb.WriteByte('{')
+				sb.WriteByte(l.advance())
+				continue
+			}
+			depth++
+
+		case c == '}':
+			if depth == 0 && l.peek() == '}' {
+				sb.WriteByte('}')
+				sb.WriteByte(l.advance())
+				continue
+			}
+			if depth > 0 {
+				depth--
+			}
 		}
-		eLine, eCol := l.line, l.col
-		switch e := l.advance(); e {
-		case 'n':
-			sb.WriteByte('\n')
-		case 't':
-			sb.WriteByte('\t')
-		case 'r':
-			sb.WriteByte('\r')
-		case '0':
-			sb.WriteByte(0)
-		case '\\':
-			sb.WriteByte('\\')
-		case '"':
-			sb.WriteByte('"')
-		default:
-			l.errorf(eLine, eCol, "unknown escape sequence \\%c", e)
-			sb.WriteByte(e)
-		}
+		sb.WriteByte(c)
 	}
-	l.emit(STRING, sb.String(), line, col)
 }
 
 func (l *Lexer) operator(line, col int) {
@@ -196,7 +228,16 @@ func (l *Lexer) operator(line, col int) {
 	case ',':
 		l.emit(COMMA, ",", line, col)
 	case '.':
-		l.emit(DOT, ".", line, col)
+		switch {
+		case l.match('.'):
+			if l.match('=') {
+				l.emit(DOTDOTEQ, "..=", line, col)
+			} else {
+				l.emit(DOTDOT, "..", line, col)
+			}
+		default:
+			l.emit(DOT, ".", line, col)
+		}
 	case ':':
 		l.emit(COLON, ":", line, col)
 

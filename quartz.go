@@ -95,7 +95,11 @@ func run(cmd, path string) error {
 	}
 
 	// ---- codegen ----
-	cg := NewCodegen(abs)
+	target := os.Getenv("QUARTZ_TARGET")
+	if target == "" {
+		target = runtime.GOOS
+	}
+	cg := NewCodegen(abs, target)
 	goSrc := cg.Generate(prog)
 	if err := reportErrors(cg.Errors); err != nil {
 		return err
@@ -108,7 +112,7 @@ func run(cmd, path string) error {
 
 	// ---- hand off to the Go toolchain ----
 	exeName := strings.TrimSuffix(name, ".qz")
-	if runtime.GOOS == "windows" {
+	if target == "windows" {
 		exeName += ".exe"
 	}
 
@@ -129,6 +133,9 @@ func run(cmd, path string) error {
 	outPath := filepath.Join(tmp, exeName)
 	build := exec.Command("go", "build", "-o", outPath, ".")
 	build.Dir = tmp
+	if target != runtime.GOOS {
+		build.Env = append(os.Environ(), "GOOS="+target)
+	}
 	build.Stderr = os.Stderr
 	build.Stdout = os.Stderr
 	if err := build.Run(); err != nil {
@@ -143,6 +150,10 @@ func run(cmd, path string) error {
 		}
 		fmt.Printf("built %s\n", final)
 		return nil
+	}
+
+	if target != runtime.GOOS {
+		return fmt.Errorf("cannot run a %s executable on %s — use 'quartz build' instead", target, runtime.GOOS)
 	}
 
 	// cmd == "run"

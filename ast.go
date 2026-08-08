@@ -165,10 +165,29 @@ type ReturnStmt struct {
 	Value Expr // nil for a bare `return`
 }
 
-func (*Block) stmtNode()      {}
-func (*LetStmt) stmtNode()    {}
-func (*AssignStmt) stmtNode() {}
-func (*ExprStmt) stmtNode()   {}
-func (*IfStmt) stmtNode()     {}
-func (*WhileStmt) stmtNode()  {}
-func (*ReturnStmt) stmtNode() {}
+// ForStmt is `for i in start..end` — plus an optional `step`, and an
+// inclusive form written `..=`.
+type ForStmt struct {
+	pos
+	Var       string
+	Start     Expr
+	End       Expr
+	Step      Expr // nil means 1
+	Inclusive bool
+	Body      *Block
+}
+
+type BreakStmt struct{ pos }
+
+type ContinueStmt struct{ pos }
+
+func (*Block) stmtNode()        {}
+func (*LetStmt) stmtNode()      {}
+func (*AssignStmt) stmtNode()   {}
+func (*ExprStmt) stmtNode()     {}
+func (*IfStmt) stmtNode()       {}
+func (*WhileStmt) stmtNode()    {}
+func (*ReturnStmt) stmtNode()   {}
+func (*ForStmt) stmtNode()      {}
+func (*BreakStmt) stmtNode()    {}
+func (*ContinueStmt) stmtNode() {}

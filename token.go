@@ -38,6 +38,7 @@ const (
 	DEFER
 	OWN
 	UNSAFE
+	STEP
 
 	// operators
 	PLUS
@@ -60,6 +61,8 @@ const (
 	STAREQ
 	SLASHEQ
 	ARROW
+	DOTDOT
+	DOTDOTEQ
 
 	// punctuation
 	LPAREN
@@ -107,6 +110,7 @@ var kindNames = [...]string{
 	"DEFER",
 	"OWN",
 	"UNSAFE",
+	"STEP",
 
 	"PLUS",
 	"MINUS",
@@ -128,6 +132,8 @@ var kindNames = [...]string{
 	"STAREQ",
 	"SLASHEQ",
 	"ARROW",
+	"DOTDOT",
+	"DOTDOTEQ",
 
 	"LPAREN",
 	"RPAREN",
@@ -175,6 +181,7 @@ var keywords = map[string]Kind{
 	"defer":  DEFER,
 	"own":    OWN,
 	"unsafe": UNSAFE,
+	"step":   STEP,
 }
 
 // Token is a single lexical unit, tagged with where it came from.

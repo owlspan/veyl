@@ -77,7 +77,7 @@ func (p *Parser) synchronize() {
 			return
 		}
 		switch p.cur().Kind {
-		case LET, CONST, IF, WHILE, FN, RETURN, RBRACE:
+		case LET, CONST, IF, WHILE, FOR, FN, RETURN, BREAK, CONTINUE, RBRACE:
 			return
 		}
 		p.advance()
@@ -157,6 +157,16 @@ func (p *Parser) parseStmt() Stmt {
 		return p.parseIf()
 	case WHILE:
 		return p.parseWhile()
+	case FOR:
+		return p.parseFor()
+	case BREAK:
+		t := p.advance()
+		p.endStmt()
+		return &BreakStmt{pos: at(t)}
+	case CONTINUE:
+		t := p.advance()
+		p.endStmt()
+		return &ContinueStmt{pos: at(t)}
 	case RETURN:
 		return p.parseReturn()
 	case LBRACE:
@@ -219,6 +229,37 @@ func (p *Parser) parseWhile() Stmt {
 	kw := p.advance()
 	st := &WhileStmt{pos: at(kw)}
 	st.Cond = p.parseExpr(0)
+	st.Body = p.parseBlock()
+	p.endStmt()
+	return st
+}
+
+func (p *Parser) parseFor() Stmt {
+	kw := p.advance()
+	st := &ForStmt{pos: at(kw)}
+
+	name := p.expect(IDENT, "a loop variable name")
+	st.Var = name.Lex
+
+	if !p.match(IN) {
+		p.errorAt(p.cur(), "expected 'in', as in: for %s in 0..10 { ... }", st.Var)
+	}
+
+	st.Start = p.parseExpr(0)
+
+	switch {
+	case p.match(DOTDOTEQ):
+		st.Inclusive = true
+	case p.match(DOTDOT):
+	default:
+		p.errorAt(p.cur(), "expected '..' or '..=' to give the loop a range")
+	}
+	st.End = p.parseExpr(0)
+
+	if p.match(STEP) {
+		st.Step = p.parseExpr(0)
+	}
+
 	st.Body = p.parseBlock()
 	p.endStmt()
 	return st
@@ -434,15 +475,34 @@ func (p *Parser) parseStringLit(t Token) Expr {
 			continue
 		}
 
-		// find the matching close brace
-		end := strings.IndexByte(src[i+1:], '}')
-		if end < 0 {
+		// Find the matching close brace, stepping over nested braces and
+		// over any string literal that appears inside the expression.
+		j, d, quoted := i+1, 1, false
+		for ; j < len(src); j++ {
+			ch := src[j]
+			if ch == '"' {
+				quoted = !quoted
+				continue
+			}
+			if quoted {
+				continue
+			}
+			if ch == '{' {
+				d++
+			} else if ch == '}' {
+				d--
+				if d == 0 {
+					break
+				}
+			}
+		}
+		if j >= len(src) {
 			p.errorAt(t, "unclosed '{' in string")
 			lit.WriteByte('{')
 			continue
 		}
-		inner := strings.TrimSpace(src[i+1 : i+1+end])
-		i += end + 1
+		inner := strings.TrimSpace(src[i+1 : j])
+		i = j
 
 		if inner == "" {
 			p.errorAt(t, "empty {} in string")

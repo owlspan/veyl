@@ -17,6 +17,7 @@ type Resolver struct {
 	funcs  map[string]*FnDecl
 	scopes []map[string]*varInfo
 	curFn  *FnDecl
+	loops  int // nesting depth, so break/continue can be validated
 	Errors []string
 }
 
@@ -102,7 +103,9 @@ func (r *Resolver) Resolve(p *Program) {
 
 func (r *Resolver) resolveFn(f *FnDecl) {
 	prev := r.curFn
+	prevLoops := r.loops
 	r.curFn = f
+	r.loops = 0
 	r.push()
 
 	for _, prm := range f.Params {
@@ -123,6 +126,7 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 
 	r.pop()
 	r.curFn = prev
+	r.loops = prevLoops
 }
 
 func (r *Resolver) checkType(name string, n Node) {
@@ -165,7 +169,36 @@ func (r *Resolver) stmt(s Stmt) {
 
 	case *WhileStmt:
 		r.expr(st.Cond)
+		r.loops++
 		r.block(st.Body)
+		r.loops--
+
+	case *ForStmt:
+		r.expr(st.Start)
+		r.expr(st.End)
+		if st.Step != nil {
+			r.expr(st.Step)
+		}
+		// The loop variable lives in its own scope wrapping the body, so
+		// it can shadow an outer name without clashing with it.
+		r.push()
+		r.declare(st.Var, &varInfo{used: true}, st)
+		r.loops++
+		for _, s := range st.Body.Stmts {
+			r.stmt(s)
+		}
+		r.loops--
+		r.pop()
+
+	case *BreakStmt:
+		if r.loops == 0 {
+			r.errorAt(st, "'break' can only appear inside a loop")
+		}
+
+	case *ContinueStmt:
+		if r.loops == 0 {
+			r.errorAt(st, "'continue' can only appear inside a loop")
+		}
 
 	case *ReturnStmt:
 		if st.Value != nil {
@@ -201,6 +234,9 @@ func (r *Resolver) expr(e Expr) {
 	case *Ident:
 		info := r.lookup(x.Name)
 		if info == nil {
+			if _, isConst := builtinConsts[x.Name]; isConst {
+				return
+			}
 			if _, isFn := r.funcs[x.Name]; isFn {
 				r.errorAt(x, "%q is a function; did you mean %s(...)?", x.Name, x.Name)
 				return
