@@ -1,0 +1,2 @@
+error: match_form.qz:5:5: a match can only have one 'else' arm
+quartz: 1 error(s)

@@ -545,6 +545,25 @@ func (c *Codegen) stmt(s Stmt) {
 	case *ForStmt:
 		c.forStmt(st)
 
+	case *MatchStmt:
+		c.line(st)
+		// Go's switch does not fall through, which is the behaviour
+		// Quartz wants, so this is a direct translation.
+		c.w("switch %s {", c.expr(st.Subject))
+		for _, arm := range st.Cases {
+			values := make([]string, len(arm.Values))
+			for i, v := range arm.Values {
+				values[i] = c.expr(v)
+			}
+			c.w("case %s:", strings.Join(values, ", "))
+			c.armBody(arm.Body)
+		}
+		if st.Else != nil {
+			c.w("default:")
+			c.armBody(st.Else)
+		}
+		c.w("}")
+
 	case *BreakStmt:
 		c.line(st)
 		c.w("break")
@@ -662,6 +681,21 @@ func (c *Codegen) forEach(st *ForStmt) {
 	c.w("}")
 }
 
+// armBody emits a match arm's statement, indented under its case label.
+// A block arm is flattened rather than wrapped in braces, since the
+// case already scopes it.
+func (c *Codegen) armBody(s Stmt) {
+	c.indent++
+	if b, isBlock := s.(*Block); isBlock {
+		for _, inner := range b.Stmts {
+			c.stmt(inner)
+		}
+	} else if s != nil {
+		c.stmt(s)
+	}
+	c.indent--
+}
+
 func (c *Codegen) blockBody(b *Block) {
 	c.indent++
 	for _, s := range b.Stmts {
@@ -745,8 +779,34 @@ func goAssignOp(k Kind) string {
 		return "*="
 	case SLASHEQ:
 		return "/="
+	case PERCENTEQ:
+		return "%="
+	case AMPEQ:
+		return "&="
+	case PIPEEQ:
+		return "|="
+	case CARETEQ:
+		return "^="
+	case SHLEQ:
+		return "<<="
+	case SHREQ:
+		return ">>="
 	}
 	return "="
+}
+
+// compoundOp maps `x op= y` to the binary operator it stands for.
+var compoundOp = map[Kind]Kind{
+	PLUSEQ:    PLUS,
+	MINUSEQ:   MINUS,
+	STAREQ:    STAR,
+	SLASHEQ:   SLASH,
+	PERCENTEQ: PERCENT,
+	AMPEQ:     AMP,
+	PIPEEQ:    PIPE,
+	CARETEQ:   CARET,
+	SHLEQ:     SHL,
+	SHREQ:     SHR,
 }
 
 // ---- expressions ----
@@ -780,8 +840,11 @@ func (c *Codegen) expr(e Expr) string {
 
 	case *Unary:
 		op := "-"
-		if x.Op == BANG {
+		switch x.Op {
+		case BANG:
 			op = "!"
+		case TILDE:
+			op = "^" // Go spells bitwise NOT with a unary caret
 		}
 		return fmt.Sprintf("%s(%s)", op, c.expr(x.X))
 
@@ -860,6 +923,16 @@ func goBinOp(k Kind) string {
 		return "&&"
 	case OR:
 		return "||"
+	case AMP:
+		return "&"
+	case PIPE:
+		return "|"
+	case CARET:
+		return "^"
+	case SHL:
+		return "<<"
+	case SHR:
+		return ">>"
 	}
 	return "?"
 }

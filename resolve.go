@@ -259,6 +259,18 @@ func (r *Resolver) stmt(s Stmt) {
 		r.loops--
 		r.pop()
 
+	case *MatchStmt:
+		r.expr(st.Subject)
+		for _, arm := range st.Cases {
+			for _, v := range arm.Values {
+				r.expr(v)
+			}
+			r.stmt(arm.Body)
+		}
+		if st.Else != nil {
+			r.stmt(st.Else)
+		}
+
 	case *BreakStmt:
 		if r.loops == 0 {
 			r.errorAt(st, "'break' can only appear inside a loop")
@@ -517,6 +529,18 @@ func stmtReturns(s Stmt) bool {
 			return false
 		}
 		return blockReturns(st.Then) && stmtReturns(st.Else)
+	case *MatchStmt:
+		// Only an `else` arm makes a match exhaustive — without one, a
+		// value matching nothing falls straight out of the bottom.
+		if st.Else == nil || !stmtReturns(st.Else) {
+			return false
+		}
+		for _, arm := range st.Cases {
+			if !stmtReturns(arm.Body) {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }

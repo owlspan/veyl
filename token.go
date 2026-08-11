@@ -63,6 +63,21 @@ const (
 	ARROW
 	DOTDOT
 	DOTDOTEQ
+	FATARROW
+
+	// bitwise
+	AMP
+	PIPE
+	CARET
+	TILDE
+	SHL
+	SHR
+	PERCENTEQ
+	AMPEQ
+	PIPEEQ
+	CARETEQ
+	SHLEQ
+	SHREQ
 
 	// punctuation
 	LPAREN
@@ -134,6 +149,20 @@ var kindNames = [...]string{
 	"ARROW",
 	"DOTDOT",
 	"DOTDOTEQ",
+	"FATARROW",
+
+	"AMP",
+	"PIPE",
+	"CARET",
+	"TILDE",
+	"SHL",
+	"SHR",
+	"PERCENTEQ",
+	"AMPEQ",
+	"PIPEEQ",
+	"CARETEQ",
+	"SHLEQ",
+	"SHREQ",
 
 	"LPAREN",
 	"RPAREN",

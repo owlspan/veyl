@@ -297,6 +297,8 @@ func (p *Parser) parseStmt() Stmt {
 		return p.parseWhile()
 	case FOR:
 		return p.parseFor()
+	case MATCH:
+		return p.parseMatch()
 	case BREAK:
 		t := p.advance()
 		p.endStmt()
@@ -425,6 +427,71 @@ func (p *Parser) parseFor() Stmt {
 	return st
 }
 
+// parseMatch reads a multi-way branch:
+//
+//	match code {
+//	    200      => print("ok")
+//	    404, 410 => print("gone")
+//	    else     => print("something else")
+//	}
+//
+// An arm's body is a single statement or a block. Arms do not fall
+// through — there is no `break` to forget.
+func (p *Parser) parseMatch() Stmt {
+	kw := p.advance()
+	st := &MatchStmt{pos: at(kw)}
+	st.Subject = p.header(func() Expr { return p.parseExpr(0) })
+
+	p.expect(LBRACE, "'{' to open the match")
+	p.skipNewlines()
+
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+
+		if p.check(ELSE) {
+			el := p.advance()
+			p.expect(FATARROW, "'=>' after 'else'")
+			if st.Else != nil {
+				p.errorAt(el, "a match can only have one 'else' arm")
+			}
+			st.Else = p.parseArmBody()
+			p.skipNewlines()
+			if p.i == before {
+				p.advance()
+			}
+			continue
+		}
+
+		arm := MatchCase{pos: at(p.cur())}
+		for {
+			arm.Values = append(arm.Values, p.header(func() Expr { return p.parseExpr(0) }))
+			if !p.match(COMMA) {
+				break
+			}
+			p.skipNewlines()
+		}
+		p.expect(FATARROW, "'=>' after the values of a match arm")
+		arm.Body = p.parseArmBody()
+		st.Cases = append(st.Cases, arm)
+
+		p.skipNewlines()
+		if p.i == before { // guarantee forward progress
+			p.advance()
+		}
+	}
+
+	p.expect(RBRACE, "'}' to close the match")
+	p.endStmt()
+	return st
+}
+
+func (p *Parser) parseArmBody() Stmt {
+	if p.check(LBRACE) {
+		return p.parseBlock()
+	}
+	return p.parseStmt()
+}
+
 func (p *Parser) parseBlock() *Block {
 	lb := p.expect(LBRACE, "'{'")
 	b := &Block{pos: at(lb)}
@@ -451,7 +518,8 @@ func (p *Parser) parseSimpleStmt() Stmt {
 	x := p.parseExpr(0)
 
 	switch p.cur().Kind {
-	case ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ:
+	case ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ,
+		PERCENTEQ, AMPEQ, PIPEEQ, CARETEQ, SHLEQ, SHREQ:
 		op := p.advance()
 		switch x.(type) {
 		case *Ident, *Index, *Field:
@@ -487,20 +555,33 @@ func (p *Parser) endStmt() {
 // ---- expressions (Pratt) ----
 
 // precOf returns binding power; 0 means "not a binary operator".
+//
+// The ladder follows C's, so anyone who has met `&` and `<<` before
+// finds them where they expect. That does mean `a & b == c` parses as
+// `a & (b == c)`, which is C's famous wart — the checker turns the
+// resulting type error into a message suggesting parentheses.
 func precOf(k Kind) int {
 	switch k {
 	case OR:
 		return 1
 	case AND:
 		return 2
-	case EQ, NEQ:
+	case PIPE:
 		return 3
-	case LT, LTE, GT, GTE:
+	case CARET:
 		return 4
-	case PLUS, MINUS:
+	case AMP:
 		return 5
-	case STAR, SLASH, PERCENT:
+	case EQ, NEQ:
 		return 6
+	case LT, LTE, GT, GTE:
+		return 7
+	case SHL, SHR:
+		return 8
+	case PLUS, MINUS:
+		return 9
+	case STAR, SLASH, PERCENT:
+		return 10
 	}
 	return 0
 }
@@ -522,7 +603,7 @@ func (p *Parser) parseExpr(minPrec int) Expr {
 }
 
 func (p *Parser) parseUnary() Expr {
-	if p.check(BANG) || p.check(MINUS) {
+	if p.check(BANG) || p.check(MINUS) || p.check(TILDE) {
 		op := p.advance()
 		return &Unary{pos: at(op), Op: op.Kind, X: p.parseUnary()}
 	}

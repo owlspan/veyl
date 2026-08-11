@@ -180,15 +180,43 @@ func (l *Lexer) operator(line, col int) {
 	case '/':
 		two('=', SLASHEQ, "/=", SLASH, "/")
 	case '=':
-		two('=', EQ, "==", ASSIGN, "=")
+		switch {
+		case l.match('='):
+			l.emit(EQ, "==", line, col)
+		case l.match('>'):
+			l.emit(FATARROW, "=>", line, col)
+		default:
+			l.emit(ASSIGN, "=", line, col)
+		}
 	case '!':
 		two('=', NEQ, "!=", BANG, "!")
-	case '<':
-		two('=', LTE, "<=", LT, "<")
-	case '>':
-		two('=', GTE, ">=", GT, ">")
 	case '%':
-		l.emit(PERCENT, "%", line, col)
+		two('=', PERCENTEQ, "%=", PERCENT, "%")
+	case '^':
+		two('=', CARETEQ, "^=", CARET, "^")
+	case '~':
+		l.emit(TILDE, "~", line, col)
+
+	// Multi-character operators must be matched longest-first, or `<<=`
+	// lexes as `<<` followed by `=`.
+	case '<':
+		switch {
+		case l.match('<'):
+			two('=', SHLEQ, "<<=", SHL, "<<")
+		case l.match('='):
+			l.emit(LTE, "<=", line, col)
+		default:
+			l.emit(LT, "<", line, col)
+		}
+	case '>':
+		switch {
+		case l.match('>'):
+			two('=', SHREQ, ">>=", SHR, ">>")
+		case l.match('='):
+			l.emit(GTE, ">=", line, col)
+		default:
+			l.emit(GT, ">", line, col)
+		}
 
 	case '-':
 		switch {
@@ -201,16 +229,22 @@ func (l *Lexer) operator(line, col int) {
 		}
 
 	case '&':
-		if l.match('&') {
+		switch {
+		case l.match('&'):
 			l.emit(AND, "&&", line, col)
-		} else {
-			l.illegal(line, col, "&")
+		case l.match('='):
+			l.emit(AMPEQ, "&=", line, col)
+		default:
+			l.emit(AMP, "&", line, col)
 		}
 	case '|':
-		if l.match('|') {
+		switch {
+		case l.match('|'):
 			l.emit(OR, "||", line, col)
-		} else {
-			l.illegal(line, col, "|")
+		case l.match('='):
+			l.emit(PIPEEQ, "|=", line, col)
+		default:
+			l.emit(PIPE, "|", line, col)
 		}
 
 	case '(':

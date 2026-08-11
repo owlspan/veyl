@@ -387,11 +387,15 @@ Highest precedence first:
 
 | Precedence | Operators           | Meaning                       |
 | ---------- | ------------------- | ----------------------------- |
-| 7          | `!x`, `-x`          | logical not, negation         |
-| 6          | `*` `/` `%`         | multiply, divide, remainder   |
-| 5          | `+` `-`             | add, subtract                 |
-| 4          | `<` `<=` `>` `>=`   | comparison                    |
-| 3          | `==` `!=`           | equality                      |
+| 11         | `!x` `-x` `~x`      | not, negation, bitwise not    |
+| 10         | `*` `/` `%`         | multiply, divide, remainder   |
+| 9          | `+` `-`             | add, subtract                 |
+| 8          | `<<` `>>`           | bit shifts                    |
+| 7          | `<` `<=` `>` `>=`   | comparison                    |
+| 6          | `==` `!=`           | equality                      |
+| 5          | `&`                 | bitwise and                   |
+| 4          | `^`                 | bitwise xor                   |
+| 3          | `\|`                | bitwise or                    |
 | 2          | `&&`                | logical and                   |
 | 1          | `\|\|`              | logical or                    |
 
@@ -407,7 +411,30 @@ let b = (2 + 3) * 4      // 20
 `+` also joins strings. `&&` and `||` short-circuit — the right side is
 not evaluated if the left already decides the result.
 
-Compound assignment: `+=`, `-=`, `*=`, `/=`.
+Compound assignment: `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`.
+
+### Bitwise operators
+
+`&` `|` `^` `~` `<<` `>>` work on `int` only.
+
+```qz
+let flags = 0
+flags |= 4          // set a bit
+flags &= ~4         // clear it
+print(flags & 1)    // test it
+```
+
+**The precedence ladder is C's**, which means comparison binds *tighter*
+than `&`, `^` and `|`. So this does not do what it looks like:
+
+```qz
+if flags & 4 == 4 { }      // parses as flags & (4 == 4)
+if (flags & 4) == 4 { }    // what you meant
+```
+
+Quartz keeps C's ordering so the operators behave the way people expect
+from elsewhere, and the type checker catches the mistake with a message
+that says to add parentheses.
 
 **Note:** `int / int` truncates toward zero, so `7 / 2` is `3`. For a
 fractional result, make one side a `float`.
@@ -464,6 +491,41 @@ if score >= 90 {
 
 The condition needs no parentheses. Braces are required even for a
 single statement.
+
+### match
+
+A multi-way branch on one value. Arms may list several values, and
+**they do not fall through** — there is no `break` to forget.
+
+```qz
+match code {
+    200      => print("ok")
+    301, 302 => print("redirect")
+    404, 410 => print("gone")
+    else     => print("something else")
+}
+```
+
+An arm's body is a single statement, or a block:
+
+```qz
+match n % 3 {
+    0 => {
+        print("divisible by three")
+        total += n
+    }
+    else => print("not")
+}
+```
+
+The subject must be an `int`, `float`, `str` or `bool` — match compares
+values, so lists, maps and structs cannot be matched on. Every arm has
+to have the same type as the subject, and repeating a value is an error
+rather than dead code.
+
+`else` is optional. Without one, a value that matches nothing simply
+does nothing. With one, and if every arm returns, the compiler counts
+the match as returning on every path.
 
 ### while
 
@@ -1112,14 +1174,14 @@ In use:
 
 ```
 let const fn return if else while for in step break continue true false
-struct impl self
+struct impl self match
 ```
 
 Reserved but not yet implemented — the lexer recognises them, so they
 cannot be used as names:
 
 ```
-match pub defer own unsafe import nil
+pub defer own unsafe import nil
 ```
 
 ---

@@ -334,6 +334,27 @@ type ForStmt struct {
 	CollT *Type // the collection's type, filled in by the checker
 }
 
+// MatchCase is one arm: `1, 2 => body`.
+type MatchCase struct {
+	pos
+	Values []Expr
+	Body   Stmt
+}
+
+// MatchStmt is a multi-way branch on one value.
+//
+//	match code {
+//	    200      => print("ok")
+//	    404, 410 => print("gone")
+//	    else     => print("something else")
+//	}
+type MatchStmt struct {
+	pos
+	Subject Expr
+	Cases   []MatchCase
+	Else    Stmt // nil when there is no else arm
+}
+
 type BreakStmt struct{ pos }
 
 type ContinueStmt struct{ pos }
@@ -346,5 +367,6 @@ func (*IfStmt) stmtNode()       {}
 func (*WhileStmt) stmtNode()    {}
 func (*ReturnStmt) stmtNode()   {}
 func (*ForStmt) stmtNode()      {}
+func (*MatchStmt) stmtNode()    {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}

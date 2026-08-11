@@ -318,9 +318,62 @@ func (c *Checker) stmt(s Stmt) {
 				c.curFn.Name, want, got)
 		}
 
+	case *MatchStmt:
+		c.match(st)
+
 	case *Block:
 		c.block(st)
 	}
+}
+
+// match checks that every arm compares against the same type as the
+// subject, and that the subject is something comparable at all.
+func (c *Checker) match(st *MatchStmt) {
+	subj := c.expr(st.Subject)
+	if !subj.IsUnknown() && (subj.IsCollection() || subj.Kind == KStruct) {
+		c.errorAt(st.Subject, "cannot match on %s — match compares values, so it needs an int, float, str or bool", subj)
+		subj = Unknown
+	}
+
+	seen := map[string]bool{}
+	for _, arm := range st.Cases {
+		for _, v := range arm.Values {
+			got := c.exprWant(v, subj)
+			if !subj.Accepts(got) && !(isUntypedInt(v) && subj.Kind == KFloat) {
+				c.errorAt(v, "this match is on %s, but this arm compares against %s", subj, got)
+				continue
+			}
+			// Duplicate constants are dead code, and Go rejects them
+			// outright in a switch, so catch them here with a better
+			// message than the backend would give.
+			if key, isConst := constKey(v); isConst {
+				if seen[key] {
+					c.errorAt(v, "this value is already handled by an earlier arm")
+				}
+				seen[key] = true
+			}
+		}
+		c.stmt(arm.Body)
+	}
+	if st.Else != nil {
+		c.stmt(st.Else)
+	}
+}
+
+// constKey renders a literal arm value so duplicates can be spotted.
+// Non-literal arms return false and are not checked.
+func constKey(e Expr) (string, bool) {
+	switch x := e.(type) {
+	case *IntLit:
+		return "i" + x.Val, true
+	case *FloatLit:
+		return "f" + x.Val, true
+	case *StrLit:
+		return "s" + x.Val, true
+	case *BoolLit:
+		return fmt.Sprintf("b%t", x.Val), true
+	}
+	return "", false
 }
 
 // forEach checks `for x in list` and `for k, v in map`, binding the
@@ -392,8 +445,20 @@ func (c *Checker) condition(e Expr, kw string) {
 // checkCompound validates `+=` and friends, which are just the binary
 // operator followed by an assignment.
 func (c *Checker) checkCompound(st *AssignStmt, want, got *Type) {
-	op := map[Kind]Kind{PLUSEQ: PLUS, MINUSEQ: MINUS, STAREQ: STAR, SLASHEQ: SLASH}[st.Op]
+	op := compoundOp[st.Op]
 	target := describeTarget(st.Target)
+
+	// The bitwise family and %= are int-only, like their binary forms.
+	switch op {
+	case PERCENT, AMP, PIPE, CARET, SHL, SHR:
+		if !want.IsUnknown() && want.Kind != KInt {
+			c.errorAt(st, "%s needs an int, but %s is %s", goAssignOp(st.Op), target, want)
+		}
+		if !got.IsUnknown() && got.Kind != KInt {
+			c.errorAt(st, "%s needs an int, got %s", goAssignOp(st.Op), got)
+		}
+		return
+	}
 
 	if op == PLUS && want.Kind == KStr {
 		if got.Kind != KStr && !got.IsUnknown() {
@@ -496,6 +561,13 @@ func (c *Checker) expr(e Expr) *Type {
 				return Unknown
 			}
 			return Bool
+		}
+		if x.Op == TILDE {
+			if t.Kind != KInt {
+				c.errorAt(x, "'~' needs an int, got %s", t)
+				return Unknown
+			}
+			return Int
 		}
 		if !t.IsNumeric() {
 			c.errorAt(x, "'-' needs a number, got %s", t)
@@ -808,9 +880,30 @@ func (c *Checker) binary(x *Binary) *Type {
 			return Unknown
 		}
 		return Int
+
+	case AMP, PIPE, CARET, SHL, SHR:
+		if origL.Kind != KInt || origR.Kind != KInt {
+			c.errorAt(x, "'%s' works on ints, got %s and %s%s",
+				goBinOp(x.Op), origL, origR, bitwiseHint(x, origL, origR))
+			return Unknown
+		}
+		return Int
 	}
 
 	return Unknown
+}
+
+// bitwise operators bind looser than comparison in C, and Quartz copies
+// that ladder. `flags & MASK == 0` therefore parses as
+// `flags & (MASK == 0)`, which is almost never what was meant. When one
+// side turns out to be a bool, say so rather than leaving the reader to
+// rediscover a fifty-year-old wart.
+func bitwiseHint(x *Binary, lt, rt *Type) string {
+	if lt.Kind == KBool || rt.Kind == KBool {
+		return " — comparison binds tighter than '" + goBinOp(x.Op) +
+			"', so you probably want parentheses"
+	}
+	return ""
 }
 
 // arithmetic enforces the no-implicit-conversion rule for `- * / +`.
