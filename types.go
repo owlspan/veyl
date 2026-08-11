@@ -20,6 +20,13 @@ const (
 	KStruct
 	KNullable
 
+	// KResult is `T!` — either a T, or a reason it is missing.
+	KResult
+
+	// KErrLit is the type of `fail("...")`, which fits into any T! the
+	// way nil fits into any ?T.
+	KErrLit
+
 	// KNilLit is the type of the bare literal `nil`. It fits into any
 	// nullable type and nothing else, the way an untyped integer literal
 	// fits into a float.
@@ -51,6 +58,7 @@ var (
 	Unknown = &Type{Kind: KUnknown}
 	Void    = &Type{Kind: KVoid}
 	NilLitT = &Type{Kind: KNilLit}
+	ErrLitT = &Type{Kind: KErrLit}
 	Int     = &Type{Kind: KInt}
 	Float   = &Type{Kind: KFloat}
 	Str     = &Type{Kind: KStr}
@@ -72,6 +80,16 @@ func NullableOf(inner *Type) *Type {
 }
 
 func (t *Type) IsNullable() bool { return t != nil && t.Kind == KNullable }
+func (t *Type) IsResult() bool   { return t != nil && t.Kind == KResult }
+
+// ResultOf wraps a type so it can also carry a failure. Wrapping twice
+// is a no-op — there is no useful T!!.
+func ResultOf(inner *Type) *Type {
+	if inner == nil || inner.Kind == KResult {
+		return inner
+	}
+	return &Type{Kind: KResult, Elem: inner}
+}
 
 // Unwrap strips one layer of nullability, which is what narrowing
 // inside an `if x != nil` produces.
@@ -121,8 +139,12 @@ func (t *Type) String() string {
 		return t.Name
 	case KNullable:
 		return "?" + t.Elem.String()
+	case KResult:
+		return t.Elem.String() + "!"
 	case KNilLit:
 		return "nil"
+	case KErrLit:
+		return "a failure"
 	case KNumeric:
 		return "int or float"
 	case KAny:
@@ -146,7 +168,7 @@ func (t *Type) Equal(u *Type) bool {
 		return t.Key.Equal(u.Key) && t.Elem.Equal(u.Elem)
 	case KStruct:
 		return t.Name == u.Name
-	case KNullable:
+	case KNullable, KResult:
 		return t.Elem.Equal(u.Elem)
 	}
 	return true
@@ -173,6 +195,10 @@ func (t *Type) Accepts(got *Type) bool {
 		// type — widening a T into a ?T loses nothing. The checker
 		// inserts the wrapping where this fires.
 		return got.Kind == KNilLit || t.Elem.Accepts(got) || t.Equal(got)
+	case KResult:
+		// Same shape: a plain T is a successful T!, and a failure fits
+		// any of them.
+		return got.Kind == KErrLit || t.Elem.Accepts(got) || t.Equal(got)
 	}
 	// A nullable never satisfies a plain type: unwrapping is what the
 	// nil check is for, and doing it implicitly would defeat the point.
@@ -182,8 +208,16 @@ func (t *Type) Accepts(got *Type) bool {
 // NeedsWrap reports whether assigning `got` into this type requires
 // boxing a plain value into a nullable.
 func (t *Type) NeedsWrap(got *Type) bool {
-	return t.IsNullable() && got != nil &&
-		got.Kind != KNilLit && got.Kind != KNullable && !got.IsUnknown()
+	if got == nil || got.IsUnknown() {
+		return false
+	}
+	switch {
+	case t.IsNullable():
+		return got.Kind != KNilLit && got.Kind != KNullable
+	case t.IsResult():
+		return got.Kind != KErrLit && got.Kind != KResult
+	}
+	return false
 }
 
 // Go returns the Go type this compiles to.
@@ -211,6 +245,8 @@ func (t *Type) Go() string {
 		// Go, but using one representation everywhere means narrowing
 		// and wrapping have exactly one shape to handle.
 		return "*" + t.Elem.Go()
+	case KResult:
+		return "__Res[" + t.Elem.Go() + "]"
 	}
 	return "any"
 }
@@ -237,6 +273,8 @@ func (t *Type) Zero() string {
 		return t.Name + "{}"
 	case KNullable:
 		return "nil"
+	case KResult:
+		return t.Go() + "{}"
 	}
 	return "nil"
 }
@@ -263,6 +301,16 @@ func ParseType(s string) *Type {
 		return Str
 	case "bool":
 		return Bool
+	}
+
+	// `T!` binds loosest, so it is peeled first: `?int!` is a result
+	// carrying a nullable int.
+	if strings.HasSuffix(s, "!") {
+		inner := ParseType(s[:len(s)-1])
+		if inner == nil {
+			return nil
+		}
+		return ResultOf(inner)
 	}
 
 	if strings.HasPrefix(s, "?") {

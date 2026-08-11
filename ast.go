@@ -67,6 +67,17 @@ type Ident struct {
 // NilLit is the bare `nil`.
 type NilLit struct{ pos }
 
+// Try is the postfix `?`: unwrap a T! here, or return its failure from
+// the enclosing function. It replaces Go's four-line err check with one
+// character, which is the whole reason the error type exists.
+type Try struct {
+	pos
+	X Expr
+	T *Type // the unwrapped type, filled in by the checker
+}
+
+func (*Try) exprNode() {}
+
 // Widen boxes a plain value into a nullable one. The checker inserts
 // these wherever a T is used as a ?T, so codegen never has to work out
 // on its own where a pointer is needed.

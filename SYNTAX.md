@@ -1,6 +1,6 @@
 ﻿# Quartz Language Reference
 
-**Version 0.8** â€” the language as currently implemented.
+**Version 0.9** â€” the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -141,6 +141,7 @@ total = 5           // error: undefined variable "total"
 | `[]T`     | a list of `T`                | `[1, 2, 3]`         |
 | `{K: V}`  | a map from `K` to `V`        | `{"a": 1}`          |
 | `?T`      | a `T`, or nothing            | `nil`               |
+| `T!`      | a `T`, or a reason it failed | `fail("bad input")` |
 
 A number literal is an `int` unless it contains a `.`, in which case it
 is a `float`.
@@ -338,7 +339,87 @@ fn lookup(m: {str: int}, key: str) -> ?int {
 `find(m, k)` is the nil-safe counterpart to `m[k]`: it returns `?V`, so
 a missing key is distinguishable from a key holding zero.
 
-**Planned:** a `T!` error type with `?` propagation.
+### Results — things that can fail
+
+`T!` is either a `T`, or a reason it is missing. Where `?T` says
+"there might be nothing here", `T!` says "this might not have worked,
+and here is why".
+
+```qz
+fn parsePort(text: str) -> int! {
+    if !isInt(text) {
+        return fail("{text} is not a number")
+    }
+    return toInt(text)
+}
+```
+
+Inside a function returning `T!`, `return value` succeeds and
+`return fail("...")` does not. There is nothing else to write.
+
+**A result is not a value until you unwrap it.** Using one directly is
+an error, which is the whole point:
+
+```qz
+let port = parsePort("8080")
+print(port + 1)         // error: int! might have failed
+```
+
+Four ways to get at it:
+
+| Way | Meaning |
+| --- | --- |
+| `must(r)` | the value, or stop the program with the reason |
+| `valueOr(r, alt)` | the value, or `alt` if it failed |
+| `isOk(r)` / `failed(r)` | test it first |
+| `errorOf(r)` | the reason, or `""` if it worked |
+| `r?` | the value, or return the failure from *this* function |
+
+### The `?` operator
+
+`?` is the reason the error type is worth having. It unwraps a result,
+or returns its failure from the enclosing function:
+
+```qz
+fn addressFor(host: str, port: str) -> str! {
+    let n = parsePort(port)?      // on failure, addressFor returns it
+    return "{host}:{n}"
+}
+```
+
+That is Go's four-line `if err != nil` dance in one character.
+
+It works mid-expression, and chains — the first failure wins and
+nothing after it runs:
+
+```qz
+fn sumPorts(a: str, b: str) -> int! {
+    return parsePort(a)? + parsePort(b)?
+}
+```
+
+`?` only makes sense in a function that can itself fail, so the
+enclosing function must return a `T!`. The compiler says so if not.
+
+### Composing with nullables
+
+`?T` and `T!` stack, and the order means different things:
+
+- `?int!` — it might have failed; if it worked, there might be no value.
+- `int!` inside a `?` — not a thing; wrap the other way round.
+
+```qz
+fn maybePort(text: str) -> ?int! {
+    if text == "" {
+        return nil        // worked, and there is nothing
+    }
+    return parsePort(text)?
+}
+```
+
+**Note:** the standard library does not use `T!` yet. Its calls are
+still fatal-on-failure, return a `bool`, or take a fallback — see
+[Libraries](#libraries). Converting it is the next job.
 
 ---
 
@@ -1288,7 +1369,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.8 does not do yet.
+Honest list of what v0.9 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left
@@ -1308,5 +1389,7 @@ Honest list of what v0.8 does not do yet.
   handling, no canvas.
 - **Go must be installed** to compile a Quartz program, since Quartz
   hands the generated code to the Go toolchain.
+
+
 
 

@@ -330,6 +330,12 @@ func (r *Resolver) expr(e Expr) {
 	case *Unary:
 		r.expr(x.X)
 
+	case *Try:
+		r.expr(x.X)
+		if r.curFn == nil {
+			r.errorAt(x, "'?' can only be used inside a function, because it returns from one")
+		}
+
 	case *Binary:
 		r.expr(x.L)
 		r.expr(x.R)

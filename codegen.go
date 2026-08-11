@@ -46,6 +46,13 @@ type builtin struct {
 	// emitT is emit with the argument types available, for the same
 	// builtins. When set, it takes precedence over emit.
 	emitT func(c *Codegen, x *Call, args []string) string
+
+	// hintFor supplies the expected type of argument i, given the types
+	// of the arguments before it. Builtins with a custom check have no
+	// fixed params for the checker to read, so without this an empty
+	// literal passed to one — valueOr(load(), []) — has nothing to infer
+	// from. Return nil to leave an argument unhinted.
+	hintFor func(known []*Type, i int) *Type
 }
 
 // showAll builds an emitter that renders every collection argument in
@@ -266,14 +273,16 @@ func init() {
 // ---- the generator ----
 
 type Codegen struct {
-	body    strings.Builder
-	indent  int
-	srcPath string // absolute path, used in //line directives
-	target  string // GOOS the program is being built for
-	tmp     int    // counter for generated temporary names
-	imports map[string]bool
-	helpers map[string]bool
-	Errors  []string
+	body     strings.Builder
+	indent   int
+	srcPath  string   // absolute path, used in //line directives
+	target   string   // GOOS the program is being built for
+	tmp      int      // counter for generated temporary names
+	pending  []string // statements hoisted out of the expression being built
+	curFnRet *Type    // return type of the function being emitted, for `?`
+	imports  map[string]bool
+	helpers  map[string]bool
+	Errors   []string
 }
 
 func NewCodegen(srcPath, target string) *Codegen {
@@ -383,10 +392,53 @@ func (c *Codegen) helperBlock() string {
 
 // ---- emission helpers ----
 
+// w writes one statement, first emitting anything that `?` hoisted out
+// of the expression being written.
+//
+// Go's early return cannot live inside an expression, so `load(p)?`
+// becomes a temporary and an `if` placed before the statement that used
+// it. Expressions are generated before w is called, so by the time we
+// get here the pending lines are known.
 func (c *Codegen) w(format string, args ...any) {
+	c.flushPending()
 	c.body.WriteString(strings.Repeat("\t", c.indent))
 	fmt.Fprintf(&c.body, format, args...)
 	c.body.WriteByte('\n')
+}
+
+func (c *Codegen) flushPending() {
+	if len(c.pending) == 0 {
+		return
+	}
+	lines := c.pending
+	c.pending = nil
+	for _, line := range lines {
+		c.body.WriteString(strings.Repeat("\t", c.indent))
+		c.body.WriteString(line)
+		c.body.WriteByte('\n')
+	}
+}
+
+// tryExpr lowers `expr?`. The value is bound to a temporary, the
+// failure path returns early, and the expression evaluates to the
+// unwrapped value.
+func (c *Codegen) tryExpr(x *Try) string {
+	c.need(nil, []string{"result"})
+	inner := c.expr(x.X)
+
+	c.tmp++
+	tmp := fmt.Sprintf("__try%d", c.tmp)
+
+	failType := "any"
+	if c.curFnRet != nil && c.curFnRet.IsResult() {
+		failType = c.curFnRet.Elem.Go()
+	}
+
+	c.pending = append(c.pending,
+		fmt.Sprintf("%s := %s", tmp, inner),
+		fmt.Sprintf("if %s.e != \"\" { return __fail[%s](%s.e) }", tmp, failType, tmp),
+	)
+	return tmp + ".v"
 }
 
 func (c *Codegen) raw(format string, args ...any) {
@@ -449,11 +501,14 @@ func (c *Codegen) fnDecl(f *FnDecl) {
 
 	c.line(f)
 	c.raw("func %s%s(%s)%s {", recv, f.Name, strings.Join(goParams, ", "), ret)
+	prevRet := c.curFnRet
+	c.curFnRet = f.RetT
 	c.indent = 1
 	for _, s := range f.Body.Stmts {
 		c.stmt(s)
 	}
 	c.indent = 0
+	c.curFnRet = prevRet
 	c.raw("}")
 	c.raw("")
 }
@@ -833,10 +888,21 @@ func (c *Codegen) expr(e Expr) string {
 		return "nil"
 
 	case *Widen:
+		// The type argument is always written out rather than left to Go
+		// to infer. Inference fails on an untyped nil, and gets the wrong
+		// answer for `let x: ?float = 1`, where the literal is an int
+		// until the target says otherwise.
+		if x.T.IsResult() {
+			c.need(nil, []string{"result"})
+			return "__ok[" + x.T.Elem.Go() + "](" + c.expr(x.X) + ")"
+		}
 		// A pointer to a fresh copy of the value. Go will not let us take
 		// the address of an arbitrary expression, so a helper does it.
 		c.need(nil, []string{"ptr"})
-		return "__ptr(" + c.expr(x.X) + ")"
+		return "__ptr[" + x.T.Elem.Go() + "](" + c.expr(x.X) + ")"
+
+	case *Try:
+		return c.tryExpr(x)
 
 	case *Ident:
 		if bc, ok := builtinConsts[x.Name]; ok {

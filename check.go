@@ -165,14 +165,31 @@ func (c *Checker) coerce(slot *Expr, want *Type, got *Type) bool {
 	if want == nil || want.IsUnknown() || got.IsUnknown() {
 		return true
 	}
-	if !want.Accepts(got) && !(isUntypedInt(*slot) && want.Unwrap().Kind == KFloat) {
+	if !want.Accepts(got) && !(isUntypedInt(*slot) && innerScalar(want).Kind == KFloat) {
 		return false
 	}
-	if want.NeedsWrap(got) {
-		line, col := (*slot).Pos()
-		*slot = &Widen{pos: pos{Line: line, Col: col}, X: *slot, T: want}
+	if !want.NeedsWrap(got) {
+		return true
 	}
+	// Wrapping composes: putting an int into a ?int! boxes it into a
+	// ?int first, then marks that as a success. Doing only the outer
+	// layer would produce an int! where a ?int! was wanted.
+	if want.IsResult() {
+		c.coerce(slot, want.Elem, got)
+	}
+	line, col := (*slot).Pos()
+	*slot = &Widen{pos: pos{Line: line, Col: col}, X: *slot, T: want}
 	return true
+}
+
+// innerScalar strips every layer of ? and ! to reach the type actually
+// being carried, so an untyped integer literal can still find the float
+// inside a ?float!.
+func innerScalar(t *Type) *Type {
+	for t != nil && (t.Kind == KNullable || t.Kind == KResult) {
+		t = t.Elem
+	}
+	return t
 }
 
 func (c *Checker) define(name string, t *Type) {
@@ -421,7 +438,7 @@ func (c *Checker) stmt(s Stmt) {
 		if st.Value == nil {
 			return // resolver already checked that a value is present when needed
 		}
-		got := c.expr(st.Value)
+		got := c.exprWant(st.Value, want)
 		if want.Kind == KVoid {
 			return // resolver already reported the mismatch
 		}
@@ -649,6 +666,9 @@ func (c *Checker) expr(e Expr) *Type {
 	case *NilLit:
 		return NilLitT
 
+	case *Try:
+		return c.try(x)
+
 	case *Widen:
 		// Inserted by this pass; already checked when it was created.
 		return x.T
@@ -800,6 +820,31 @@ func (c *Checker) structLit(x *StructLit) *Type {
 	// Point{} and Config{debug: true} both reasonable to write.
 	_ = d
 	x.T = StructOf(x.Name)
+	return x.T
+}
+
+// try checks the postfix `?`. Both sides have to line up: the value has
+// to be a result, and the enclosing function has to return one too,
+// since that is where the failure goes.
+func (c *Checker) try(x *Try) *Type {
+	inner := c.expr(x.X)
+	if inner.IsUnknown() {
+		return Unknown
+	}
+	if !inner.IsResult() {
+		c.errorAt(x, "'?' needs a value that can fail, and %s cannot", inner)
+		return Unknown
+	}
+	x.T = inner.Elem
+
+	if c.curFn == nil {
+		return x.T // the resolver already reported the misplacement
+	}
+	if !c.curFn.RetT.IsResult() {
+		c.errorAt(x, "'?' returns the failure from %q, so %q must return a type ending in '!' — it returns %s",
+			c.curFn.Name, c.curFn.Name, c.curFn.RetT)
+		return x.T
+	}
 	return x.T
 }
 
@@ -1027,6 +1072,11 @@ func (c *Checker) binary(x *Binary) *Type {
 			return Unknown
 		}
 	}
+	// Same idea for a result: it holds a value only if it did not fail.
+	if bad := firstResult(lt, rt); bad != nil {
+		c.errorAt(x, "%s might have failed — unwrap it with '?', must(...) or valueOr(...) first", bad)
+		return Unknown
+	}
 
 	// Untyped integer literals adapt to a float operand, exactly as Go's
 	// untyped constants do. This keeps `radius * 2` working without
@@ -1125,6 +1175,15 @@ func firstNullable(ts ...*Type) *Type {
 	return nil
 }
 
+func firstResult(ts ...*Type) *Type {
+	for _, t := range ts {
+		if t.IsResult() {
+			return t
+		}
+	}
+	return nil
+}
+
 // nilAdvice suggests the fix, naming the variable when there is one to
 // name so the suggestion can be pasted as written.
 func nilAdvice(x *Binary) string {
@@ -1170,11 +1229,19 @@ func (c *Checker) call(x *Call) *Type {
 	// collection literal passed straight to a function knows what it is.
 	// That means working out the callee first.
 	hints := c.paramHints(x)
+	dynamic := c.dynamicHint(x)
 	args := make([]*Type, len(x.Args))
 	for i := range x.Args {
 		var hint *Type
 		if i < len(hints) {
 			hint = hints[i]
+		}
+		// A builtin may work out an argument's type from the ones before
+		// it, which a fixed parameter list cannot express.
+		if dynamic != nil {
+			if h := dynamic(args[:i], i); h != nil {
+				hint = h
+			}
 		}
 		args[i] = c.exprWant(x.Args[i], hint)
 	}
@@ -1223,6 +1290,18 @@ func (c *Checker) call(x *Call) *Type {
 	}
 	x.T = f.RetT
 	return f.RetT
+}
+
+// dynamicHint returns a builtin's hintFor hook, if it has one.
+func (c *Checker) dynamicHint(x *Call) func([]*Type, int) *Type {
+	name, ok := DottedName(x.Callee)
+	if !ok {
+		return nil
+	}
+	if b, isBuiltin := builtins[name]; isBuiltin {
+		return b.hintFor
+	}
+	return nil
 }
 
 // paramHints returns the declared parameter types of whatever this call

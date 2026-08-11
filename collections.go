@@ -37,6 +37,36 @@ var collectionHelperDefs = map[string]helperDef{
 	"ptr": {
 		code: `func __ptr[T any](v T) *T { return &v }`,
 	},
+
+	// The result type. A failure carries a reason rather than just a
+	// flag, because "it failed" on its own is never enough to act on.
+	"result": {
+		code: `type __Res[T any] struct {
+	v T
+	e string
+}
+
+func __ok[T any](v T) __Res[T]        { return __Res[T]{v: v} }
+func __fail[T any](e string) __Res[T] { return __Res[T]{e: e} }
+func __isOk[T any](r __Res[T]) bool   { return r.e == "" }
+func __errOf[T any](r __Res[T]) string { return r.e }
+
+func __valueOr[T any](r __Res[T], alt T) T {
+	if r.e != "" {
+		return alt
+	}
+	return r.v
+}
+
+func __must[T any](r __Res[T]) T {
+	if r.e != "" {
+		fmt.Fprintln(os.Stderr, "runtime error: "+r.e)
+		os.Exit(1)
+	}
+	return r.v
+}`,
+		imports: []string{"fmt", "os"},
+	},
 	"listAt": {
 		code: `func __listAt[T any](xs []T, i int) *T {
 	if i < 0 || i >= len(xs) {
@@ -316,6 +346,19 @@ func wantList(c *Checker, x *Call, i int, args []*Type, fn string) *Type {
 	return t.Elem
 }
 
+// wantResult reports an error unless the first argument is a result,
+// and returns the type it carries.
+func wantResult(c *Checker, x *Call, args []*Type, fn string) *Type {
+	if len(args) == 0 || args[0].IsUnknown() {
+		return Unknown
+	}
+	if !args[0].IsResult() {
+		c.errorAt(x.Args[0], "%s expects a value that can fail, and %s cannot", fn, args[0])
+		return Unknown
+	}
+	return args[0].Elem
+}
+
 // wantAssignable reports an error unless the argument is something that
 // can be written to. push, pop and clear replace the slice header, so
 // they need a variable or an element, not a temporary.
@@ -529,6 +572,87 @@ func buildCollectionBuiltins() {
 			},
 			helpers: []string{"listJoin"},
 			emit:    func(a []string) string { return "__join(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		// ---- results ----
+
+		// fail produces a failure of whatever result type the context
+		// wants, the way nil produces a nullable of whatever is wanted.
+		"fail": {
+			minArgs: 1, maxArgs: 1,
+			wantsTarget: true,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				matches(c, x, 0, Str, "fail")
+				return ErrLitT
+			},
+			helpers: []string{"result"},
+			emitT: func(c *Codegen, x *Call, a []string) string {
+				inner := "any"
+				if x.Want != nil && x.Want.IsResult() {
+					inner = x.Want.Elem.Go()
+				}
+				return "__fail[" + inner + "](" + a[0] + ")"
+			},
+		},
+
+		"isOk": {
+			minArgs: 1, maxArgs: 1,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				wantResult(c, x, args, "isOk")
+				return Bool
+			},
+			helpers: []string{"result"},
+			emit:    func(a []string) string { return "__isOk(" + a[0] + ")" },
+		},
+
+		"failed": {
+			minArgs: 1, maxArgs: 1,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				wantResult(c, x, args, "failed")
+				return Bool
+			},
+			helpers: []string{"result"},
+			emit:    func(a []string) string { return "(!__isOk(" + a[0] + "))" },
+		},
+
+		"errorOf": {
+			minArgs: 1, maxArgs: 1,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				wantResult(c, x, args, "errorOf")
+				return Str
+			},
+			helpers: []string{"result"},
+			emit:    func(a []string) string { return "__errOf(" + a[0] + ")" },
+		},
+
+		"valueOr": {
+			minArgs: 2, maxArgs: 2,
+			// The fallback has to be the same type the result carries, so
+			// `valueOr(load(), [])` can tell what kind of list to build.
+			hintFor: func(known []*Type, i int) *Type {
+				if i == 1 && len(known) == 1 && known[0].IsResult() {
+					return known[0].Elem
+				}
+				return nil
+			},
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				inner := wantResult(c, x, args, "valueOr")
+				matches(c, x, 1, inner, "valueOr")
+				return inner
+			},
+			helpers: []string{"result"},
+			emit:    func(a []string) string { return "__valueOr(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		// must is the escape hatch: take the value, or stop the program
+		// with the reason. Explicit, unlike a fatal library call.
+		"must": {
+			minArgs: 1, maxArgs: 1,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				return wantResult(c, x, args, "must")
+			},
+			helpers: []string{"result"},
+			emit:    func(a []string) string { return "__must(" + a[0] + ")" },
 		},
 
 		// ---- maps ----

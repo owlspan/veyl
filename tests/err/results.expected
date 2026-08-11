@@ -1,0 +1,13 @@
+error: results.qz:10:9: int! might have failed — unwrap it with '?', must(...) or valueOr(...) first
+error: results.qz:11:9: int! might have failed — unwrap it with '?', must(...) or valueOr(...) first
+error: results.qz:17:16: needsInt expects int for "n", got int!
+error: results.qz:21:25: '?' returns the failure from "cannotFail", so "cannotFail" must return a type ending in '!' — it returns int
+error: results.qz:27:17: '?' needs a value that can fail, and int cannot
+error: results.qz:31:12: isOk expects a value that can fail, and int cannot
+error: results.qz:32:15: errorOf expects a value that can fail, and str cannot
+error: results.qz:33:12: must expects a value that can fail, and []int cannot
+error: results.qz:34:15: valueOr expects a value that can fail, and int cannot
+error: results.qz:38:5: function "notAResult" returns int but this returns a failure
+error: results.qz:42:18: valueOr expects int here, got str
+error: results.qz:46:5: function "wrongInner" returns str! but this returns int
+quartz: 12 error(s)

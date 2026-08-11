@@ -1,0 +1,21 @@
+good ok true bad ok false
+bad failed true reason: http is not a number
+good has no error true
+value 8080 fallback 80
+must 8080
+localhost:443
+nope is not a number
+sum 523
+first bad x is not a number
+second bad y is not a number
+80 privileged true
+8080 privileged false
+bad nope is not a number
+parsed example.com on 443
+bad server expected host:port, got example.com
+bad port port 99999 is out of range
+words ["a", "b", "c"]
+empty empty line
+absent is ok true and nil true
+present 22
+invalid zz is not a number

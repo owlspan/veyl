@@ -268,24 +268,31 @@ func (p *Parser) parseFn() *FnDecl {
 //
 //	int    []str    [][]int    {str: int}    {str: []int}
 func (p *Parser) parseTypeRef() string {
+	var base string
 	switch {
 	case p.match(QUESTION):
-		return "?" + p.parseTypeRef()
+		base = "?" + p.parseTypeRef()
 
 	case p.match(LBRACKET):
 		p.expect(RBRACKET, "']' — a list type is written []int")
-		return "[]" + p.parseTypeRef()
+		base = "[]" + p.parseTypeRef()
 
 	case p.match(LBRACE):
 		key := p.parseTypeRef()
 		p.expect(COLON, "':' — a map type is written {str: int}")
 		val := p.parseTypeRef()
 		p.expect(RBRACE, "'}'")
-		return "{" + key + ": " + val + "}"
+		base = "{" + key + ": " + val + "}"
 
 	default:
-		return p.expect(IDENT, "a type name").Lex
+		base = p.expect(IDENT, "a type name").Lex
 	}
+
+	// A trailing `!` makes it a result type: str! is a str or a failure.
+	if p.match(BANG) {
+		base += "!"
+	}
+	return base
 }
 
 // ---- statements ----
@@ -646,6 +653,10 @@ func (p *Parser) parsePostfix() Expr {
 
 		case p.check(LBRACE) && p.noBrace == 0 && isStructLitTarget(x):
 			x = p.parseStructLit(x.(*Ident))
+
+		case p.check(QUESTION):
+			q := p.advance()
+			x = &Try{pos: at(q), X: x}
 
 		case p.check(DOT):
 			dot := p.advance()
