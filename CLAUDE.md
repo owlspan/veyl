@@ -203,7 +203,13 @@ Without a BOM, `Get-Content` decodes as ANSI, so every em-dash becomes
 three Latin-1 characters and is written back re-encoded. It happened
 once to `SYNTAX.md` and silently corrupted 62 characters across two
 commits. Edit text files with the editor tooling, or use
-`[System.IO.File]::WriteAllText` with an explicit encoding.
+`[System.IO.File]::ReadAllText` / `WriteAllText`, which default to
+UTF-8 and round-trip cleanly.
+
+**PowerShell 5.1 mangles double quotes passed to a native exe.** A
+commit message containing `"` gets split into extra arguments, and
+`git commit -m` fails with a confusing `pathspec ... did not match`.
+Write the message to a file and use `git commit -F <file>`.
 
 ---
 
