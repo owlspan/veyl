@@ -16,6 +16,9 @@ there is still no remote. `git log --oneline` is the short version;
 | `v0.5` | Lists and maps |
 | — | Dotted library namespaces, and the `os` library |
 | — | `http`, `net`, `time` and `mem` libraries |
+| `v0.6` | Structs, `impl` blocks and methods |
+| `v0.7` | JSON |
+| — | Bitwise operators and `match` |
 
 The compiler is now six stages: lex, parse, resolve, **check**, codegen,
 Go. `go.mod` is still empty — no dependency was added.
@@ -25,6 +28,10 @@ Try it:
 ```
 quartz run examples\tools.qz
 ```
+
+The roadmap through v0.7 is done, plus the libraries you asked for that
+were not on it. What is left from your list is manual memory, which
+genuinely needs the C backend and cannot be faked on the Go one.
 
 ---
 
@@ -72,6 +79,26 @@ Visible in the name, and the first thing to convert at v0.7.
 works too — it is registered as an alias. Noun-first groups better as
 the library grows, but both compile to the same call.
 
+**8. Struct methods can change the struct.** The roadmap recommended
+value semantics, and assignment does copy — `let b = a` gives two
+independent values. But methods take a pointer receiver, so `scale()`
+and `birthday()` work. Value semantics is about assignment; without
+this, no method could ever modify anything.
+
+**9. Struct literals cannot appear bare in an `if` header.** `if p {`
+is ambiguous between a variable and the start of `p{...}`. Same rule
+and same reason as Go. Parentheses lift it.
+
+**10. Bitwise operators use C's precedence.** Which means comparison
+binds tighter than `&`, so `flags & 4 == 4` is C's classic trap. I kept
+C's ordering rather than inventing a third convention, and made the
+checker explain the fix when it sees the resulting bool.
+
+**11. `json.decode` reads its target from the annotation.**
+`let p: Point = json.decode(text)` — Quartz has no type arguments, so
+the binding is what tells the decoder what to build. Without an
+annotation it is a compile error that says so.
+
 ---
 
 ## Things worth your attention
@@ -101,10 +128,20 @@ It caught real regressions the same night.
 
 ## Where I got to, and what is next
 
-Next in the roadmap is **v0.6 structs**, which is the last big gap
-before the language can describe its own data. After that, JSON becomes
-easy, and JSON is what makes the `http` library actually useful.
+The roadmap is done through v0.7. Remaining, in the order I would take
+them:
 
-Also still open from your list: deeper logic constructs, more Win32,
-and anything resembling manual memory — which genuinely needs the C
-backend and cannot be faked on the Go one.
+**Nullable types `?T` and the error type `T!`** (roadmap v0.7 in the
+original numbering). This is the biggest remaining language feature and
+it retires the ugliest thing in the current design: the fatal-on-failure
+convention across `os`, `http` and `json`. It also fixes the silent
+missing-map-key.
+
+**Modules.** `import` still does nothing, and every program is one file.
+
+**Polish**: a formatter, warnings for unused variables and unreachable
+code, `--version`, a VS Code grammar.
+
+**The C backend**, and only then manual memory, pointers and `unsafe`.
+Everything low-level on your list depends on this, and it is a genuinely
+large piece of work rather than an afternoon.
