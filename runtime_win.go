@@ -16,6 +16,7 @@ var winHelperDefs = map[string]helperDef{
 	__kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	__dwmapi   = syscall.NewLazyDLL("dwmapi.dll")
 	__ntdll    = syscall.NewLazyDLL("ntdll.dll")
+	__advapi32 = syscall.NewLazyDLL("advapi32.dll")
 )
 
 func __utf16(s string) uintptr {
@@ -249,6 +250,216 @@ func __openWindow(title string, width int, height int, rounded bool) bool {
 	},
 }
 
+// ---- the win namespace ----
+//
+// Everything added after the original bare names lives under `win.`,
+// which groups it and leaves room for the rest of Win32 without
+// crowding the global names.
+
+var winExtraHelperDefs = map[string]helperDef{
+	"clipboard": {
+		// The clipboard is a shared, locked resource: open it, take what
+		// you need, close it. Leaving it open blocks every other program
+		// on the machine, so every path here closes it.
+		//
+		// `go vet` reports "possible misuse of unsafe.Pointer" for the two
+		// conversions below, and it is right to be suspicious in general:
+		// turning a uintptr into a pointer is unsound when the address
+		// belongs to the Go heap, because the collector may have moved it.
+		// It does not here. GlobalAlloc memory belongs to Windows, is
+		// never moved by Go's collector, and stays valid between the
+		// GlobalLock and GlobalUnlock that bracket each use. There is no
+		// way to express that to vet without a dependency on
+		// golang.org/x/sys, which would cost the zero-dependency property
+		// for a warning.
+		code: `func __clipGet() string {
+	const CF_UNICODETEXT = 13
+
+	if r, _, _ := __user32.NewProc("OpenClipboard").Call(0); r == 0 {
+		return ""
+	}
+	defer __user32.NewProc("CloseClipboard").Call()
+
+	h, _, _ := __user32.NewProc("GetClipboardData").Call(CF_UNICODETEXT)
+	if h == 0 {
+		return ""
+	}
+	p, _, _ := __kernel32.NewProc("GlobalLock").Call(h)
+	if p == 0 {
+		return ""
+	}
+	defer __kernel32.NewProc("GlobalUnlock").Call(h)
+
+	size, _, _ := __kernel32.NewProc("GlobalSize").Call(h)
+	if size < 2 {
+		return ""
+	}
+	// One conversion, then ordinary slice indexing. UTF16ToString stops
+	// at the first NUL, so a buffer larger than the text is harmless.
+	chars := unsafe.Slice((*uint16)(unsafe.Pointer(p)), int(size/2))
+	return syscall.UTF16ToString(chars)
+}
+
+func __clipSet(text string) bool {
+	const (
+		CF_UNICODETEXT = 13
+		GMEM_MOVEABLE  = 0x0002
+	)
+
+	utf16, err := syscall.UTF16FromString(text)
+	if err != nil {
+		return false
+	}
+	size := uintptr(len(utf16) * 2)
+
+	h, _, _ := __kernel32.NewProc("GlobalAlloc").Call(GMEM_MOVEABLE, size)
+	if h == 0 {
+		return false
+	}
+	p, _, _ := __kernel32.NewProc("GlobalLock").Call(h)
+	if p == 0 {
+		__kernel32.NewProc("GlobalFree").Call(h)
+		return false
+	}
+	copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(utf16)), utf16)
+	__kernel32.NewProc("GlobalUnlock").Call(h)
+
+	if r, _, _ := __user32.NewProc("OpenClipboard").Call(0); r == 0 {
+		__kernel32.NewProc("GlobalFree").Call(h)
+		return false
+	}
+	defer __user32.NewProc("CloseClipboard").Call()
+	__user32.NewProc("EmptyClipboard").Call()
+
+	// Once SetClipboardData succeeds the system owns the memory, so it
+	// must not be freed here.
+	if r, _, _ := __user32.NewProc("SetClipboardData").Call(CF_UNICODETEXT, h); r == 0 {
+		__kernel32.NewProc("GlobalFree").Call(h)
+		return false
+	}
+	return true
+}`,
+		imports: []string{"syscall", "unsafe"},
+		deps:    []string{"win_dlls"},
+	},
+
+	"registry": {
+		code: `func __regRoot(name string) uintptr {
+	switch strings.ToUpper(name) {
+	case "HKCU", "HKEY_CURRENT_USER":
+		return 0x80000001
+	case "HKLM", "HKEY_LOCAL_MACHINE":
+		return 0x80000002
+	case "HKCR", "HKEY_CLASSES_ROOT":
+		return 0x80000000
+	case "HKU", "HKEY_USERS":
+		return 0x80000003
+	}
+	return 0
+}
+
+func __regRead(root string, path string, name string) __Res[string] {
+	const (
+		KEY_READ   = 0x20019
+		ERROR_NONE = 0
+	)
+	hRoot := __regRoot(root)
+	if hRoot == 0 {
+		return __fail[string]("unknown registry root " + root + " (try HKCU or HKLM)")
+	}
+
+	var key uintptr
+	r, _, _ := __advapi32.NewProc("RegOpenKeyExW").Call(
+		hRoot, __utf16(path), 0, KEY_READ, uintptr(unsafe.Pointer(&key)))
+	if r != ERROR_NONE {
+		return __fail[string](fmt.Sprintf("cannot open %s\\%s: error %d", root, path, r))
+	}
+	defer __advapi32.NewProc("RegCloseKey").Call(key)
+
+	// Asked twice: once for the size, once for the value.
+	var size uint32
+	var kind uint32
+	r, _, _ = __advapi32.NewProc("RegQueryValueExW").Call(
+		key, __utf16(name), 0,
+		uintptr(unsafe.Pointer(&kind)), 0, uintptr(unsafe.Pointer(&size)))
+	if r != ERROR_NONE {
+		return __fail[string](fmt.Sprintf("cannot read %s: error %d", name, r))
+	}
+
+	buf := make([]uint16, size/2+1)
+	r, _, _ = __advapi32.NewProc("RegQueryValueExW").Call(
+		key, __utf16(name), 0,
+		uintptr(unsafe.Pointer(&kind)),
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)))
+	if r != ERROR_NONE {
+		return __fail[string](fmt.Sprintf("cannot read %s: error %d", name, r))
+	}
+
+	const REG_DWORD = 4
+	if kind == REG_DWORD {
+		return __ok(fmt.Sprintf("%d", *(*uint32)(unsafe.Pointer(&buf[0]))))
+	}
+	return __ok(syscall.UTF16ToString(buf))
+}`,
+		imports: []string{"fmt", "strings", "syscall", "unsafe"},
+		deps:    []string{"win_dlls", "result"},
+	},
+
+	"processList": {
+		code: `type __procEntry struct {
+	dwSize              uint32
+	cntUsage            uint32
+	th32ProcessID       uint32
+	th32DefaultHeapID   uintptr
+	th32ModuleID        uint32
+	cntThreads          uint32
+	th32ParentProcessID uint32
+	pcPriClassBase      int32
+	dwFlags             uint32
+	szExeFile           [260]uint16
+}
+
+func __processes() []string {
+	const TH32CS_SNAPPROCESS = 0x00000002
+
+	snap, _, _ := __kernel32.NewProc("CreateToolhelp32Snapshot").Call(TH32CS_SNAPPROCESS, 0)
+	if snap == 0 || snap == ^uintptr(0) {
+		return []string{}
+	}
+	defer __kernel32.NewProc("CloseHandle").Call(snap)
+
+	var e __procEntry
+	e.dwSize = uint32(unsafe.Sizeof(e))
+
+	out := []string{}
+	first := __kernel32.NewProc("Process32FirstW")
+	next := __kernel32.NewProc("Process32NextW")
+
+	r, _, _ := first.Call(snap, uintptr(unsafe.Pointer(&e)))
+	for r != 0 {
+		out = append(out, syscall.UTF16ToString(e.szExeFile[:]))
+		r, _, _ = next.Call(snap, uintptr(unsafe.Pointer(&e)))
+	}
+	sort.Strings(out)
+	return out
+}`,
+		imports: []string{"sort", "syscall", "unsafe"},
+		deps:    []string{"win_dlls"},
+	},
+
+	"cursor": {
+		code: `type __cursorPoint struct{ x, y int32 }
+
+func __cursor() (int, int) {
+	var p __cursorPoint
+	__user32.NewProc("GetCursorPos").Call(uintptr(unsafe.Pointer(&p)))
+	return int(p.x), int(p.y)
+}`,
+		imports: []string{"unsafe"},
+		deps:    []string{"win_dlls"},
+	},
+}
+
 var winBuiltins = map[string]builtin{
 	"messageBox": {
 		emit:    func(a []string) string { return "__messageBox(" + a[0] + ", " + a[1] + ")" },
@@ -293,13 +504,103 @@ var winBuiltins = map[string]builtin{
 		helpers: []string{"win_window"}, minArgs: 3, maxArgs: 4, osOnly: "windows",
 		params: []*Type{Str, Int, Int, Bool}, ret: Bool,
 	},
+
+	// ---- win.clipboard ----
+
+	"win.clipboard.get": {
+		emit: func(a []string) string { return "__clipGet()" },
+		ret:  Str, osOnly: "windows",
+		helpers: []string{"clipboard"},
+	},
+	"win.clipboard.set": {
+		emit:   func(a []string) string { return "__clipSet(" + a[0] + ")" },
+		params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1, osOnly: "windows",
+		helpers: []string{"clipboard"},
+	},
+
+	// ---- win.registry ----
+	//
+	// Reading only. Writing to the registry from a scripting language
+	// is a good way to break a machine by accident, and nothing here
+	// needs it yet.
+
+	"win.registry.read": {
+		emit: func(a []string) string {
+			return "__regRead(" + a[0] + ", " + a[1] + ", " + a[2] + ")"
+		},
+		params: []*Type{Str, Str, Str}, ret: ResultOf(Str), minArgs: 3, maxArgs: 3,
+		osOnly:  "windows",
+		helpers: []string{"registry"},
+	},
+
+	// ---- win.screen and win.mouse ----
+
+	"win.screen.width": {
+		emit: func(a []string) string {
+			return "func() int { w, _, _ := __user32.NewProc(\"GetSystemMetrics\").Call(0); return int(w) }()"
+		},
+		ret: Int, osOnly: "windows",
+		helpers: []string{"win_dlls"},
+	},
+	"win.screen.height": {
+		emit: func(a []string) string {
+			return "func() int { h, _, _ := __user32.NewProc(\"GetSystemMetrics\").Call(1); return int(h) }()"
+		},
+		ret: Int, osOnly: "windows",
+		helpers: []string{"win_dlls"},
+	},
+	"win.mouse.x": {
+		emit: func(a []string) string { return "func() int { x, _ := __cursor(); return x }()" },
+		ret:  Int, osOnly: "windows",
+		helpers: []string{"cursor"},
+	},
+	"win.mouse.y": {
+		emit: func(a []string) string { return "func() int { _, y := __cursor(); return y }()" },
+		ret:  Int, osOnly: "windows",
+		helpers: []string{"cursor"},
+	},
+
+	// ---- win.process ----
+
+	"win.process.list": {
+		emit: func(a []string) string { return "__processes()" },
+		ret:  ListOf(Str), osOnly: "windows",
+		helpers: []string{"processList"},
+	},
+	"win.process.running": {
+		emit: func(a []string) string {
+			return "slices.Contains(__processes(), " + a[0] + ")"
+		},
+		params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1, osOnly: "windows",
+		helpers: []string{"processList"},
+		imports: []string{"slices"},
+	},
+
+	// ---- win.key ----
+	//
+	// The high bit of GetAsyncKeyState means "down right now"; the low
+	// bit means "was pressed since last asked", which is a different
+	// question and not the one being asked here.
+
+	"win.key.down": {
+		emit: func(a []string) string {
+			return "func() bool { s, _, _ := __user32.NewProc(\"GetAsyncKeyState\").Call(uintptr(" +
+				a[0] + ")); return s&0x8000 != 0 }()"
+		},
+		params: []*Type{Int}, ret: Bool, minArgs: 1, maxArgs: 1, osOnly: "windows",
+		helpers: []string{"win_dlls"},
+	},
 }
 
 // registerWindowsRuntime folds the Windows library into the core tables.
 // Called explicitly from codegen's init() so ordering is deterministic
 // rather than depending on Go's cross-file init sequence.
 func registerWindowsRuntime() {
+	registerNamespace("win")
 	for k, v := range winHelperDefs {
+		helperDefs[k] = v
+	}
+	for k, v := range winExtraHelperDefs {
 		helperDefs[k] = v
 	}
 	for k, v := range winBuiltins {

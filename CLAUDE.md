@@ -237,6 +237,15 @@ cd /tmp/vw && GOOS=windows go vet ./...
 `quartz emit <file>` prints the generated Go. It is the single most
 useful debugging tool here — when behaviour is wrong, read the output.
 
+**One known vet exception.** `go vet` on the compiler is clean and must
+stay that way. The *generated* program is too, with one exception: a
+program using `win.clipboard.*` reports two "possible misuse of
+unsafe.Pointer". That is Win32 memory from `GlobalAlloc`, which the Go
+collector never moves, held between a `GlobalLock` and `GlobalUnlock`.
+The reasoning is written out above the helper in `runtime_win.go`.
+Silencing it needs `golang.org/x/sys`, which costs the zero-dependency
+property to quiet one warning.
+
 **You cannot run Windows GUI code in a Linux container.** Cross-compiling
 and vetting proves it type-checks, nothing more. Say so plainly; let the
 user confirm runtime behaviour. Do not assert that a window looked a

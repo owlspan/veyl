@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.13** — the language as currently implemented.
+**Version 0.14** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -1672,6 +1672,36 @@ These compile down to `syscall` calls that load DLLs at runtime, so a
 Quartz program with a window is still one self-contained `.exe` with no
 DLLs to ship and no C compiler involved.
 
+### The `win` namespace
+
+Everything added after the original bare names is grouped under `win.`.
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `win.clipboard.get()` | `str` | the clipboard's text, `""` if it holds none |
+| `win.clipboard.set(text)` | `bool` | replace it |
+| `win.registry.read(root, path, name)` | `str!` | a registry value |
+| `win.screen.width()` `win.screen.height()` | `int` | screen size in pixels |
+| `win.mouse.x()` `win.mouse.y()` | `int` | cursor position |
+| `win.process.list()` | `[]str` | running executables, sorted |
+| `win.process.running(name)` | `bool` | whether one of them is running |
+| `win.key.down(code)` | `bool` | whether a virtual key is held |
+
+The registry root is `HKCU`, `HKLM`, `HKCR` or `HKU`, or the long form.
+Only reading — writing to the registry from a scripting language is a
+good way to break a machine by accident.
+
+```qz
+const KEY = `SOFTWARE\Microsoft\Windows NT\CurrentVersion`
+print(valueOr(win.registry.read("HKLM", KEY, "ProductName"), "unknown"))
+```
+
+Note the raw string: registry paths are full of backslashes, and an
+ordinary string would need every one of them doubled.
+
+`examples\windows.qz` exercises all of it, and puts your clipboard back
+the way it found it.
+
 ### Cross-compiling
 
 Set `QUARTZ_TARGET` to build for a different OS than the one you are on:
@@ -1758,7 +1788,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.13 does not do yet.
+Honest list of what v0.14 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left

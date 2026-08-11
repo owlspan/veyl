@@ -1,0 +1,45 @@
+// windows.qz -- the Win32 half of the library.
+//
+// Windows only. Using any of this while building for another OS is a
+// compile error rather than a runtime crash.
+
+print("== this machine ==")
+print("Windows build {winBuild()}, Windows 11: {isWin11()}")
+print("screen {win.screen.width()} x {win.screen.height()}")
+print("cursor at {win.mouse.x()}, {win.mouse.y()}")
+print("")
+
+print("== clipboard ==")
+// Whatever was there is put back at the end, so running this example
+// does not cost you what you had copied.
+let before = win.clipboard.get()
+
+win.clipboard.set("set by Quartz")
+print("read back: {win.clipboard.get()}")
+
+if win.clipboard.set(before) {
+    print("original restored ({len(before)} characters)")
+}
+print("")
+
+print("== registry ==")
+const CURRENT_VERSION = `SOFTWARE\Microsoft\Windows NT\CurrentVersion`
+let product = win.registry.read("HKLM", CURRENT_VERSION, "ProductName")
+if isOk(product) {
+    print("product: {must(product)}")
+}
+let build = win.registry.read("HKLM", CURRENT_VERSION, "CurrentBuild")
+print("build from registry: {valueOr(build, "unknown")}")
+print("a key that is not there fails: {isOk(win.registry.read("HKCU", `Software\NoSuchKeyHere`, "x"))}")
+print("")
+
+print("== processes ==")
+let procs = win.process.list()
+print("{len(procs)} running")
+print("explorer is up: {win.process.running("explorer.exe")}")
+print("first few: {slice(procs, 0, 3)}")
+print("")
+
+print("== keyboard ==")
+// 0x10 is shift. Nothing is held down while this runs unattended.
+print("shift held: {win.key.down(0x10)}")
