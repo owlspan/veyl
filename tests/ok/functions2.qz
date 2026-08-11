@@ -58,7 +58,7 @@ announce("this")
 print("immediate {fn(a: int, b: int) -> int { return a * b }(6, 7)}")
 
 // In collections.
-let steps: [] fn(int) -> int = [double, triple, add10]
+let steps: []fn(int) -> int = [double, triple, add10]
 let n = 1
 for stage in steps {
     n = stage(n)

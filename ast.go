@@ -137,6 +137,11 @@ type Binary struct {
 	// T is the result type, filled in by the checker. Codegen reads it to
 	// tell integer division from float division.
 	T *Type
+
+	// OpT is the type of the operands, which the result type does not
+	// reveal for a comparison: `xs == ys` is a bool either way, but how
+	// it is compared depends on what xs is.
+	OpT *Type
 }
 
 type Call struct {

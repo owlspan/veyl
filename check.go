@@ -1209,10 +1209,13 @@ func (c *Checker) binary(x *Binary) *Type {
 			c.errorAt(x, "cannot compare %s with %s", lt, rt)
 			return Unknown
 		}
-		if lt.IsCollection() {
-			c.errorAt(x, "cannot compare two values of type %s", lt)
+		if lt.IsFunc() {
+			c.errorAt(x, "cannot compare two functions")
 			return Unknown
 		}
+		// Lists, maps and structs compare by their contents, which is
+		// what people mean by == and what the printed form suggests.
+		x.OpT = lt
 		return Bool
 
 	case LT, LTE, GT, GTE:

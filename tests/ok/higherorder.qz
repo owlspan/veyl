@@ -25,8 +25,8 @@ print("all big {all(nums, fn(n: int) -> bool { return n > 4 })}")
 
 // each just does the work.
 each(words, fn(w: str) {
-        write("{upper(w)} ")
-    })
+    write("{upper(w)} ")
+})
 print("")
 
 // They compose, which is the point.

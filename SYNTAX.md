@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.11** — the language as currently implemented.
+**Version 0.12** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -178,7 +178,7 @@ generating any code. The rules are short:
 | `- * /` | two numbers of the same type |
 | `%` | two `int` — use `mod()` for floats |
 | `< <= > >=` | two numbers of the same type, or two `str` |
-| `== !=` | two values of the same type |
+| `== !=` | two values of the same type; lists, maps and structs compare by contents |
 | `&& \|\| !` | `bool` only |
 | `if` / `while` | the condition must be `bool` — `if 5` is an error |
 | `let x: T = v` | `v` must be a `T` |
@@ -1452,6 +1452,55 @@ text out.
 
 ---
 
+### `task` — doing several things at once
+
+`task.map` is `map`, run concurrently. Same arguments, same ordered
+results — switching between them is a one-word edit.
+
+```qz
+let pages = task.map(urls, fn(u: str) -> str {
+    return valueOr(http.get(u), "")
+})
+```
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `task.map(xs, f)` | list | `f` over each element, at once; results stay in order |
+| `task.mapLimit(xs, n, f)` | list | the same, at most `n` running at a time |
+| `task.each(xs, do)` | — | run `do` for each element, at once |
+| `task.all(fns)` | — | run a list of `fn()` at once and wait for the last |
+
+Everything has finished by the time the call returns. There is no way
+to start work that outlives the statement that started it.
+
+**There are no goroutines or channels**, deliberately. Quartz has no
+mutexes, no atomics and no way to talk about ownership, so raw shared
+memory would be the one place the compiler stops helping — every other
+sharp edge in the language is either checked or removed.
+
+**The one thing it cannot check is what your function touches.** A
+function passed to `task.map` runs on several threads at once, so it
+should compute a value from its argument rather than change something
+outside itself:
+
+```qz
+// Fine: each call produces a value.
+let sizes = task.map(paths, fn(p: str) -> int {
+    return valueOr(os.file.size(p), 0)
+})
+
+// Not fine: every call writes to the same list.
+let out: []int = []
+task.each(paths, fn(p: str) {
+    push(out, 1)        // a race, and nothing will tell you
+})
+```
+
+That is a real limit of this design, not an oversight — enforcing it
+needs an ownership system Quartz does not have.
+
+---
+
 ### `time` — clocks and formatting
 
 Format strings use readable tokens rather than a reference date:
@@ -1623,7 +1672,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.11 does not do yet.
+Honest list of what v0.12 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left

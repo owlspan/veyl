@@ -38,6 +38,17 @@ var collectionHelperDefs = map[string]helperDef{
 		code: `func __ptr[T any](v T) *T { return &v }`,
 	},
 
+	// Contents-based equality for the shapes Go will not compare.
+	// Reflection rather than generated per-type code: it only runs where
+	// == was written, and the alternative is a comparison function for
+	// every struct in the program whether or not it is ever compared.
+	"deepEqual": {
+		code: `func __deepEqual[T any](a T, b T) bool {
+	return reflect.DeepEqual(a, b)
+}`,
+		imports: []string{"reflect"},
+	},
+
 	// The result type. A failure carries a reason rather than just a
 	// flag, because "it failed" on its own is never enough to act on.
 	"result": {

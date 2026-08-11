@@ -48,6 +48,7 @@ type formatter struct {
 
 	lineStarted bool // something has been written on the current line
 	blankRun    int  // consecutive blank lines just emitted
+	lineIndent  int  // indent the current line began at
 
 	// literalBrace marks each `{` that opens a map or struct literal
 	// rather than a block. Literals hug their contents and do not
@@ -194,6 +195,7 @@ func (f *formatter) write(text string, i int) {
 	if !f.lineStarted {
 		f.out.WriteString(strings.Repeat("    ", f.indent))
 		f.lineStarted = true
+		f.lineIndent = f.indent
 		f.blankRun = 0
 	} else if f.needsSpace(i) || f.wouldMerge(i, text) {
 		f.out.WriteByte(' ')
@@ -245,6 +247,13 @@ func (f *formatter) endLine() {
 		f.out.WriteByte('\n')
 		f.lineStarted = false
 		f.blankRun = 0
+		// One line never adds more than one level of indent. Without
+		// this, `f(a, fn(n: int) {` opens a paren and a brace on the
+		// same line and the body lands two levels in, which is not how
+		// anyone writes it.
+		if f.indent > f.lineIndent+1 {
+			f.indent = f.lineIndent + 1
+		}
 		return
 	}
 	// A blank line. One is a paragraph break and worth keeping; three
@@ -282,10 +291,14 @@ func (f *formatter) needsSpace(i int) bool {
 		// Mirror image: `?int` is a prefix, `load(p)?` is a postfix.
 		return f.isPostfix(prev)
 	case RBRACKET:
-		// `[]int` is one type and hugs. `xs[0] + 1` does not — but an
-		// empty pair of brackets can only be a list type.
-		if right == IDENT && prev > 0 && f.toks[prev-1].Kind == LBRACKET {
-			return false
+		// `[]int`, `[]fn()` and `[]?int` are each one type and hug.
+		// `xs[0] + 1` does not — but an empty pair of brackets can only
+		// be a list type.
+		if prev > 0 && f.toks[prev-1].Kind == LBRACKET {
+			switch right {
+			case IDENT, FN, QUESTION, LBRACKET, LBRACE:
+				return false
+			}
 		}
 	case MINUS:
 		// A unary minus hugs its operand; a binary one does not.

@@ -270,6 +270,7 @@ func init() {
 	registerNet()
 	registerTime()
 	registerJson()
+	registerTask()
 	registerWindowsRuntime()
 }
 
@@ -787,6 +788,27 @@ func (c *Codegen) stmts(list []Stmt) {
 	}
 }
 
+// needsDeepEqual reports whether == on this type has to compare
+// contents rather than let Go do it. Go cannot compare slices or maps
+// at all, and compares a struct field by field only if every field is
+// itself comparable — which stops being true the moment one holds a
+// list.
+func needsDeepEqual(t *Type) bool {
+	if t == nil {
+		return false
+	}
+	switch t.Kind {
+	case KList, KMap, KStruct:
+		return true
+	case KNullable, KResult:
+		// Always, regardless of what is inside. A nullable is a pointer,
+		// so Go's == compares addresses: two ?int both holding 5 would
+		// come out unequal, which is not what anyone means.
+		return true
+	}
+	return false
+}
+
 // staticType reports the checker's verdict for an expression, or nil
 // where nothing recorded one.
 func staticType(e Expr) *Type {
@@ -960,6 +982,17 @@ func (c *Codegen) expr(e Expr) string {
 		return fmt.Sprintf("%s(%s)", op, c.expr(x.X))
 
 	case *Binary:
+		// Go compares slices and maps by identity, or refuses outright.
+		// Quartz compares them by contents, matching what == means for
+		// everything else in the language.
+		if (x.Op == EQ || x.Op == NEQ) && needsDeepEqual(x.OpT) {
+			c.need(nil, []string{"deepEqual"})
+			call := fmt.Sprintf("__deepEqual(%s, %s)", c.expr(x.L), c.expr(x.R))
+			if x.Op == NEQ {
+				return "(!" + call + ")"
+			}
+			return call
+		}
 		// Parens preserve the tree's grouping regardless of Go precedence.
 		return fmt.Sprintf("(%s %s %s)", c.expr(x.L), goBinOp(x.Op), c.expr(x.R))
 

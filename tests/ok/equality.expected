@@ -1,0 +1,12 @@
+lists true false true
+empty true
+separate but equal true
+changed false ["x", "y", "z"]
+maps true false
+key order does not matter true
+structs true false
+nested true false
+lists of structs true
+map of lists true
+nullable true false true
+scalars true true true true
