@@ -18,7 +18,7 @@
 ;     go build -o quartz.exe .
 
 #define AppName "Quartz"
-#define AppVersion "0.10"
+#define AppVersion "0.12"
 #define AppPublisher "Quartz"
 #define AppExeName "quartz.exe"
 
