@@ -55,6 +55,11 @@ func main() {
 	case "-v", "--version", "version":
 		fmt.Printf("quartz %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
 		return
+	case "builtins":
+		// Exists so editor tooling can be generated from the compiler
+		// rather than transcribed from it and left to drift.
+		printBuiltins()
+		return
 	default:
 		path = args[0]
 	}
@@ -211,6 +216,27 @@ func run(cmd, path string) error {
 		return err
 	}
 	return nil
+}
+
+// printBuiltins lists every builtin name, one per line, bare names
+// first and then the dotted library paths.
+func printBuiltins() {
+	var bare, dotted []string
+	for name := range builtins {
+		if strings.Contains(name, ".") {
+			dotted = append(dotted, name)
+		} else {
+			bare = append(bare, name)
+		}
+	}
+	for name := range builtinConsts {
+		bare = append(bare, name)
+	}
+	sort.Strings(bare)
+	sort.Strings(dotted)
+	for _, n := range append(bare, dotted...) {
+		fmt.Println(n)
+	}
 }
 
 // formatFile rewrites a file in place, or leaves it alone and says why.

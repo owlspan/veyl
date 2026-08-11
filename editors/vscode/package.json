@@ -1,0 +1,44 @@
+{
+  "name": "quartz-lang",
+  "displayName": "Quartz",
+  "description": "Syntax highlighting for the Quartz programming language",
+  "version": "0.10.0",
+  "publisher": "quartz",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "quartz",
+        "aliases": [
+          "Quartz",
+          "quartz"
+        ],
+        "extensions": [
+          ".qz"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "quartz",
+        "scopeName": "source.quartz",
+        "path": "./syntaxes/quartz.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[quartz]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      }
+    }
+  }
+}

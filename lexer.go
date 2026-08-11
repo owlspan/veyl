@@ -74,18 +74,73 @@ func (l *Lexer) ident(line, col int) {
 
 func (l *Lexer) number(line, col int) {
 	start := l.pos
-	for !l.atEnd() && isDigit(l.peek()) {
+
+	// 0x and 0b bases. A language with & | ^ << >> in it needs a way to
+	// write a mask that looks like one. Go accepts the same spellings,
+	// so these pass straight through codegen.
+	if l.peek() == '0' && !l.atEnd() {
+		switch l.peekNext() {
+		case 'x', 'X':
+			l.advance()
+			l.advance()
+			if !isHexDigit(l.peek()) {
+				l.errorf(line, col, "a hex literal needs at least one digit after 0x")
+			}
+			for !l.atEnd() && (isHexDigit(l.peek()) || l.peek() == '_') {
+				l.advance()
+			}
+			l.endNumber(start, line, col, "hex")
+			return
+		case 'b', 'B':
+			l.advance()
+			l.advance()
+			if l.peek() != '0' && l.peek() != '1' {
+				l.errorf(line, col, "a binary literal needs at least one 0 or 1 after 0b")
+			}
+			for !l.atEnd() && (l.peek() == '0' || l.peek() == '1' || l.peek() == '_') {
+				l.advance()
+			}
+			l.endNumber(start, line, col, "binary")
+			return
+		}
+	}
+
+	// Underscores group digits — 1_000_000 — and are ignored by Go too.
+	for !l.atEnd() && (isDigit(l.peek()) || l.peek() == '_') {
 		l.advance()
 	}
 	// a fractional part, but only if a digit actually follows the dot,
 	// so that `1.method()` still lexes as NUMBER DOT IDENT later on
 	if !l.atEnd() && l.peek() == '.' && isDigit(l.peekNext()) {
 		l.advance() // consume '.'
-		for !l.atEnd() && isDigit(l.peek()) {
+		for !l.atEnd() && (isDigit(l.peek()) || l.peek() == '_') {
 			l.advance()
 		}
 	}
+	l.endNumber(start, line, col, "number")
+}
+
+// endNumber emits a numeric literal, refusing one that runs straight
+// into a letter or digit.
+//
+// Without this, `0b1210` quietly lexes as `0b1` followed by `210` — two
+// numbers where the author wrote one. A malformed literal should say so
+// rather than parse as something else entirely.
+func (l *Lexer) endNumber(start, line, col int, base string) {
+	if !l.atEnd() && (isAlpha(l.peek()) || isDigit(l.peek())) {
+		bad := l.peek()
+		for !l.atEnd() && (isAlpha(l.peek()) || isDigit(l.peek()) || l.peek() == '_') {
+			l.advance()
+		}
+		l.errorf(line, col, "%q is not a %s digit, in %s", string(bad), base, l.src[start:l.pos])
+		l.emit(ILLEGAL, l.src[start:l.pos], line, col)
+		return
+	}
 	l.emit(NUMBER, l.src[start:l.pos], line, col)
+}
+
+func isHexDigit(c byte) bool {
+	return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 func (l *Lexer) str(line, col int) {

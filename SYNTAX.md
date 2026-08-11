@@ -146,6 +146,16 @@ total = 5           // error: undefined variable "total"
 A number literal is an `int` unless it contains a `.`, in which case it
 is a `float`.
 
+Integers can be written in decimal, hex or binary, and `_` may be used
+to group digits anywhere:
+
+```qz
+let mask  = 0xFF          // 255
+let bits  = 0b1010_1010   // 170
+let big   = 1_000_000
+let ratio = 1_234.5
+```
+
 Quartz does not convert between types automatically. Mixing them is an
 error — use `str()`, `int()`, or `float()` to convert explicitly.
 
@@ -574,7 +584,8 @@ Compound assignment: `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`.
 
 ### Bitwise operators
 
-`&` `|` `^` `~` `<<` `>>` work on `int` only.
+`&` `|` `^` `~` `<<` `>>` work on `int` only. Masks read better in hex
+or binary — `0xFF`, `0b1010` — and `_` can group the digits.
 
 ```qz
 let flags = 0
