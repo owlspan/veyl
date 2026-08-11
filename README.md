@@ -135,8 +135,10 @@ go test -run TestQuartz -update .
 | ------------------------ | --------------------------------------------- |
 | `quartz run f.qz`        | compile and run                                |
 | `quartz build f.qz`      | write an executable next to the source         |
+| `quartz fmt f.qz`        | reformat the file in place                     |
 | `quartz emit f.qz`       | print the generated Go                         |
 | `quartz tokens f.qz`     | print the token stream                         |
+| `quartz version`         | print the version                              |
 | `quartz f.qz`            | same as `run`                                  |
 
 `emit` is the single most useful debugging tool in the project. When a
@@ -487,8 +489,10 @@ Honest list of what v0.10 does not do.
   the rest of the function.
 - **Garbage collected.** Manual memory, pointers, and `unsafe` require
   a C backend and are not available.
-- **No tooling yet.** No formatter, no warnings for unused variables or
-  unreachable code, no editor support, no installer.
+- **The formatter does not reflow lines.** `quartz fmt` fixes
+  indentation and spacing; where you break a line is left to you.
+- **No editor support and no installer.** A VS Code grammar and an
+  installer are the remaining v1.0 items.
 - **Windows only for GUI.** No Linux or macOS equivalent yet.
 - **Windows are blank.** `openWindow` opens and manages a real window,
   but there is no drawing or event API — no buttons, no input handling,

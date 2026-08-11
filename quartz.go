@@ -11,15 +11,27 @@ import (
 	"strings"
 )
 
-const usage = `Quartz compiler
+// Version is stamped into `quartz version`. Bump it with the tag.
+const Version = "0.10"
+
+const usage = `Quartz ` + Version + ` — a small language that compiles to native executables
 
 usage:
   quartz run    <file.qz>    compile and run
   quartz build  <file.qz>    compile to an executable next to the source
   quartz emit   <file.qz>    print the generated Go
   quartz tokens <file.qz>    print the token stream
+  quartz version             print the version
+  quartz help                print this
 
   quartz <file.qz>           same as 'run'
+
+environment:
+  QUARTZ_TARGET=windows      cross-compile for another OS
+  QUARTZ_QUIET=1             suppress warnings
+
+Go must be installed: Quartz hands its generated code to the Go
+toolchain. Language reference: SYNTAX.md
 `
 
 func main() {
@@ -31,7 +43,7 @@ func main() {
 
 	cmd, path := "run", ""
 	switch args[0] {
-	case "run", "build", "emit", "tokens":
+	case "run", "build", "emit", "tokens", "fmt":
 		if len(args) < 2 {
 			fmt.Fprintf(os.Stderr, "quartz: %s needs a file\n", args[0])
 			os.Exit(64)
@@ -39,6 +51,9 @@ func main() {
 		cmd, path = args[0], args[1]
 	case "-h", "--help", "help":
 		fmt.Print(usage)
+		return
+	case "-v", "--version", "version":
+		fmt.Printf("quartz %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
 		return
 	default:
 		path = args[0]
@@ -65,6 +80,14 @@ func run(cmd, path string) error {
 	}
 	src := string(srcBytes)
 	name := filepath.Base(abs)
+
+	// ---- format ----
+	// Formatting happens before anything else, because it only needs the
+	// file to lex, not to make sense. Reformatting a program you are
+	// halfway through writing is exactly when you want it most.
+	if cmd == "fmt" {
+		return formatFile(abs, name, src)
+	}
 
 	// ---- lex ----
 	lx := NewLexer(name, src)
@@ -109,6 +132,11 @@ func run(cmd, path string) error {
 	if err := reportErrors(ck.Errors); err != nil {
 		return err
 	}
+
+	// Warnings are held back until the program is known to compile.
+	// Stacking "unused variable" on top of a dozen type errors buries
+	// the thing that actually needs fixing.
+	reportWarnings(rs.Warnings)
 
 	// ---- codegen ----
 	target := os.Getenv("QUARTZ_TARGET")
@@ -182,6 +210,26 @@ func run(cmd, path string) error {
 		}
 		return err
 	}
+	return nil
+}
+
+// formatFile rewrites a file in place, or leaves it alone and says why.
+// Writing only when something changed keeps timestamps stable, which
+// matters to anything watching the file.
+func formatFile(abs, name, src string) error {
+	out, ok := Format(name, src)
+	if !ok {
+		return fmt.Errorf("%s does not lex cleanly, so it was left alone — "+
+			"fix the syntax error first, then format", name)
+	}
+	if out == src {
+		fmt.Printf("%s is already formatted\n", name)
+		return nil
+	}
+	if err := os.WriteFile(abs, []byte(out), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("formatted %s\n", name)
 	return nil
 }
 
@@ -308,6 +356,19 @@ func stampFile(prog *Program, abs string) {
 	}
 	for _, g := range prog.Globals {
 		g.File = abs
+	}
+}
+
+// reportWarnings prints things worth saying that are not worth
+// stopping for. Set QUARTZ_QUIET to silence them — useful when a
+// warning is known and the noise is in the way.
+func reportWarnings(warnings []string) {
+	if len(warnings) == 0 || os.Getenv("QUARTZ_QUIET") != "" {
+		return
+	}
+	sortByPosition(warnings)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
 }
 

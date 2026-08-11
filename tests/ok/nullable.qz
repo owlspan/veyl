@@ -73,9 +73,9 @@ print("firstOr {firstOr([9, 8], 0)} {firstOr([], 5)}")
 
 // Nullables inside collections and structs.
 struct Config {
-    name:    str
+    name: str
     timeout: ?int
-    parent:  ?str
+    parent: ?str
 }
 
 let a = Config{name: "a", timeout: 30, parent: nil}
@@ -93,7 +93,7 @@ fn describe(c: Config) -> str {
 print("{describe(a)}")
 print("{describe(b)}")
 
-let slots: []?int = [1, nil, 3]
+let slots: []? int = [1, nil, 3]
 let present = 0
 for slot in slots {
     if slot != nil {

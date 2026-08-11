@@ -48,6 +48,104 @@ func TestQuartzErrors(t *testing.T) {
 	runSuite(t, "tests/err", true)
 }
 
+// TestFormatPreservesBehaviour is the test that matters for a
+// formatter: it must not change what a program does.
+//
+// The whole tests/ok tree is copied, every file in it is formatted, and
+// each program is run again against the same golden output. Formatting
+// is also checked to be idempotent — a second pass must change nothing,
+// or the formatter has no fixed point and `quartz fmt` would rewrite
+// the file forever.
+func TestFormatPreservesBehaviour(t *testing.T) {
+	quartz := buildCompiler(t)
+
+	work := t.TempDir()
+	if err := copyTree("tests/ok", work); err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := filepath.Glob(filepath.Join(work, "**", "*.qz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, _ := filepath.Glob(filepath.Join(work, "*.qz"))
+	sources = append(sources, top...)
+
+	for _, src := range sources {
+		before, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command(quartz, "fmt", src).CombinedOutput(); err != nil {
+			t.Fatalf("formatting %s failed: %v\n%s", filepath.Base(src), err, out)
+		}
+		once, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exec.Command(quartz, "fmt", src).CombinedOutput(); err != nil {
+			t.Fatal(err)
+		}
+		twice, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(once) != string(twice) {
+			t.Errorf("%s: formatting is not idempotent", filepath.Base(src))
+		}
+		_ = before
+	}
+
+	cases, err := filepath.Glob(filepath.Join(work, "*.qz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range cases {
+		src := src
+		name := strings.TrimSuffix(filepath.Base(src), ".qz")
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.Command(quartz, "run", src)
+			cmd.Stdin = strings.NewReader("")
+			raw, runErr := cmd.CombinedOutput()
+			if runErr != nil {
+				t.Fatalf("formatted program no longer runs: %v\n%s", runErr, raw)
+			}
+			got := normalize(string(raw), src)
+
+			wantBytes, err := os.ReadFile(filepath.Join("tests/ok", name+".expected"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := normalizeNewlines(string(wantBytes)); got != want {
+				t.Errorf("formatting changed the output\n--- want ---\n%s\n--- got ---\n%s", want, got)
+			}
+		})
+	}
+}
+
+func copyTree(from, to string) error {
+	return filepath.Walk(from, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(to, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+}
+
 func runSuite(t *testing.T, dir string, wantFailure bool) {
 	quartz := buildCompiler(t)
 

@@ -15,6 +15,12 @@ type Lexer struct {
 
 	tokens []Token
 	Errors []string
+
+	// KeepComments makes the lexer emit COMMENT tokens instead of
+	// discarding them. Only the formatter wants this: every other stage
+	// would have to skip them, and a formatter that deleted every
+	// comment in the file would be worse than no formatter.
+	KeepComments bool
 }
 
 func NewLexer(file, src string) *Lexer {
@@ -83,6 +89,7 @@ func (l *Lexer) number(line, col int) {
 }
 
 func (l *Lexer) str(line, col int) {
+	rawStart := l.pos
 	l.advance() // opening quote
 
 	var sb strings.Builder
@@ -130,7 +137,7 @@ func (l *Lexer) str(line, col int) {
 		case c == '"' && depth == 0:
 			// Only a quote at brace-depth zero ends the literal, which is
 			// what lets "{f("x")}" nest a string inside an interpolation.
-			l.emit(STRING, sb.String(), line, col)
+			l.emitRaw(STRING, sb.String(), l.src[rawStart:l.pos], line, col)
 			return
 
 		case c == '"':
@@ -289,12 +296,18 @@ func (l *Lexer) skipSpaceAndComments() {
 			l.advance()
 
 		case c == '/' && l.peekNext() == '/':
+			line, col := l.line, l.col
+			start := l.pos
 			for !l.atEnd() && l.peek() != '\n' {
 				l.advance()
+			}
+			if l.KeepComments {
+				l.emit(COMMENT, l.src[start:l.pos], line, col)
 			}
 
 		case c == '/' && l.peekNext() == '*':
 			line, col := l.line, l.col
+			start := l.pos
 			l.advance() // '/'
 			l.advance() // '*'
 			depth := 1
@@ -315,6 +328,9 @@ func (l *Lexer) skipSpaceAndComments() {
 				default:
 					l.advance()
 				}
+			}
+			if l.KeepComments {
+				l.emit(COMMENT, l.src[start:l.pos], line, col)
 			}
 
 		default:
@@ -363,6 +379,16 @@ func (l *Lexer) match(expected byte) bool {
 
 func (l *Lexer) emit(k Kind, lex string, line, col int) {
 	l.tokens = append(l.tokens, Token{Kind: k, Lex: lex, Line: line, Col: col})
+}
+
+// emitRaw records the original source text alongside the decoded value.
+// Only worth doing where the two differ, and only when something is
+// going to write the source back out.
+func (l *Lexer) emitRaw(k Kind, lex, raw string, line, col int) {
+	if !l.KeepComments {
+		raw = ""
+	}
+	l.tokens = append(l.tokens, Token{Kind: k, Lex: lex, Line: line, Col: col, Raw: raw})
 }
 
 func (l *Lexer) illegal(line, col int, lex string) {

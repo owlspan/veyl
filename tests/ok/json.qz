@@ -1,19 +1,19 @@
 struct Address {
     city: str
-    zip:  str
+    zip: str
 }
 
 struct Person {
-    name:    str
-    age:     int
-    height:  float
-    active:  bool
-    tags:    []str
+    name: str
+    age: int
+    height: float
+    active: bool
+    tags: []str
     address: Address
 }
 
 // encoding uses the field names as written in Quartz
-let ada = Person{
+let ada = Person {
     name: "ada",
     age: 36,
     height: 1.7,
@@ -77,7 +77,7 @@ print("fallback {safe.name}")
 
 // a struct with a list of structs, the shape real APIs have
 struct Team {
-    label:   str
+    label: str
     members: []Person
 }
 let team = Team{label: "founders", members: [ada, Person{name: "alan", age: 41}]}

@@ -91,6 +91,10 @@ const (
 	COLON
 	QUESTION
 
+	// COMMENT is only produced when the lexer is asked to keep them,
+	// which only the formatter does.
+	COMMENT
+
 	ILLEGAL
 )
 
@@ -175,6 +179,7 @@ var kindNames = [...]string{
 	"DOT",
 	"COLON",
 	"QUESTION",
+	"COMMENT",
 
 	"ILLEGAL",
 }
@@ -223,6 +228,20 @@ type Token struct {
 	Lex  string // for STRING this is the *decoded* value, not the raw source
 	Line int
 	Col  int
+
+	// Raw is the exact source text, kept only when the lexer is asked to
+	// preserve trivia. The formatter needs it: Lex has already had its
+	// escapes decoded and its quotes stripped, so writing Lex back out
+	// would turn "a\nb" into a real newline and lose the quotes with it.
+	Raw string
+}
+
+// Text returns what should be written back to a source file.
+func (t Token) Text() string {
+	if t.Raw != "" {
+		return t.Raw
+	}
+	return t.Lex
 }
 
 func (t Token) String() string {

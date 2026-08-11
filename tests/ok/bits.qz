@@ -1,7 +1,7 @@
 // ---- bitwise operators ----
 
-let a = 12        // 1100
-let b = 10        // 1010
+let a = 12 // 1100
+let b = 10 // 1010
 
 print("and {a & b} or {a | b} xor {a ^ b}")
 print("shl {a << 2} shr {a >> 2}")
@@ -72,10 +72,10 @@ print("170 in binary {toBinary(170, 8)}")
 
 fn describe(code: int) -> str {
     match code {
-        200      => return "ok"
+        200 => return "ok"
         301, 302 => return "redirect"
         404, 410 => return "gone"
-        else     => return "unknown"
+        else => return "unknown"
     }
 }
 print("{describe(200)} {describe(302)} {describe(404)} {describe(500)}")
@@ -95,14 +95,14 @@ print("")
 // matching on strings and bools
 let command = "stop"
 match command {
-    "go"   => print("going")
+    "go" => print("going")
     "stop" => print("stopping")
-    else   => print("no idea")
+    else => print("no idea")
 }
 
 let ready = false
 match ready {
-    true  => print("ready")
+    true => print("ready")
     false => print("not ready")
 }
 

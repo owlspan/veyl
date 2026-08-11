@@ -349,9 +349,7 @@ func (c *Codegen) Generate(p *Program) string {
 
 	c.raw("func main() {")
 	c.indent = 1
-	for _, s := range p.Main {
-		c.stmt(s)
-	}
+	c.stmts(p.Main)
 	c.indent = 0
 	c.raw("}")
 
@@ -525,9 +523,7 @@ func (c *Codegen) fnDecl(f *FnDecl) {
 	prevRet := c.curFnRet
 	c.curFnRet = f.RetT
 	c.indent = 1
-	for _, s := range f.Body.Stmts {
-		c.stmt(s)
-	}
+	c.stmts(f.Body.Stmts)
 	c.indent = 0
 	c.curFnRet = prevRet
 	c.raw("}")
@@ -763,9 +759,7 @@ func (c *Codegen) forEach(st *ForStmt) {
 func (c *Codegen) armBody(s Stmt) {
 	c.indent++
 	if b, isBlock := s.(*Block); isBlock {
-		for _, inner := range b.Stmts {
-			c.stmt(inner)
-		}
+		c.stmts(b.Stmts)
 	} else if s != nil {
 		c.stmt(s)
 	}
@@ -774,10 +768,23 @@ func (c *Codegen) armBody(s Stmt) {
 
 func (c *Codegen) blockBody(b *Block) {
 	c.indent++
-	for _, s := range b.Stmts {
-		c.stmt(s)
-	}
+	c.stmts(b.Stmts)
 	c.indent--
+}
+
+// stmts emits a run of statements, stopping after one that always
+// transfers control away. Emitting the rest would be pointless, and
+// worse than pointless: Go decides whether a function returns by
+// looking at its final statement, so a trailing unreachable line makes
+// the backend reject a function that is perfectly fine. The resolver
+// has already warned about the dead code.
+func (c *Codegen) stmts(list []Stmt) {
+	for _, s := range list {
+		c.stmt(s)
+		if exits(s) {
+			return
+		}
+	}
 }
 
 // staticType reports the checker's verdict for an expression, or nil

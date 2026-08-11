@@ -27,7 +27,7 @@ match xs {
 // arms must agree with the subject's type
 match 5 {
     "five" => print("no")
-    else   => print("no")
+    else => print("no")
 }
 
 // duplicate arms are dead code

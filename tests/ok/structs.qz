@@ -5,7 +5,7 @@ struct Point {
 
 struct User {
     name: str
-    age:  int
+    age: int
     tags: []str
 }
 
@@ -104,7 +104,7 @@ print("length of a fresh point {midpoint(origin, Point{x: 6.0, y: 8.0}).length()
 // nested structs
 struct Line {
     from: Point
-    to:   Point
+    to: Point
 }
 let seg = Line{from: Point{x: 0.0, y: 0.0}, to: Point{x: 3.0, y: 4.0}}
 print("segment {seg.from.show()} to {seg.to.show()}")

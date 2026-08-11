@@ -1467,9 +1467,42 @@ defer own unsafe
 | ------------------------ | --------------------------------------------- |
 | `quartz run f.qz`        | compile and run                                |
 | `quartz build f.qz`      | write an executable next to the source         |
+| `quartz fmt f.qz`        | reformat the file in place                     |
 | `quartz emit f.qz`       | print the generated Go                         |
 | `quartz tokens f.qz`     | print the token stream                         |
+| `quartz version`         | print the version                              |
 | `quartz f.qz`            | same as `run`                                  |
+
+### Formatting
+
+`quartz fmt` fixes indentation and spacing, collapses runs of blank
+lines, and leaves everything else alone. It does **not** reflow your
+line breaks — where you end a line is your decision.
+
+It works on the token stream rather than the parsed program, which
+means **comments survive**, and anything it does not understand passes
+through untouched. A file that does not lex is left completely alone
+rather than half-rewritten:
+
+```
+notes.qz does not lex cleanly, so it was left alone
+```
+
+### Warnings
+
+Some things are worth saying but not worth refusing to compile over:
+
+```
+warning: app.qz:12:5: this can never run — the 'return' above it always leaves
+warning: app.qz:17:1: "leftover" is declared but never used
+```
+
+Warnings go to stderr, and only once the program is known to compile —
+stacking them on top of a dozen type errors buries the thing that
+actually needs fixing. Set `QUARTZ_QUIET=1` to silence them.
+
+Unreachable code is reported once per block, not once per statement,
+and it is not emitted into the compiled program.
 
 `emit` and `tokens` are debugging aids — `emit` in particular is the
 fastest way to understand what the compiler did with your program.

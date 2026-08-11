@@ -30,6 +30,16 @@ type Resolver struct {
 	inGlobal bool            // walking a global's initialiser
 	loops    int             // nesting depth, so break/continue can be validated
 	Errors   []string
+
+	// Warnings are things worth saying that are not worth refusing to
+	// compile over. They are reported and then ignored.
+	Warnings []string
+}
+
+func (r *Resolver) warnAt(n Node, format string, args ...any) {
+	line, col := n.Pos()
+	r.Warnings = append(r.Warnings,
+		fmt.Sprintf("%s:%d:%d: %s", r.file, line, col, fmt.Sprintf(format, args...)))
 }
 
 // visible reports whether a declaration in declFile may be used from
@@ -63,8 +73,16 @@ func (r *Resolver) pop() {
 	// Hand usage information back to the AST so codegen knows whether
 	// it needs to emit a `_ = x` discard for Go's unused-variable rule.
 	for _, info := range top {
-		if info.decl != nil {
-			info.decl.Used = info.used
+		if info.decl == nil {
+			continue
+		}
+		info.decl.Used = info.used
+		// A name that is written and never read is usually a typo or a
+		// leftover. Go refuses to compile these; Quartz allows them and
+		// says so, because stopping a half-written program from running
+		// is worse than the mistake.
+		if !info.used && !info.decl.Global {
+			r.warnAt(info.decl, "%q is declared but never used", info.decl.Name)
 		}
 	}
 	r.scopes = r.scopes[:len(r.scopes)-1]
@@ -171,9 +189,7 @@ func (r *Resolver) Resolve(p *Program) {
 	r.curFn = nil
 	r.curFile = r.mainFile
 	r.push()
-	for _, s := range p.Main {
-		r.stmt(s)
-	}
+	r.walkStmts(p.Main)
 	r.pop()
 	r.pop() // globals
 }
@@ -219,9 +235,7 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 		r.errorAt(f, "a method needs 'self' as its first parameter, as in: fn %s(self)", f.Name)
 	}
 
-	for _, s := range f.Body.Stmts {
-		r.stmt(s)
-	}
+	r.walkStmts(f.Body.Stmts)
 
 	if f.Ret != "" && !blockReturns(f.Body) {
 		r.errorAt(f, "function %q must return a value of type %s on every path", f.Name, f.Ret)
@@ -296,9 +310,7 @@ func (r *Resolver) stmt(s Stmt) {
 			r.declare(st.Var2, &varInfo{used: true}, st)
 		}
 		r.loops++
-		for _, s := range st.Body.Stmts {
-			r.stmt(s)
-		}
+		r.walkStmts(st.Body.Stmts)
 		r.loops--
 		r.pop()
 
@@ -344,10 +356,63 @@ func (r *Resolver) stmt(s Stmt) {
 
 func (r *Resolver) block(b *Block) {
 	r.push()
-	for _, s := range b.Stmts {
+	r.walkStmts(b.Stmts)
+	r.pop()
+}
+
+// walkStmts resolves a run of statements and reports the first one that
+// can never run. Only the first: once control has left, everything
+// after it is equally unreachable, and ten warnings for one mistake is
+// noise.
+func (r *Resolver) walkStmts(stmts []Stmt) {
+	warned := false
+	for i, s := range stmts {
+		if !warned && i > 0 && exits(stmts[i-1]) {
+			r.warnAt(s, "this can never run — %s above it always leaves", exitWord(stmts[i-1]))
+			warned = true
+		}
 		r.stmt(s)
 	}
-	r.pop()
+}
+
+// exits reports whether a statement always transfers control away, so
+// nothing after it in the same block can run.
+func exits(s Stmt) bool {
+	switch st := s.(type) {
+	case *ReturnStmt, *BreakStmt, *ContinueStmt:
+		return true
+	case *Block:
+		return len(st.Stmts) > 0 && exits(st.Stmts[len(st.Stmts)-1])
+	case *IfStmt:
+		if st.Else == nil {
+			return false
+		}
+		then := st.Then
+		return len(then.Stmts) > 0 && exits(then.Stmts[len(then.Stmts)-1]) && exits(st.Else)
+	case *MatchStmt:
+		if st.Else == nil || !exits(st.Else) {
+			return false
+		}
+		for _, arm := range st.Cases {
+			if !exits(arm.Body) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func exitWord(s Stmt) string {
+	switch s.(type) {
+	case *BreakStmt:
+		return "the 'break'"
+	case *ContinueStmt:
+		return "the 'continue'"
+	case *ReturnStmt:
+		return "the 'return'"
+	}
+	return "the statement"
 }
 
 // ---- expressions ----
@@ -583,14 +648,26 @@ func hasSelf(f *FnDecl) bool {
 // ---- return-path analysis ----
 
 // blockReturns reports whether a block is guaranteed to hit a return.
-// Deliberately conservative: it only understands trailing returns and
-// if/else where both sides return. That's enough to catch the common
-// mistake without producing false positives.
+//
+// Any statement that always returns settles it, not just the last one:
+// if control cannot get past statement three, the function returns no
+// matter what statements four and five look like. Anything after is
+// unreachable, and walkStmts warns about that separately.
+//
+// Still conservative about what counts as "always returns" — an
+// if/else where both sides do, a match with an else where every arm
+// does, and nothing cleverer. A function whose only return is inside a
+// loop is rejected, because proving the loop runs is a different job.
 func blockReturns(b *Block) bool {
-	if b == nil || len(b.Stmts) == 0 {
+	if b == nil {
 		return false
 	}
-	return stmtReturns(b.Stmts[len(b.Stmts)-1])
+	for _, s := range b.Stmts {
+		if stmtReturns(s) {
+			return true
+		}
+	}
+	return false
 }
 
 func stmtReturns(s Stmt) bool {
