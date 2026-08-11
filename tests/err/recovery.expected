@@ -1,0 +1,5 @@
+error: recovery.qz:5:24: expected ')' to close the parameter list, found "->"
+error: recovery.qz:13:1: expected ']' to close the list opened on line 9, found "print"
+error: recovery.qz:19:1: expected '}' to close the map opened on line 15, found "let"
+error: recovery.qz:20:1: expected ')' to close the group opened on line 19, found "print"
+quartz: 4 error(s)

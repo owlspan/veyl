@@ -15,7 +15,13 @@ type Parser struct {
 	i       int
 	file    string
 	noBrace int
-	Errors  []string
+
+	// stmtErrMark is how many errors had been reported when the current
+	// statement started, so endStmt can tell a fresh mistake from debris
+	// left by one already reported.
+	stmtErrMark int
+
+	Errors []string
 }
 
 func NewParser(file string, toks []Token) *Parser {
@@ -80,6 +86,27 @@ func describe(t Token) string {
 	default:
 		return fmt.Sprintf("%q", t.Lex)
 	}
+}
+
+// expectClose consumes a closing bracket, and when it is missing says
+// where the thing being closed was opened.
+//
+// "expected '}'" is nearly useless in a file of any size — the reader
+// already knows a brace is missing, and what they need is which one.
+// The opening line is only mentioned when it differs from where the
+// error surfaced, since repeating the current line is noise.
+func (p *Parser) expectClose(k Kind, opener Token, closer, what string) Token {
+	if p.check(k) {
+		return p.advance()
+	}
+	cur := p.cur()
+	if cur.Line == opener.Line {
+		p.errorAt(cur, "expected %s to close the %s, found %s", closer, what, describe(cur))
+	} else {
+		p.errorAt(cur, "expected %s to close the %s opened on line %d, found %s",
+			closer, what, opener.Line, describe(cur))
+	}
+	return cur
 }
 
 func (p *Parser) errorAt(t Token, format string, args ...any) {
@@ -201,7 +228,7 @@ func (p *Parser) parseStruct() *StructDecl {
 	name := p.expect(IDENT, "a struct name")
 	d := &StructDecl{pos: at(kw), Name: name.Lex}
 
-	p.expect(LBRACE, "'{'")
+	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
 
 	for !p.check(RBRACE) && !p.check(EOF) {
@@ -222,7 +249,7 @@ func (p *Parser) parseStruct() *StructDecl {
 			p.advance()
 		}
 	}
-	p.expect(RBRACE, "'}' to close the struct")
+	p.expectClose(RBRACE, open, "'}'", "struct")
 	p.endStmt()
 	return d
 }
@@ -234,7 +261,7 @@ func (p *Parser) parseImpl() *ImplBlock {
 	name := p.expect(IDENT, "a struct name after 'impl'")
 	b := &ImplBlock{pos: at(kw), Type: name.Lex}
 
-	p.expect(LBRACE, "'{'")
+	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
 
 	for !p.check(RBRACE) && !p.check(EOF) {
@@ -263,7 +290,7 @@ func (p *Parser) parseImpl() *ImplBlock {
 			p.advance()
 		}
 	}
-	p.expect(RBRACE, "'}' to close the impl block")
+	p.expectClose(RBRACE, open, "'}'", "impl block")
 	p.endStmt()
 	return b
 }
@@ -289,7 +316,7 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 	}
 	f := &FnDecl{pos: at(kw), Name: name}
 
-	p.expect(LPAREN, "'('")
+	open := p.expect(LPAREN, "'('")
 	p.skipNewlines()
 
 	if !p.check(RPAREN) {
@@ -322,7 +349,7 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 		}
 	}
 	p.skipNewlines()
-	p.expect(RPAREN, "')'")
+	p.expectClose(RPAREN, open, "')'", "parameter list")
 
 	if p.match(ARROW) {
 		f.Ret = p.parseTypeRef()
@@ -385,6 +412,7 @@ func (p *Parser) parseTypeRef() string {
 // ---- statements ----
 
 func (p *Parser) parseStmt() Stmt {
+	p.stmtErrMark = len(p.Errors)
 	switch p.cur().Kind {
 	case LET, CONST:
 		return p.parseLet()
@@ -577,7 +605,7 @@ func (p *Parser) parseMatch() Stmt {
 		}
 	}
 
-	p.expect(RBRACE, "'}' to close the match")
+	p.expectClose(RBRACE, kw, "'}'", "match")
 	p.endStmt()
 	return st
 }
@@ -605,7 +633,7 @@ func (p *Parser) parseBlock() *Block {
 		}
 		p.skipNewlines()
 	}
-	p.expect(RBRACE, "'}'")
+	p.expectClose(RBRACE, lb, "'}'", "block")
 	return b
 }
 
@@ -643,6 +671,13 @@ func (p *Parser) endStmt() {
 		return
 	}
 	if p.check(RBRACE) || p.check(EOF) {
+		return
+	}
+	// If this statement already produced an error, whatever the cursor
+	// is sitting on is debris from that, not a second mistake. One
+	// missing `]` should not also be reported as a stray `print`.
+	if len(p.Errors) > p.stmtErrMark {
+		p.synchronize()
 		return
 	}
 	p.errorAt(p.cur(), "unexpected %s after statement", describe(p.cur()))
@@ -727,7 +762,7 @@ func (p *Parser) parsePostfix() Expr {
 				}
 			}
 			p.skipNewlines()
-			p.expect(RPAREN, "')'")
+			p.expectClose(RPAREN, lp, "')'", "call")
 			x = call
 
 		case p.check(LBRACKET):
@@ -735,7 +770,7 @@ func (p *Parser) parsePostfix() Expr {
 			p.skipNewlines()
 			idx := p.grouped(func() Expr { return p.parseExpr(0) })
 			p.skipNewlines()
-			p.expect(RBRACKET, "']'")
+			p.expectClose(RBRACKET, lb, "']'", "index")
 			x = &Index{pos: at(lb), X: x, Idx: idx}
 
 		case p.check(LBRACE) && p.noBrace == 0 && isStructLitTarget(x):
@@ -799,11 +834,11 @@ func (p *Parser) parsePrimary() Expr {
 		return &Ident{pos: at(t), Name: "self"}
 
 	case LPAREN:
-		p.advance()
+		open := p.advance()
 		p.skipNewlines()
 		x := p.grouped(func() Expr { return p.parseExpr(0) })
 		p.skipNewlines()
-		p.expect(RPAREN, "')'")
+		p.expectClose(RPAREN, open, "')'", "group")
 		return x
 
 	case LBRACKET:
@@ -842,7 +877,7 @@ func (p *Parser) parseStructLit(name *Ident) Expr {
 	line, col := name.Pos()
 	lit := &StructLit{pos: pos{Line: line, Col: col}, Name: name.Name}
 
-	p.advance() // '{'
+	open := p.advance() // '{'
 	p.skipNewlines()
 
 	for !p.check(RBRACE) && !p.check(EOF) {
@@ -864,7 +899,7 @@ func (p *Parser) parseStructLit(name *Ident) Expr {
 		}
 	}
 	p.skipNewlines()
-	p.expect(RBRACE, "'}' to close the struct literal")
+	p.expectClose(RBRACE, open, "'}'", "struct literal")
 	return lit
 }
 
@@ -883,7 +918,7 @@ func (p *Parser) parseListLit() Expr {
 		p.skipNewlines()
 	}
 	p.skipNewlines()
-	p.expect(RBRACKET, "']' to close the list")
+	p.expectClose(RBRACKET, lb, "']'", "list")
 	return lit
 }
 
@@ -909,7 +944,7 @@ func (p *Parser) parseMapLit() Expr {
 		p.skipNewlines()
 	}
 	p.skipNewlines()
-	p.expect(RBRACE, "'}' to close the map")
+	p.expectClose(RBRACE, lb, "'}'", "map")
 	return lit
 }
 
