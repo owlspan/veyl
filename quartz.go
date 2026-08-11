@@ -43,14 +43,18 @@ func main() {
 		os.Exit(64)
 	}
 
+	// Anything after the .qz file belongs to the program being run, not
+	// to the compiler, so `quartz run app.qz --verbose` passes
+	// --verbose through to os.args rather than trying to interpret it.
 	cmd, path := "run", ""
+	var progArgs []string
 	switch args[0] {
 	case "run", "build", "emit", "tokens", "fmt":
 		if len(args) < 2 {
 			fmt.Fprintf(os.Stderr, "quartz: %s needs a file\n", args[0])
 			os.Exit(64)
 		}
-		cmd, path = args[0], args[1]
+		cmd, path, progArgs = args[0], args[1], args[2:]
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -63,16 +67,16 @@ func main() {
 		printBuiltins()
 		return
 	default:
-		path = args[0]
+		path, progArgs = args[0], args[1:]
 	}
 
-	if err := run(cmd, path); err != nil {
+	if err := run(cmd, path, progArgs); err != nil {
 		fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cmd, path string) error {
+func run(cmd, path string, progArgs []string) error {
 	if !strings.HasSuffix(path, ".qz") {
 		return fmt.Errorf("%s is not a .qz file", path)
 	}
@@ -209,7 +213,7 @@ func run(cmd, path string) error {
 	}
 
 	// cmd == "run"
-	exe := exec.Command(outPath)
+	exe := exec.Command(outPath, progArgs...)
 	exe.Stdin, exe.Stdout, exe.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := exe.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {

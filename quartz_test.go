@@ -44,6 +44,29 @@ func TestQuartzOK(t *testing.T) {
 	runSuite(t, "tests/ok", false)
 }
 
+// The golden suite runs every program without arguments, so it cannot
+// see whether `quartz run app.qz a b` reaches os.args. It did not: the
+// driver read the file from args[1] and dropped the rest, silently,
+// while an example documented the opposite.
+func TestRunForwardsArguments(t *testing.T) {
+	quartz := buildCompiler(t)
+
+	src := filepath.Join(t.TempDir(), "args.qz")
+	prog := "for a in os.args() {\n    print(a)\n}\n"
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command(quartz, "run", src, "one", "two three").CombinedOutput()
+	if err != nil {
+		t.Fatalf("running failed: %v\n%s", err, out)
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+	if got != "one\ntwo three\n" {
+		t.Errorf("os.args produced %q, want %q", got, "one\ntwo three\n")
+	}
+}
+
 func TestQuartzErrors(t *testing.T) {
 	runSuite(t, "tests/err", true)
 }
