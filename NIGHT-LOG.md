@@ -19,6 +19,7 @@ there is still no remote. `git log --oneline` is the short version;
 | `v0.6` | Structs, `impl` blocks and methods |
 | `v0.7` | JSON |
 | — | Bitwise operators and `match` |
+| `v0.8` | Nullable types `?T`, with flow narrowing |
 
 The compiler is now six stages: lex, parse, resolve, **check**, codegen,
 Go. `go.mod` is still empty — no dependency was added.
@@ -94,6 +95,19 @@ binds tighter than `&`, so `flags & 4 == 4` is C's classic trap. I kept
 C's ordering rather than inventing a third convention, and made the
 checker explain the fix when it sees the resulting bool.
 
+**12. `m[k]` still returns the zero value for a missing key.** Now that
+`?T` exists I could have made every map read return `?V`, which would be
+strictly safer — and would put a nil check on every single map access.
+Instead `find(m, k)` returns `?V` for when the difference matters, and
+the bare index is unchanged. This is the one place I chose convenience
+over safety, so it is worth a second opinion.
+
+**13. Nil narrowing is syntactic.** It understands `x != nil`,
+`x == nil` and `&&` chains of them. It does not track assignments or
+early returns, so `if x == nil { return }` does *not* narrow the rest of
+the function. Predictable beats clever here, but that particular case is
+common enough that it may be worth adding.
+
 **11. `json.decode` reads its target from the annotation.**
 `let p: Point = json.decode(text)` — Quartz has no type arguments, so
 the binding is what tells the decoder what to build. Without an
@@ -128,14 +142,14 @@ It caught real regressions the same night.
 
 ## Where I got to, and what is next
 
-The roadmap is done through v0.7. Remaining, in the order I would take
+The roadmap is done through v0.8. Remaining, in the order I would take
 them:
 
-**Nullable types `?T` and the error type `T!`** (roadmap v0.7 in the
-original numbering). This is the biggest remaining language feature and
-it retires the ugliest thing in the current design: the fatal-on-failure
-convention across `os`, `http` and `json`. It also fixes the silent
-missing-map-key.
+**The error type `T!` with `?` propagation.** The last big language
+feature, and the one that retires the ugliest thing in the current
+design: the fatal-on-failure convention across `os`, `http` and `json`.
+Nullable types are the groundwork; this is the same idea carrying a
+reason for the absence.
 
 **Modules.** `import` still does nothing, and every program is one file.
 
