@@ -19,8 +19,10 @@ const usage = `Quartz ` + Version + ` — a small language that compiles to nati
 usage:
   quartz run    <file.qz>    compile and run
   quartz build  <file.qz>    compile to an executable next to the source
+  quartz fmt    <file.qz>    reformat the file in place
   quartz emit   <file.qz>    print the generated Go
   quartz tokens <file.qz>    print the token stream
+  quartz builtins            list every builtin, for editor tooling
   quartz version             print the version
   quartz help                print this
 
