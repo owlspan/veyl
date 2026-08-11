@@ -218,12 +218,20 @@ Write the message to a file and use `git commit -F <file>`.
 Always run all four. The examples are the test suite.
 
 ```bash
-gofmt -l .          # must print nothing
-go vet ./...        # must be clean
-go build -o quartz .
-./quartz run examples/logic.qz
-./quartz run examples/demo.qz
+gofmt -l $(git ls-files '*.go')   # must print nothing
+go vet ./...                      # must be clean
+go test ./...                     # must pass
+go build -o quartz.exe .
+./quartz.exe run examples/logic.qz
+./quartz.exe run examples/demo.qz
 ```
+
+**Use `git ls-files`, not `gofmt -l .`.** The latter walks into
+`Working version/`, the untracked snapshot, whose files come from
+`git archive` with CRLF endings and are therefore reported by gofmt
+every time. That noise would hide a real formatting problem. `go vet`
+and `go test` are unaffected: the snapshot has its own `go.mod`, so Go
+treats it as a separate module and skips it.
 
 For Windows code, cross-compile and vet the *generated* output:
 

@@ -50,6 +50,8 @@ tooling and polish. See [Roadmap](#roadmap).
 - [Roadmap](#roadmap)
 - [Known limitations](#known-limitations)
 
+**New here? [Learn Quartz in 20 minutes](TUTORIAL.md).**
+
 Full language reference: **[SYNTAX.md](SYNTAX.md)**
 Compiler internals: **[ARCHITECTURE.md](ARCHITECTURE.md)**
 
@@ -386,11 +388,19 @@ quartz/
   quartz.go       CLI driver
   quartz_test.go  the test harness
   examples/       sample programs
+  editors/vscode/ syntax highlighting
+  installer/      an Inno Setup script (never compiled — see its header)
   tests/ok/       programs that must compile and run
   tests/err/      programs that must be rejected
+  TUTORIAL.md     learn the language in 20 minutes
   SYNTAX.md       language reference
   ARCHITECTURE.md compiler internals
 ```
+
+The compiler has grown past the file list above; `token.go`, `lexer.go`,
+`parser.go`, `ast.go`, `resolve.go`, `types.go`, `check.go`,
+`codegen.go`, `format.go` and `quartz.go` are the pipeline, and the
+`lib_*.go` and `collections.go` files are the standard library.
 
 ---
 

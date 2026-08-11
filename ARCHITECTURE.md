@@ -312,11 +312,16 @@ further upstream than it looks.
 Verify a change with all of:
 
 ```
-gofmt -l .          # must print nothing
-go vet ./...        # must be clean
-go test ./...       # must pass
+gofmt -l $(git ls-files '*.go')   # must print nothing
+go vet ./...                      # must be clean
+go test ./...                     # must pass
 go build -o quartz.exe .
 ```
+
+`gofmt -l .` would also walk `Working version/`, an untracked snapshot
+whose files carry CRLF endings from `git archive` and so are reported
+every time. `go vet` and `go test` skip it on their own, because it has
+its own `go.mod` and is therefore a separate module.
 
 For Windows-only code on a non-Windows machine, cross-compiling and
 vetting the *generated* output proves it type-checks and nothing more.

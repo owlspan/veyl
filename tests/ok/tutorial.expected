@@ -1,0 +1,39 @@
+values 1 10 ada
+types 42 2.5 hello true [1, 2, 3] {"ada": 36}
+count: 42
+count: 42
+42 squared is 1764
+shouting: HELLO
+numbers 19.634954084936208 5 5
+pattern finds 2024-01-15
+B
+0 1 2 1 2 3 10 6 2 
+alpha beta 0=alpha 1=beta ada:36 
+redirect
+add 5
+hello, quartz
+twice 12
+list 3 4 [1, 2, 3, 4] original [3, 1, 2, 4]
+map false ["ada", "alan"]
+counted {"a": 2, "b": 1}
+empty [] {}
+map [9, 1, 4, 16]
+filter [3, 2, 4]
+reduce 10
+sortBy [4, 3, 2, 1]
+length 5
+scaled 10
+origin Point{x: 0, y: 0}
+copies 1 99
+narrowed HERE
+must 13
+valueOr 13
+isOk true errorOf true
+wordCount 3
+wordCount of a missing file false
+parsePort 8080 -1
+stamp is 19 characters
+sha256 of abc starts ba7816bf
+findAll ["1", "22", "333"]
+task.map [2, 4, 6]
+cleaned up false
