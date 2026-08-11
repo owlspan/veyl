@@ -1,0 +1,82 @@
+struct Address {
+    city: str
+    zip:  str
+}
+
+struct Person {
+    name:    str
+    age:     int
+    height:  float
+    active:  bool
+    tags:    []str
+    address: Address
+}
+
+// encoding uses the field names as written in Quartz
+let ada = Person{
+    name: "ada",
+    age: 36,
+    height: 1.7,
+    active: true,
+    tags: ["maths", "computing"],
+    address: Address{city: "London", zip: "NW1"}
+}
+let text = json.encode(ada)
+print("encoded {text}")
+
+// and it round-trips back into the same struct
+let back: Person = json.decode(text)
+print("decoded {back.name} {back.age} {back.address.city} {back.tags}")
+print("identical {json.encode(back) == text}")
+
+// pretty printing keeps the same content, spread over lines
+let pretty = json.pretty(ada)
+print("pretty spans {len(lines(pretty))} lines")
+let fromPretty: Person = json.decode(pretty)
+print("pretty round-trips {fromPretty.age == 36}")
+
+// lists and maps encode too
+print("list {json.encode([1, 2, 3])}")
+print("map {json.encode({"b": 2, "a": 1})}")
+print("list of structs {json.encode([Address{city: "Paris", zip: "75"}])}")
+
+// decoding into collections
+let nums: []int = json.decode("[4, 5, 6]")
+print("nums {nums} sum {sum(nums)}")
+
+let scoreText = json.encode({"x": 1, "y": 2})
+let scores: {str: int} = json.decode(scoreText)
+print("scores {scores}")
+
+// reading single values by path, no struct declared at the far end
+const doc = json.encode(ada)
+print("name {json.get(doc, "name")}")
+print("age {json.int(doc, "age")}")
+print("height {json.num(doc, "height")}")
+print("active {json.bool(doc, "active")}")
+print("city {json.get(doc, "address.city")}")
+print("first tag {json.get(doc, "tags.0")}")
+print("tag count {json.count(doc, "tags")}")
+print("keys {json.keys(doc)}")
+print("nested object comes back as json {json.get(doc, "address")}")
+
+// missing paths are quiet rather than fatal
+print("missing str is empty {json.get(doc, "nope") == ""}")
+print("missing int {json.int(doc, "nope")}")
+print("has {json.has(doc, "name")} {json.has(doc, "nope")}")
+
+// validity, and a safe decode of untrusted text
+print("valid {json.valid(doc)} {json.valid("not json")}")
+let safe: Person = json.decodeOr("broken", Person{name: "default"})
+print("fallback {safe.name}")
+
+// a struct with a list of structs, the shape real APIs have
+struct Team {
+    label:   str
+    members: []Person
+}
+let team = Team{label: "founders", members: [ada, Person{name: "alan", age: 41}]}
+let teamText = json.encode(team)
+let sameTeam: Team = json.decode(teamText)
+print("team {sameTeam.label} has {len(sameTeam.members)}, second is {sameTeam.members[1].name}")
+print("path into a list of objects: {json.get(teamText, "members.1.name")}")

@@ -785,7 +785,9 @@ func (p *Parser) parseStringLit(t Token) Expr {
 		i = j
 
 		if inner == "" {
-			p.errorAt(t, "empty {} in string")
+			// Almost always someone writing JSON or a literal brace, now
+			// that there is a json library to write it for.
+			p.errorAt(t, "empty {} in string — for a literal brace write {{}}")
 			continue
 		}
 
@@ -815,7 +817,8 @@ func (p *Parser) parseSubExpr(src string, host Token) Expr {
 	sub.skipNewlines()
 
 	if !sub.check(EOF) {
-		p.errorAt(host, "unexpected %s inside {} in string", describe(sub.cur()))
+		p.errorAt(host, "unexpected %s inside {} in string — for literal braces write {{ and }}",
+			describe(sub.cur()))
 	}
 	p.Errors = append(p.Errors, sub.Errors...)
 

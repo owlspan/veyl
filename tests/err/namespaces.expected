@@ -1,4 +1,4 @@
-error: namespaces.qz:2:22: there is no builtin called nope.thing.here — "nope" is not a library (try one of: http, mem, net, os, time)
+error: namespaces.qz:2:22: there is no builtin called nope.thing.here — "nope" is not a library (try one of: http, json, mem, net, os, time)
 error: namespaces.qz:5:20: there is no builtin called os.file.slurp — did you mean one of: os.file.append, os.file.delete, os.file.exists, os.file.lines, os.file.read, os.file.readOr, ...
 error: namespaces.qz:11:16: os.file.read is a function; did you mean os.file.read(...)?
 quartz: 3 error(s)

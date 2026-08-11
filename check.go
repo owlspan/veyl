@@ -440,6 +440,13 @@ func (c *Checker) exprWant(e Expr, want *Type) *Type {
 			x.T = want
 			return want
 		}
+	case *Call:
+		// A builtin that decodes into a type learns that type from here.
+		if name, ok := DottedName(x.Callee); ok {
+			if b, isBuiltin := builtins[name]; isBuiltin && b.wantsTarget {
+				x.Want = want
+			}
+		}
 	}
 	return c.expr(e)
 }

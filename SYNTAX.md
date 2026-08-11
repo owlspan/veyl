@@ -946,6 +946,68 @@ for port in net.scan("127.0.0.1", 1, 1024) {
 
 ---
 
+### `json` — reading and writing JSON
+
+Two ways to use it, because two different things are usually wanted.
+
+**Whole values.** `json.encode` turns any Quartz value into text, and
+`json.decode` turns text back into a declared type. The type comes from
+the annotation on the binding — Quartz has no type arguments, so this is
+how the decoder is told what to build:
+
+```qz
+struct Point {
+    x: float
+    y: float
+}
+
+let text = json.encode(Point{x: 1.0, y: 2.0})   // {"x":1,"y":2}
+let p: Point = json.decode(text)
+```
+
+Field names are encoded exactly as you wrote them. Lists, maps, nested
+structs and lists of structs all work.
+
+**Single values.** When you only want one field out of a response,
+reach in with a dotted path. Numbers step into arrays:
+
+```qz
+let name  = json.get(body, "user.name")
+let age   = json.int(body, "user.age")
+let first = json.get(body, "members.0.name")
+```
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `json.encode(v)` | `str` | any value as JSON |
+| `json.pretty(v)` | `str` | the same, indented |
+| `json.decode(text)` | the annotated type | decode; fatal if the text is bad |
+| `json.decodeOr(text, alt)` | `alt`'s type | decode, or `alt` if the text is bad |
+| `json.get(text, path)` | `str` | a string field; other values come back as JSON |
+| `json.int(text, path)` | `int` | a whole number |
+| `json.num(text, path)` | `float` | a number |
+| `json.bool(text, path)` | `bool` | a boolean |
+| `json.has(text, path)` | `bool` | whether the path exists |
+| `json.keys(text, path)` | `[]str` | the keys of an object, sorted |
+| `json.count(text, path)` | `int` | length of an array, object or string |
+| `json.valid(text)` | `bool` | whether it parses at all |
+
+The `path` is optional everywhere — leave it out to act on the whole
+document. A path that does not exist reads as `""`, `0` or `false`
+rather than failing; use `json.has` when the difference matters.
+
+**Writing JSON by hand needs doubled braces.** `{` starts an
+interpolation inside a string, so a literal one is written `{{`:
+
+```qz
+let text = "{{"x": 1}}"        // the string {"x": 1}
+```
+
+Usually it is easier to build the value and encode it than to write the
+text out.
+
+---
+
 ### `time` — clocks and formatting
 
 Format strings use readable tokens rather than a reference date:

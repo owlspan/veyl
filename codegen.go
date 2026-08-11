@@ -33,6 +33,11 @@ type builtin struct {
 	// return whatever type they were given.
 	retOf func(args []*Type) *Type
 
+	// wantsTarget asks the checker to record the expected result type on
+	// the call, for builtins whose return type comes from the context
+	// rather than their arguments — a decoder, essentially.
+	wantsTarget bool
+
 	// check replaces the params/rest/ret machinery entirely for builtins
 	// whose rules cannot be written as a fixed signature: `contains`
 	// means one thing for a str and another for a list. It reports its
@@ -254,6 +259,7 @@ func init() {
 	registerOs()
 	registerNet()
 	registerTime()
+	registerJson()
 	registerWindowsRuntime()
 }
 
@@ -397,11 +403,23 @@ func (c *Codegen) line(n Node) {
 
 // ---- declarations ----
 
+// goField mangles a Quartz field name into an exported Go one.
+//
+// Quartz field names are lower case, which in Go means unexported, and
+// unexported fields are invisible to encoding/json and unreadable
+// through reflect.Interface(). Prefixing a capital X fixes both. The
+// mapping is injective — the original name is preserved exactly after
+// the prefix — so `x` and `X` stay distinct fields.
+//
+// The json tag carries the name the user actually wrote, so encoding
+// round-trips through the spelling they expect.
+func goField(name string) string { return "X" + name }
+
 func (c *Codegen) structDecl(d *StructDecl) {
 	c.line(d)
 	c.raw("type %s struct {", d.Name)
 	for _, f := range d.Fields {
-		c.raw("\t%s %s", f.Name, f.T.Go())
+		c.raw("\t%s %s `json:%q`", goField(f.Name), f.T.Go(), f.Name)
 	}
 	c.raw("}")
 	c.raw("")
@@ -792,12 +810,12 @@ func (c *Codegen) expr(e Expr) string {
 		return x.T.Go() + "{" + strings.Join(pairs, ", ") + "}"
 
 	case *Field:
-		return c.expr(x.X) + "." + x.Name
+		return c.expr(x.X) + "." + goField(x.Name)
 
 	case *StructLit:
 		pairs := make([]string, len(x.Fields))
 		for i, name := range x.Fields {
-			pairs[i] = name + ": " + c.expr(x.Vals[i])
+			pairs[i] = goField(name) + ": " + c.expr(x.Vals[i])
 		}
 		return x.Name + "{" + strings.Join(pairs, ", ") + "}"
 
@@ -932,7 +950,7 @@ func (c *Codegen) methodCall(x *Call, args []string) string {
 func (c *Codegen) addressOf(e Expr) string {
 	switch x := e.(type) {
 	case *Field:
-		return c.addressOf(x.X) + "." + x.Name
+		return c.addressOf(x.X) + "." + goField(x.Name)
 	case *Index:
 		if x.T != nil && x.T.Kind == KList {
 			c.need(nil, []string{"listAt"})
@@ -982,7 +1000,7 @@ func suffixAfter(e Expr, base Expr) string {
 		return ""
 	}
 	if f, ok := e.(*Field); ok {
-		return suffixAfter(f.X, base) + "." + f.Name
+		return suffixAfter(f.X, base) + "." + goField(f.Name)
 	}
 	return ""
 }

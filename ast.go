@@ -87,6 +87,12 @@ type Call struct {
 	ArgT []*Type
 	T    *Type
 
+	// Want is the type this call's result is expected to produce, when
+	// there is one — the annotation on `let p: Point = json.decode(s)`.
+	// Only builtins that ask for it ever see this; it is how a decoder
+	// learns what to decode into without Quartz having type arguments.
+	Want *Type
+
 	// Method is set by the checker when the callee turned out to be a
 	// method on a struct rather than a function or a library path.
 	// Codegen must not re-derive this: os.file.read and user.rename are

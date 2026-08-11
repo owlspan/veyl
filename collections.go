@@ -242,7 +242,13 @@ func __showV(rv reflect.Value) string {
 		t := rv.Type()
 		parts := make([]string, rv.NumField())
 		for i := 0; i < rv.NumField(); i++ {
-			parts[i] = t.Field(i).Name + ": " + __showInner(rv.Field(i))
+			// The json tag holds the name as it was written in Quartz;
+			// the Go field name carries a prefix to make it exported.
+			name := t.Field(i).Tag.Get("json")
+			if name == "" {
+				name = t.Field(i).Name
+			}
+			parts[i] = name + ": " + __showInner(rv.Field(i))
 		}
 		return t.Name() + "{" + strings.Join(parts, ", ") + "}"
 	case reflect.Pointer, reflect.Interface:
