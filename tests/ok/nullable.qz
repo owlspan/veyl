@@ -1,0 +1,113 @@
+// A plain type can never be nil. A ?T can.
+let maybe: ?int = nil
+let given: ?int = 7
+
+print("nil is nil {maybe == nil} given is nil {given == nil}")
+
+// Reading one requires proving it is not nil first.
+if given != nil {
+    print("doubled {given * 2}")
+} else {
+    print("nothing there")
+}
+
+if maybe != nil {
+    print("never printed {maybe}")
+} else {
+    print("maybe was empty")
+}
+
+// The check works the other way round too.
+if maybe == nil {
+    print("empty branch")
+} else {
+    print("never printed {maybe + 1}")
+}
+
+// And through an && chain.
+if given != nil && given > 3 {
+    print("big enough: {given}")
+}
+
+// Narrowing lasts for the whole block, including nested statements.
+if given != nil {
+    let total = 0
+    for i in 0..3 {
+        total += given
+    }
+    print("summed {total}")
+}
+
+// Assignment moves between the two worlds.
+let box: ?str = nil
+box = "now full"
+if box != nil {
+    print("box holds {upper(box)}")
+}
+box = nil
+print("emptied {box == nil}")
+
+// Nullable in every position that takes a type.
+fn firstOr(xs: []int, fallback: int) -> int {
+    if len(xs) == 0 {
+        return fallback
+    }
+    return xs[0]
+}
+
+fn lookup(m: {str: int}, key: str) -> ?int {
+    if has(m, key) {
+        return m[key]
+    }
+    return nil
+}
+
+let ages = {"ada": 36}
+let found = lookup(ages, "ada")
+let missing = lookup(ages, "nobody")
+if found != nil {
+    print("found {found}")
+}
+print("missing is nil {missing == nil}")
+print("firstOr {firstOr([9, 8], 0)} {firstOr([], 5)}")
+
+// Nullables inside collections and structs.
+struct Config {
+    name:    str
+    timeout: ?int
+    parent:  ?str
+}
+
+let a = Config{name: "a", timeout: 30, parent: nil}
+let b = Config{name: "b"}
+print("a {a.name} has timeout {a.timeout != nil} parent {a.parent == nil}")
+print("b {b.name} has timeout {b.timeout != nil}")
+
+fn describe(c: Config) -> str {
+    let t = c.timeout
+    if t != nil {
+        return "{c.name}: {t}s"
+    }
+    return "{c.name}: no timeout"
+}
+print("{describe(a)}")
+print("{describe(b)}")
+
+let slots: []?int = [1, nil, 3]
+let present = 0
+for slot in slots {
+    if slot != nil {
+        present += slot
+    }
+}
+print("slots {len(slots)} sum of present {present}")
+
+// find() gives the safe alternative to a bare map read
+print("find hit {find(ages, "ada") != nil} find miss {find(ages, "zzz") == nil}")
+let n = find(ages, "ada")
+if n != nil {
+    print("via find {n}")
+}
+
+// printing shows the value, or nil
+print("printed {given} {maybe}")

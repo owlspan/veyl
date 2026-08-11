@@ -274,6 +274,8 @@ func (l *Lexer) operator(line, col int) {
 		}
 	case ':':
 		l.emit(COLON, ":", line, col)
+	case '?':
+		l.emit(QUESTION, "?", line, col)
 
 	default:
 		l.illegal(line, col, string(c))

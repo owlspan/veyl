@@ -89,6 +89,7 @@ const (
 	COMMA
 	DOT
 	COLON
+	QUESTION
 
 	ILLEGAL
 )
@@ -173,6 +174,7 @@ var kindNames = [...]string{
 	"COMMA",
 	"DOT",
 	"COLON",
+	"QUESTION",
 
 	"ILLEGAL",
 }

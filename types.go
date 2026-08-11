@@ -18,6 +18,12 @@ const (
 	KList
 	KMap
 	KStruct
+	KNullable
+
+	// KNilLit is the type of the bare literal `nil`. It fits into any
+	// nullable type and nothing else, the way an untyped integer literal
+	// fits into a float.
+	KNilLit
 
 	// Signature-only kinds. These never appear as the type of a real
 	// expression — they exist so a builtin can say "any number" or
@@ -44,6 +50,7 @@ func StructOf(name string) *Type { return &Type{Kind: KStruct, Name: name} }
 var (
 	Unknown = &Type{Kind: KUnknown}
 	Void    = &Type{Kind: KVoid}
+	NilLitT = &Type{Kind: KNilLit}
 	Int     = &Type{Kind: KInt}
 	Float   = &Type{Kind: KFloat}
 	Str     = &Type{Kind: KStr}
@@ -52,8 +59,29 @@ var (
 	Any     = &Type{Kind: KAny}
 )
 
-func ListOf(elem *Type) *Type      { return &Type{Kind: KList, Elem: elem} }
-func MapOf(key, val *Type) *Type   { return &Type{Kind: KMap, Key: key, Elem: val} }
+func ListOf(elem *Type) *Type    { return &Type{Kind: KList, Elem: elem} }
+func MapOf(key, val *Type) *Type { return &Type{Kind: KMap, Key: key, Elem: val} }
+
+// NullableOf wraps a type so it can also hold nil. Wrapping twice is a
+// no-op: ??int is just ?int, because there is only one nil.
+func NullableOf(inner *Type) *Type {
+	if inner == nil || inner.Kind == KNullable {
+		return inner
+	}
+	return &Type{Kind: KNullable, Elem: inner}
+}
+
+func (t *Type) IsNullable() bool { return t != nil && t.Kind == KNullable }
+
+// Unwrap strips one layer of nullability, which is what narrowing
+// inside an `if x != nil` produces.
+func (t *Type) Unwrap() *Type {
+	if t.IsNullable() {
+		return t.Elem
+	}
+	return t
+}
+
 func (t *Type) IsUnknown() bool    { return t == nil || t.Kind == KUnknown }
 func (t *Type) IsNumeric() bool    { return t != nil && (t.Kind == KInt || t.Kind == KFloat) }
 func (t *Type) IsCollection() bool { return t != nil && (t.Kind == KList || t.Kind == KMap) }
@@ -61,7 +89,12 @@ func (t *Type) IsCollection() bool { return t != nil && (t.Kind == KList || t.Ki
 // NeedsShow reports whether printing this type has to go through the
 // Quartz formatting helper. Scalars are fine with Go's own %v; anything
 // with structure would otherwise leak Go's notation.
-func (t *Type) NeedsShow() bool { return t.IsCollection() || (t != nil && t.Kind == KStruct) }
+func (t *Type) NeedsShow() bool {
+	if t == nil {
+		return false
+	}
+	return t.IsCollection() || t.Kind == KStruct || t.Kind == KNullable
+}
 
 // String prints a type in Quartz's vocabulary. The whole point of the
 // checker is that users never see "float64" or "string" again.
@@ -86,6 +119,10 @@ func (t *Type) String() string {
 		return "{" + t.Key.String() + ": " + t.Elem.String() + "}"
 	case KStruct:
 		return t.Name
+	case KNullable:
+		return "?" + t.Elem.String()
+	case KNilLit:
+		return "nil"
 	case KNumeric:
 		return "int or float"
 	case KAny:
@@ -109,6 +146,8 @@ func (t *Type) Equal(u *Type) bool {
 		return t.Key.Equal(u.Key) && t.Elem.Equal(u.Elem)
 	case KStruct:
 		return t.Name == u.Name
+	case KNullable:
+		return t.Elem.Equal(u.Elem)
 	}
 	return true
 }
@@ -129,8 +168,22 @@ func (t *Type) Accepts(got *Type) bool {
 		return got.Kind != KVoid
 	case KNumeric:
 		return got.IsNumeric()
+	case KNullable:
+		// nil fits any nullable, and so does a plain value of the inner
+		// type — widening a T into a ?T loses nothing. The checker
+		// inserts the wrapping where this fires.
+		return got.Kind == KNilLit || t.Elem.Accepts(got) || t.Equal(got)
 	}
+	// A nullable never satisfies a plain type: unwrapping is what the
+	// nil check is for, and doing it implicitly would defeat the point.
 	return t.Equal(got)
+}
+
+// NeedsWrap reports whether assigning `got` into this type requires
+// boxing a plain value into a nullable.
+func (t *Type) NeedsWrap(got *Type) bool {
+	return t.IsNullable() && got != nil &&
+		got.Kind != KNilLit && got.Kind != KNullable && !got.IsUnknown()
 }
 
 // Go returns the Go type this compiles to.
@@ -153,6 +206,11 @@ func (t *Type) Go() string {
 		return "map[" + t.Key.Go() + "]" + t.Elem.Go()
 	case KStruct:
 		return t.Name
+	case KNullable:
+		// A pointer, uniformly. Some inner types have their own nil in
+		// Go, but using one representation everywhere means narrowing
+		// and wrapping have exactly one shape to handle.
+		return "*" + t.Elem.Go()
 	}
 	return "any"
 }
@@ -177,6 +235,8 @@ func (t *Type) Zero() string {
 		return t.Go() + "{}"
 	case KStruct:
 		return t.Name + "{}"
+	case KNullable:
+		return "nil"
 	}
 	return "nil"
 }
@@ -203,6 +263,14 @@ func ParseType(s string) *Type {
 		return Str
 	case "bool":
 		return Bool
+	}
+
+	if strings.HasPrefix(s, "?") {
+		inner := ParseType(s[1:])
+		if inner == nil {
+			return nil
+		}
+		return NullableOf(inner)
 	}
 
 	if strings.HasPrefix(s, "[]") {

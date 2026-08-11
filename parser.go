@@ -269,6 +269,9 @@ func (p *Parser) parseFn() *FnDecl {
 //	int    []str    [][]int    {str: int}    {str: []int}
 func (p *Parser) parseTypeRef() string {
 	switch {
+	case p.match(QUESTION):
+		return "?" + p.parseTypeRef()
+
 	case p.match(LBRACKET):
 		p.expect(RBRACKET, "']' — a list type is written []int")
 		return "[]" + p.parseTypeRef()
@@ -677,6 +680,10 @@ func (p *Parser) parsePrimary() Expr {
 	case FALSE:
 		p.advance()
 		return &BoolLit{pos: at(t), Val: false}
+
+	case NIL:
+		p.advance()
+		return &NilLit{pos: at(t)}
 
 	case IDENT:
 		p.advance()

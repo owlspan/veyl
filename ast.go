@@ -58,6 +58,22 @@ type BoolLit struct {
 type Ident struct {
 	pos
 	Name string
+
+	// Narrowed is set by the checker where an `if x != nil` has proved
+	// this use is safe. Codegen dereferences those, and only those.
+	Narrowed bool
+}
+
+// NilLit is the bare `nil`.
+type NilLit struct{ pos }
+
+// Widen boxes a plain value into a nullable one. The checker inserts
+// these wherever a T is used as a ?T, so codegen never has to work out
+// on its own where a pointer is needed.
+type Widen struct {
+	pos
+	X Expr
+	T *Type // the nullable type produced
 }
 
 type Unary struct {
@@ -173,6 +189,8 @@ func (*Binary) exprNode()   {}
 func (*Call) exprNode()     {}
 func (*Interp) exprNode()   {}
 func (*Field) exprNode()    {}
+func (*NilLit) exprNode()   {}
+func (*Widen) exprNode()    {}
 func (*ListLit) exprNode()  {}
 func (*MapLit) exprNode()   {}
 func (*Index) exprNode()    {}

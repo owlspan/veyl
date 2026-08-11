@@ -32,6 +32,11 @@ var collectionHelperDefs = map[string]helperDef{
 	// __listAt is __listGet that hands back the element's address rather
 	// than a copy, so a method called on xs[i] can change the element in
 	// place while still being bounds-checked.
+	// Boxing a value into a nullable. Go cannot take the address of an
+	// arbitrary expression, but it can of a parameter.
+	"ptr": {
+		code: `func __ptr[T any](v T) *T { return &v }`,
+	},
 	"listAt": {
 		code: `func __listAt[T any](xs []T, i int) *T {
 	if i < 0 || i >= len(xs) {
@@ -186,6 +191,15 @@ var collectionHelperDefs = map[string]helperDef{
 	return out
 }`,
 		imports: []string{"cmp", "slices"},
+	},
+	"mapFind": {
+		code: `func __find[K comparable, V any](m map[K]V, k K) *V {
+	v, ok := m[k]
+	if !ok {
+		return nil
+	}
+	return &v
+}`,
 	},
 	"mapValues": {
 		code: `func __values[K cmp.Ordered, V any](m map[K]V) []V {
@@ -551,6 +565,27 @@ func buildCollectionBuiltins() {
 				return Void
 			},
 			emit: func(a []string) string { return "delete(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		// find is the nil-safe counterpart to m[k]. A bare index gives the
+		// zero value for a missing key, which is usually what you want and
+		// occasionally a silent bug; this returns ?V so the difference
+		// between "absent" and "zero" survives.
+		"find": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				if len(args) < 2 || args[0].IsUnknown() {
+					return Unknown
+				}
+				if args[0].Kind != KMap {
+					c.errorAt(x.Args[0], "find expects a map, got %s", args[0])
+					return Unknown
+				}
+				matches(c, x, 1, args[0].Key, "find")
+				return NullableOf(args[0].Elem)
+			},
+			helpers: []string{"mapFind"},
+			emit:    func(a []string) string { return "__find(" + a[0] + ", " + a[1] + ")" },
 		},
 
 		"keys": {

@@ -1,0 +1,19 @@
+nil is nil true given is nil false
+doubled 14
+maybe was empty
+empty branch
+big enough: 7
+summed 21
+box holds NOW FULL
+emptied true
+found 36
+missing is nil true
+firstOr 9 5
+a a has timeout true parent true
+b b has timeout false
+a: 30s
+b: no timeout
+slots 3 sum of present 4
+find hit true find miss true
+via find 36
+printed 7 nil

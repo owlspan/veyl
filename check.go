@@ -14,13 +14,14 @@ import (
 // Like every other stage it accumulates errors rather than aborting, and
 // every error names Quartz types (str, float) and never Go ones.
 type Checker struct {
-	file    string
-	funcs   map[string]*FnDecl
-	structs map[string]*StructDecl
-	methods map[string]map[string]*FnDecl // struct name -> method name -> decl
-	scopes  []map[string]*Type
-	curFn   *FnDecl
-	Errors  []string
+	file     string
+	funcs    map[string]*FnDecl
+	structs  map[string]*StructDecl
+	methods  map[string]map[string]*FnDecl // struct name -> method name -> decl
+	scopes   []map[string]*Type
+	narrowed []map[string]bool // names proved non-nil, innermost last
+	curFn    *FnDecl
+	Errors   []string
 }
 
 func NewChecker(file string) *Checker {
@@ -73,6 +74,106 @@ func (c *Checker) errorAt(n Node, format string, args ...any) {
 
 func (c *Checker) push() { c.scopes = append(c.scopes, map[string]*Type{}) }
 func (c *Checker) pop()  { c.scopes = c.scopes[:len(c.scopes)-1] }
+
+// ---- nil narrowing ----
+//
+// Inside `if x != nil { ... }`, x is known not to be nil, so it can be
+// used as a plain T. The set of names currently proved non-nil is kept
+// as a stack of frames matching the block structure, and every Ident
+// that reads one is marked so codegen knows to dereference it.
+//
+// This is deliberately syntactic: it understands `x != nil`, `x == nil`
+// and && chains of them, and nothing cleverer. A narrowing that only
+// fires in obvious cases is easy to predict; one that sometimes fires
+// is worse than none.
+
+func (c *Checker) pushNarrow(names []string) {
+	frame := map[string]bool{}
+	for _, n := range names {
+		frame[n] = true
+	}
+	c.narrowed = append(c.narrowed, frame)
+}
+
+func (c *Checker) popNarrow() { c.narrowed = c.narrowed[:len(c.narrowed)-1] }
+
+func (c *Checker) isNarrowed(name string) bool {
+	for i := len(c.narrowed) - 1; i >= 0; i-- {
+		if c.narrowed[i][name] {
+			return true
+		}
+	}
+	return false
+}
+
+// nilChecks collects the names a condition proves non-nil when true,
+// and the names it proves non-nil when false.
+func (c *Checker) nilChecks(e Expr) (whenTrue, whenFalse []string) {
+	b, ok := e.(*Binary)
+	if !ok {
+		return nil, nil
+	}
+	switch b.Op {
+	case AND:
+		// Both sides must hold, so both sides' guarantees apply. Nothing
+		// is learned from the false branch: either side could be what
+		// failed.
+		lt, _ := c.nilChecks(b.L)
+		rt, _ := c.nilChecks(b.R)
+		return append(lt, rt...), nil
+	case OR:
+		// Mirror image: the false branch means both sides were false.
+		_, lf := c.nilChecks(b.L)
+		_, rf := c.nilChecks(b.R)
+		return nil, append(lf, rf...)
+	case NEQ, EQ:
+		name, isNilTest := nilComparison(b)
+		if !isNilTest {
+			return nil, nil
+		}
+		t := c.lookup(name)
+		if !t.IsNullable() {
+			return nil, nil
+		}
+		if b.Op == NEQ {
+			return []string{name}, nil
+		}
+		return nil, []string{name}
+	}
+	return nil, nil
+}
+
+// nilComparison recognises `x != nil` and `nil != x`.
+func nilComparison(b *Binary) (string, bool) {
+	if id, ok := b.L.(*Ident); ok {
+		if _, isNil := b.R.(*NilLit); isNil {
+			return id.Name, true
+		}
+	}
+	if id, ok := b.R.(*Ident); ok {
+		if _, isNil := b.L.(*NilLit); isNil {
+			return id.Name, true
+		}
+	}
+	return "", false
+}
+
+// coerce checks a value against an expected type and, where the value
+// is a plain T going into a ?T, rewrites the expression in place to box
+// it. Returns false if the types are simply incompatible.
+func (c *Checker) coerce(slot *Expr, want *Type, got *Type) bool {
+	if want == nil || want.IsUnknown() || got.IsUnknown() {
+		return true
+	}
+	if !want.Accepts(got) && !(isUntypedInt(*slot) && want.Unwrap().Kind == KFloat) {
+		return false
+	}
+	if want.NeedsWrap(got) {
+		line, col := (*slot).Pos()
+		*slot = &Widen{pos: pos{Line: line, Col: col}, X: *slot, T: want}
+	}
+	return true
+}
 
 func (c *Checker) define(name string, t *Type) {
 	c.scopes[len(c.scopes)-1][name] = t
@@ -228,15 +329,18 @@ func (c *Checker) stmt(s Stmt) {
 		switch {
 		case annot == nil:
 			// No annotation: infer, but reject types that carry no value.
-			if valT.Kind == KVoid {
+			switch valT.Kind {
+			case KVoid:
 				c.errorAt(st, "cannot assign the result of a call that returns nothing to %q", st.Name)
+				valT = Unknown
+			case KNilLit:
+				c.errorAt(st, "cannot tell what %q can hold — annotate it, as in: let %s: ?int = nil",
+					st.Name, st.Name)
 				valT = Unknown
 			}
 			st.T = valT
 
-		case annot.Accepts(valT), isUntypedInt(st.Value) && annot.Kind == KFloat:
-			// The second case is Go's untyped-constant rule: a plain
-			// integer literal is happy to become a float.
+		case c.coerce(&st.Value, annot, valT):
 			st.T = annot
 
 		default:
@@ -255,7 +359,7 @@ func (c *Checker) stmt(s Stmt) {
 			c.checkCompound(st, want, valT)
 			return
 		}
-		if !want.Accepts(valT) && !(isUntypedInt(st.Value) && want.Kind == KFloat) {
+		if !c.coerce(&st.Value, want, valT) {
 			c.errorAt(st, "cannot assign %s to %s, which is %s",
 				valT, describeTarget(st.Target), want)
 		}
@@ -265,14 +369,22 @@ func (c *Checker) stmt(s Stmt) {
 
 	case *IfStmt:
 		c.condition(st.Cond, "an if")
+		whenTrue, whenFalse := c.nilChecks(st.Cond)
+		c.pushNarrow(whenTrue)
 		c.block(st.Then)
+		c.popNarrow()
 		if st.Else != nil {
+			c.pushNarrow(whenFalse)
 			c.stmt(st.Else)
+			c.popNarrow()
 		}
 
 	case *WhileStmt:
 		c.condition(st.Cond, "a while")
+		whenTrue, _ := c.nilChecks(st.Cond)
+		c.pushNarrow(whenTrue)
 		c.block(st.Body)
+		c.popNarrow()
 
 	case *ForStmt:
 		if st.Coll != nil {
@@ -313,7 +425,7 @@ func (c *Checker) stmt(s Stmt) {
 		if want.Kind == KVoid {
 			return // resolver already reported the mismatch
 		}
-		if !want.Accepts(got) && !(isUntypedInt(st.Value) && want.Kind == KFloat) {
+		if !c.coerce(&st.Value, want, got) {
 			c.errorAt(st, "function %q returns %s but this returns %s",
 				c.curFn.Name, want, got)
 		}
@@ -496,15 +608,28 @@ func (c *Checker) exprWant(e Expr, want *Type) *Type {
 	}
 	switch x := e.(type) {
 	case *ListLit:
-		if len(x.Elems) == 0 && want.Kind == KList {
+		if want.Kind != KList {
+			break
+		}
+		if len(x.Elems) == 0 {
 			x.T = want
 			return want
 		}
+		// With an expected element type, use it rather than inferring
+		// from the first element. `let xs: []?int = [1, nil, 3]` needs
+		// this — inference would read element one as a plain int and then
+		// reject nil.
+		return c.listLitAs(x, want)
+
 	case *MapLit:
-		if len(x.Keys) == 0 && want.Kind == KMap {
+		if want.Kind != KMap {
+			break
+		}
+		if len(x.Keys) == 0 {
 			x.T = want
 			return want
 		}
+		return c.mapLitAs(x, want)
 	case *Call:
 		// A builtin that decodes into a type learns that type from here.
 		if name, ok := DottedName(x.Callee); ok {
@@ -520,6 +645,13 @@ func (c *Checker) exprWant(e Expr, want *Type) *Type {
 // it. It never returns nil: unknown stands in for "already reported".
 func (c *Checker) expr(e Expr) *Type {
 	switch x := e.(type) {
+
+	case *NilLit:
+		return NilLitT
+
+	case *Widen:
+		// Inserted by this pass; already checked when it was created.
+		return x.T
 
 	case *IntLit:
 		return Int
@@ -543,6 +675,12 @@ func (c *Checker) expr(e Expr) *Type {
 
 	case *Ident:
 		if t := c.lookup(x.Name); t != nil {
+			// Inside a proven `x != nil`, the narrowed binding shadows the
+			// nullable one and the use is marked so codegen dereferences.
+			if c.isNarrowed(x.Name) {
+				x.Narrowed = true
+				return t.Unwrap()
+			}
 			return t
 		}
 		if bc, ok := builtinConsts[x.Name]; ok {
@@ -652,7 +790,7 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		seen[name] = true
 
 		got := c.exprWant(x.Vals[i], want)
-		if want.Accepts(got) || (isUntypedInt(x.Vals[i]) && want.Kind == KFloat) {
+		if c.coerce(&x.Vals[i], want, got) {
 			continue
 		}
 		c.errorAt(x.Vals[i], "%s.%s is %s, got %s", x.Name, name, want, got)
@@ -663,6 +801,51 @@ func (c *Checker) structLit(x *StructLit) *Type {
 	_ = d
 	x.T = StructOf(x.Name)
 	return x.T
+}
+
+// listLitAs checks a list literal against a known list type.
+func (c *Checker) listLitAs(x *ListLit, want *Type) *Type {
+	ok := true
+	for i := range x.Elems {
+		got := c.exprWant(x.Elems[i], want.Elem)
+		if c.coerce(&x.Elems[i], want.Elem, got) {
+			continue
+		}
+		c.errorAt(x.Elems[i], "this list holds %s, but element %d is %s", want.Elem, i+1, got)
+		ok = false
+		break
+	}
+	if !ok {
+		x.T = Unknown
+		return Unknown
+	}
+	x.T = want
+	return want
+}
+
+// mapLitAs checks a map literal against a known map type.
+func (c *Checker) mapLitAs(x *MapLit, want *Type) *Type {
+	ok := true
+	for i := range x.Keys {
+		if got := c.expr(x.Keys[i]); !want.Key.Accepts(got) {
+			c.errorAt(x.Keys[i], "this map has %s keys, but key %d is %s", want.Key, i+1, got)
+			ok = false
+			break
+		}
+		got := c.exprWant(x.Vals[i], want.Elem)
+		if c.coerce(&x.Vals[i], want.Elem, got) {
+			continue
+		}
+		c.errorAt(x.Vals[i], "this map holds %s, but value %d is %s", want.Elem, i+1, got)
+		ok = false
+		break
+	}
+	if !ok {
+		x.T = Unknown
+		return Unknown
+	}
+	x.T = want
+	return want
 }
 
 // listLit infers a list type from the elements, which must all agree.
@@ -680,12 +863,12 @@ func (c *Checker) listLit(x *ListLit) *Type {
 		elem = Float
 	}
 
-	for i, el := range x.Elems {
-		got := c.exprWant(el, elem)
-		if elem.Accepts(got) || (isUntypedInt(el) && elem.Kind == KFloat) {
+	for i := range x.Elems {
+		got := c.exprWant(x.Elems[i], elem)
+		if c.coerce(&x.Elems[i], elem, got) {
 			continue
 		}
-		c.errorAt(el, "this list holds %s, but element %d is %s", elem, i+1, got)
+		c.errorAt(x.Elems[i], "this list holds %s, but element %d is %s", elem, i+1, got)
 		elem = Unknown
 		break
 	}
@@ -730,7 +913,7 @@ func (c *Checker) mapLit(x *MapLit) *Type {
 			break
 		}
 		got := c.exprWant(x.Vals[i], valT)
-		if valT.Accepts(got) || (isUntypedInt(x.Vals[i]) && valT.Kind == KFloat) {
+		if c.coerce(&x.Vals[i], valT, got) {
 			continue
 		}
 		c.errorAt(x.Vals[i], "this map holds %s, but value %d is %s", valT, i+1, got)
@@ -804,11 +987,45 @@ func exprText(e Expr) string {
 }
 
 func (c *Checker) binary(x *Binary) *Type {
+	// `a && b` proves a before b runs, so anything a establishes is
+	// available inside b. Without this, `x != nil && x > 3` would reject
+	// its own right-hand side.
+	if x.Op == AND || x.Op == OR {
+		lt := c.expr(x.L)
+		whenTrue, whenFalse := c.nilChecks(x.L)
+		if x.Op == AND {
+			c.pushNarrow(whenTrue)
+		} else {
+			c.pushNarrow(whenFalse)
+		}
+		rt := c.expr(x.R)
+		c.popNarrow()
+
+		if lt.IsUnknown() || rt.IsUnknown() {
+			return Unknown
+		}
+		if lt.Kind != KBool || rt.Kind != KBool {
+			c.errorAt(x, "'%s' needs bool on both sides, got %s and %s",
+				goBinOp(x.Op), lt, rt)
+			return Unknown
+		}
+		return Bool
+	}
+
 	lt := c.expr(x.L)
 	rt := c.expr(x.R)
 
 	if lt.IsUnknown() || rt.IsUnknown() {
 		return Unknown
+	}
+
+	// A nullable in any operator other than a nil comparison is the
+	// mistake this type exists to catch, so name the fix.
+	if x.Op != EQ && x.Op != NEQ {
+		if bad := firstNullable(lt, rt); bad != nil {
+			c.errorAt(x, "%s might be nil — %s", bad, nilAdvice(x))
+			return Unknown
+		}
 	}
 
 	// Untyped integer literals adapt to a float operand, exactly as Go's
@@ -828,15 +1045,21 @@ func (c *Checker) binary(x *Binary) *Type {
 
 	switch x.Op {
 
-	case AND, OR:
-		if lt.Kind != KBool || rt.Kind != KBool {
-			c.errorAt(x, "'%s' needs bool on both sides, got %s and %s",
-				goBinOp(x.Op), lt, rt)
-			return Unknown
-		}
-		return Bool
-
 	case EQ, NEQ:
+		// Comparing against nil is the whole point of a nullable, and is
+		// the one place a nullable may appear without being checked.
+		if lt.Kind == KNilLit || rt.Kind == KNilLit {
+			other := lt
+			if lt.Kind == KNilLit {
+				other = rt
+			}
+			if !other.IsNullable() && other.Kind != KNilLit {
+				c.errorAt(x, "%s can never be nil, so this comparison is always %t",
+					other, x.Op == NEQ)
+				return Bool
+			}
+			return Bool
+		}
 		if !lt.Equal(rt) {
 			c.errorAt(x, "cannot compare %s with %s", lt, rt)
 			return Unknown
@@ -893,6 +1116,26 @@ func (c *Checker) binary(x *Binary) *Type {
 	return Unknown
 }
 
+func firstNullable(ts ...*Type) *Type {
+	for _, t := range ts {
+		if t.IsNullable() {
+			return t
+		}
+	}
+	return nil
+}
+
+// nilAdvice suggests the fix, naming the variable when there is one to
+// name so the suggestion can be pasted as written.
+func nilAdvice(x *Binary) string {
+	for _, side := range []Expr{x.L, x.R} {
+		if id, ok := side.(*Ident); ok {
+			return "check it first with 'if " + id.Name + " != nil'"
+		}
+	}
+	return "put it in a variable and check that for nil first"
+}
+
 // bitwise operators bind looser than comparison in C, and Quartz copies
 // that ladder. `flags & MASK == 0` therefore parses as
 // `flags & (MASK == 0)`, which is almost never what was meant. When one
@@ -923,9 +1166,17 @@ func (c *Checker) arithmetic(x *Binary, lt, rt *Type) *Type {
 // ---- calls ----
 
 func (c *Checker) call(x *Call) *Type {
+	// Arguments are typed with the parameter type as a hint, so an empty
+	// collection literal passed straight to a function knows what it is.
+	// That means working out the callee first.
+	hints := c.paramHints(x)
 	args := make([]*Type, len(x.Args))
-	for i, a := range x.Args {
-		args[i] = c.expr(a)
+	for i := range x.Args {
+		var hint *Type
+		if i < len(hints) {
+			hint = hints[i]
+		}
+		args[i] = c.exprWant(x.Args[i], hint)
 	}
 	x.ArgT = args
 
@@ -964,7 +1215,7 @@ func (c *Checker) call(x *Call) *Type {
 	}
 	for i := 0; i < n; i++ {
 		want := f.Params[i].T
-		if want.Accepts(args[i]) || (isUntypedInt(x.Args[i]) && want.Kind == KFloat) {
+		if c.coerce(&x.Args[i], want, args[i]) {
 			continue
 		}
 		c.errorAt(x.Args[i], "%s expects %s for %q, got %s",
@@ -972,6 +1223,51 @@ func (c *Checker) call(x *Call) *Type {
 	}
 	x.T = f.RetT
 	return f.RetT
+}
+
+// paramHints returns the declared parameter types of whatever this call
+// resolves to, so each argument can be checked against the type it is
+// going into. Anything unresolvable yields no hints, which is harmless:
+// the argument is simply typed on its own.
+func (c *Checker) paramHints(x *Call) []*Type {
+	if fld, isField := x.Callee.(*Field); isField {
+		if recv := c.receiverType(fld); recv != nil {
+			if m, ok := c.methods[recv.Name][fld.Name]; ok && len(m.Params) > 0 {
+				out := make([]*Type, 0, len(m.Params)-1)
+				for _, p := range m.Params[1:] { // skip self
+					out = append(out, p.T)
+				}
+				return out
+			}
+			return nil
+		}
+	}
+	name, ok := DottedName(x.Callee)
+	if !ok {
+		return nil
+	}
+	if b, isBuiltin := builtins[name]; isBuiltin {
+		if b.check != nil {
+			return nil // a custom checker decides for itself
+		}
+		hints := make([]*Type, len(x.Args))
+		for i := range hints {
+			if i < len(b.params) {
+				hints[i] = b.params[i]
+			} else {
+				hints[i] = b.rest
+			}
+		}
+		return hints
+	}
+	if f, isUser := c.funcs[name]; isUser {
+		out := make([]*Type, len(f.Params))
+		for i, p := range f.Params {
+			out[i] = p.T
+		}
+		return out
+	}
+	return nil
 }
 
 // receiverType returns the struct type a method is being called on, or
@@ -1027,7 +1323,7 @@ func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Typ
 			recv.Name, fld.Name, arityText(len(want), len(want)), len(args))
 	}
 	for i := 0; i < len(args) && i < len(want); i++ {
-		if want[i].T.Accepts(args[i]) || (isUntypedInt(x.Args[i]) && want[i].T.Kind == KFloat) {
+		if c.coerce(&x.Args[i], want[i].T, args[i]) {
 			continue
 		}
 		c.errorAt(x.Args[i], "%s.%s expects %s for %q, got %s",

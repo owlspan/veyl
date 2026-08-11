@@ -829,12 +829,26 @@ func (c *Codegen) expr(e Expr) string {
 		}
 		return "false"
 
+	case *NilLit:
+		return "nil"
+
+	case *Widen:
+		// A pointer to a fresh copy of the value. Go will not let us take
+		// the address of an arbitrary expression, so a helper does it.
+		c.need(nil, []string{"ptr"})
+		return "__ptr(" + c.expr(x.X) + ")"
+
 	case *Ident:
 		if bc, ok := builtinConsts[x.Name]; ok {
 			for _, i := range bc.imports {
 				c.imports[i] = true
 			}
 			return bc.code
+		}
+		// The checker proved this use sits inside a nil check, so the
+		// pointer can be read through safely.
+		if x.Narrowed {
+			return "(*" + x.Name + ")"
 		}
 		return x.Name
 
