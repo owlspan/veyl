@@ -193,6 +193,18 @@ finding the closing `}`. Both must stay in sync.
 **Windows paths break naive error parsing.** `C:\...` contains a colon,
 so `sortByPosition` has a fallback path for it.
 
+**Never round-trip a file through PowerShell 5.1.** This corrupts UTF-8:
+
+```powershell
+(Get-Content x.md -Raw) -replace 'a','b' | Set-Content -Encoding utf8 x.md
+```
+
+Without a BOM, `Get-Content` decodes as ANSI, so every em-dash becomes
+three Latin-1 characters and is written back re-encoded. It happened
+once to `SYNTAX.md` and silently corrupted 62 characters across two
+commits. Edit text files with the editor tooling, or use
+`[System.IO.File]::WriteAllText` with an explicit encoding.
+
 ---
 
 ## Verifying changes
