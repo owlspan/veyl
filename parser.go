@@ -771,6 +771,11 @@ func (p *Parser) parsePrimary() Expr {
 		p.advance()
 		return p.parseStringLit(t)
 
+	case RAWSTRING:
+		// No escapes and no interpolation — the text is the value.
+		p.advance()
+		return &StrLit{pos: at(t), Val: t.Lex}
+
 	case TRUE:
 		p.advance()
 		return &BoolLit{pos: at(t), Val: true}

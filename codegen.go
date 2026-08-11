@@ -271,6 +271,8 @@ func init() {
 	registerTime()
 	registerJson()
 	registerTask()
+	registerRe()
+	registerData()
 	registerWindowsRuntime()
 }
 

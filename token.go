@@ -11,6 +11,7 @@ const (
 	IDENT
 	NUMBER
 	STRING
+	RAWSTRING
 
 	// keywords
 	LET
@@ -105,6 +106,7 @@ var kindNames = [...]string{
 	"IDENT",
 	"NUMBER",
 	"STRING",
+	"RAWSTRING",
 
 	"LET",
 	"FN",

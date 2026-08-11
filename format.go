@@ -364,7 +364,7 @@ func (f *formatter) prevMeaningful(i int) int {
 // a binary minus is told from a unary one.
 func endsValue(k Kind) bool {
 	switch k {
-	case IDENT, NUMBER, STRING, TRUE, FALSE, NIL, SELF,
+	case IDENT, NUMBER, STRING, RAWSTRING, TRUE, FALSE, NIL, SELF,
 		RPAREN, RBRACKET, RBRACE, QUESTION, BANG:
 		return true
 	}
@@ -374,7 +374,7 @@ func endsValue(k Kind) bool {
 // hugsLeft reports whether `[` directly follows something it indexes.
 func hugsLeft(k Kind) bool {
 	switch k {
-	case IDENT, RPAREN, RBRACKET, STRING, SELF:
+	case IDENT, RPAREN, RBRACKET, STRING, RAWSTRING, SELF:
 		return true
 	}
 	return false

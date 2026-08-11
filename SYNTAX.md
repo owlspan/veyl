@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.12** — the language as currently implemented.
+**Version 0.13** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -616,6 +616,25 @@ fractional result, make one side a `float`.
 
 String literals use double quotes. Escapes: `\n`, `\t`, `\r`, `\\`,
 `\"`, `\0`.
+
+### Raw strings
+
+Backticks give a string with **no escapes and no interpolation**, which
+may span lines:
+
+```qz
+const pattern = `\d{4}-\d{2}-\d{2}`
+const table = `name,age
+ada,36`
+```
+
+Use them for text that is already full of backslashes and braces — a
+regular expression, a block of CSV, a chunk of JSON. Quoting that twice
+is what goes wrong: in an ordinary string `\d` is an unknown escape and
+`{4}` is an interpolation.
+
+There is no way to put a backtick inside one. Use an ordinary string
+for that.
 
 Any expression inside `{ }` is evaluated and inserted:
 
@@ -1501,6 +1520,73 @@ needs an ownership system Quartz does not have.
 
 ---
 
+### `re` — regular expressions
+
+Patterns belong in raw strings. In an ordinary string `{4}` is an
+interpolation, so a quantifier would have to be written `{{4}}`, and
+`\d` would be an unknown escape.
+
+```qz
+const DATE = `\d{4}-\d{2}-\d{2}`
+
+print(re.find(DATE, log))
+print(re.findAll(DATE, log))
+```
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `re.matches(p, text)` | `bool` | whether the pattern occurs |
+| `re.find(p, text)` | `str` | the first match, `""` if none |
+| `re.findAll(p, text)` | `[]str` | every match |
+| `re.groups(p, text)` | `[]str` | the first match's capture groups |
+| `re.count(p, text)` | `int` | how many matches |
+| `re.replace(p, text, with)` | `str` | replace every match |
+| `re.split(p, text)` | `[]str` | split on the pattern |
+| `re.escape(text)` | `str` | quote text to match it literally |
+| `re.valid(p)` | `bool` | whether the pattern compiles |
+
+**A pattern that does not compile stops the program.** That is the one
+place the library still does this, and it is deliberate: patterns are
+almost always literals the author wrote, so a bad one is a bug rather
+than a runtime condition, and `must(...)` on every call would be noise.
+Use `re.valid` for a pattern that came from input.
+
+Compiled patterns are cached, so using one inside a loop does not
+recompile it each time.
+
+---
+
+### `hash` — digests and encodings
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `hash.md5(s)` `hash.sha1(s)` | `str` | lower-case hex digest |
+| `hash.sha256(s)` `hash.sha512(s)` | `str` | lower-case hex digest |
+| `hash.crc32(s)` | `int` | checksum |
+| `hash.file(path)` | `str!` | sha256 of a file, read in chunks |
+| `hash.base64(s)` `hash.hex(s)` | `str` | encode |
+| `hash.fromBase64(s)` `hash.fromHex(s)` | `str!` | decode |
+
+Digests are hex because that is what every other tool prints — a
+checksum you cannot compare by eye is not much use. Decoding can fail,
+since the input comes from outside; encoding cannot.
+
+---
+
+### `csv` — tables
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `csv.parse(text)` | `[][]str!` | rows of fields |
+| `csv.write(rows)` | `str` | back to text, quoting as needed |
+| `csv.read(path)` | `[][]str!` | parse a file |
+| `csv.save(path, rows)` | `bool` | write a file |
+
+Rows may have different lengths. Real files are ragged, and refusing to
+read one is less useful than handing it over.
+
+---
+
 ### `time` — clocks and formatting
 
 Format strings use readable tokens rather than a reference date:
@@ -1672,7 +1758,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.12 does not do yet.
+Honest list of what v0.13 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left

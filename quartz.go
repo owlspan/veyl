@@ -12,7 +12,7 @@ import (
 )
 
 // Version is stamped into `quartz version`. Bump it with the tag.
-const Version = "0.12"
+const Version = "0.13"
 
 const usage = `Quartz ` + Version + ` — a small language that compiles to native executables
 

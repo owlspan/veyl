@@ -49,6 +49,8 @@ func (l *Lexer) Scan() []Token {
 			l.number(line, col)
 		case c == '"':
 			l.str(line, col)
+		case c == '`':
+			l.rawStr(line, col)
 		default:
 			l.operator(line, col)
 		}
@@ -143,6 +145,35 @@ func isHexDigit(c byte) bool {
 	return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
+// rawStr reads a backtick string: everything up to the closing
+// backtick, spanning as many lines as it likes, with no escapes and no
+// interpolation. For text that is already full of backslashes and
+// braces — a regular expression, a block of CSV, some JSON — quoting it
+// twice is the thing that goes wrong.
+func (l *Lexer) rawStr(line, col int) {
+	rawStart := l.pos
+	l.advance() // opening backtick
+	start := l.pos
+
+	for {
+		if l.atEnd() {
+			l.errorf(line, col, "unterminated `...` string")
+			l.emit(ILLEGAL, l.src[start:l.pos], line, col)
+			return
+		}
+		if l.peek() == '`' {
+			text := l.src[start:l.pos]
+			l.advance() // closing backtick
+			// Carriage returns are dropped so a file saved on Windows
+			// behaves the same as one saved anywhere else.
+			l.emitRaw(RAWSTRING, strings.ReplaceAll(text, "\r\n", "\n"),
+				l.src[rawStart:l.pos], line, col)
+			return
+		}
+		l.advance()
+	}
+}
+
 func (l *Lexer) str(line, col int) {
 	rawStart := l.pos
 	l.advance() // opening quote
@@ -166,6 +197,16 @@ func (l *Lexer) str(line, col int) {
 				l.errorf(l.line, l.col, "unterminated escape sequence")
 				l.emit(ILLEGAL, sb.String(), line, col)
 				return
+			}
+			// Inside an interpolation the text belongs to a nested lexer,
+			// which will handle its own escapes. Decoding here as well
+			// would mean `"{re.find("\\d", s)}"` needed four backslashes
+			// to survive both passes, and `\d` — perfectly good inside
+			// the inner string — would be rejected by the outer one.
+			if depth > 0 {
+				sb.WriteByte(c)
+				sb.WriteByte(l.advance())
+				continue
 			}
 			eLine, eCol := l.line, l.col
 			switch e := l.advance(); e {
