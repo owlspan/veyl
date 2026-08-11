@@ -629,7 +629,14 @@ func buildCollectionBuiltins() {
 			minArgs: 2, maxArgs: 2,
 			// The fallback has to be the same type the result carries, so
 			// `valueOr(load(), [])` can tell what kind of list to build.
-			hintFor: func(known []*Type, i int) *Type {
+			wantsTarget: true,
+			hintFor: func(x *Call, known []*Type, i int) *Type {
+				// The whole call's expected type tells the argument what
+				// kind of result to produce, which is what carries an
+				// annotation through into json.decode.
+				if i == 0 && x.Want != nil && !x.Want.IsUnknown() {
+					return ResultOf(x.Want)
+				}
 				if i == 1 && len(known) == 1 && known[0].IsResult() {
 					return known[0].Elem
 				}
@@ -648,6 +655,13 @@ func buildCollectionBuiltins() {
 		// with the reason. Explicit, unlike a fatal library call.
 		"must": {
 			minArgs: 1, maxArgs: 1,
+			wantsTarget: true,
+			hintFor: func(x *Call, known []*Type, i int) *Type {
+				if i == 0 && x.Want != nil && !x.Want.IsUnknown() {
+					return ResultOf(x.Want)
+				}
+				return nil
+			},
 			check: func(c *Checker, x *Call, args []*Type) *Type {
 				return wantResult(c, x, args, "must")
 			},

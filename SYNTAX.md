@@ -417,9 +417,8 @@ fn maybePort(text: str) -> ?int! {
 }
 ```
 
-**Note:** the standard library does not use `T!` yet. Its calls are
-still fatal-on-failure, return a `bool`, or take a fallback — see
-[Libraries](#libraries). Converting it is the next job.
+The standard library uses all of this: `os.file.read` returns `str!`,
+`http.get` returns `str!`, and so on. See [Libraries](#libraries).
 
 ---
 
@@ -1061,17 +1060,31 @@ error: there is no builtin called os.file.slurp
 
 ### How failure is reported
 
-Quartz has no error type yet, so the convention is visible in the name:
+**Nothing in the library stops your program.** Anything that can fail
+says so in its type:
 
 | Shape | On failure |
 | --- | --- |
-| `os.file.read(p)` | stops the program with a one-line message naming the path |
-| `os.file.readOr(p, fallback)` | returns the fallback |
-| `os.file.write(p, text)` | returns `false` |
+| `os.file.read(p)` → `str!` | a failure carrying the reason |
+| `os.file.readOr(p, fallback)` → `str` | returns the fallback |
+| `os.file.write(p, text)` → `bool` | returns `false` |
 
-Anything returning a value is fatal on failure unless its name ends in
-`Or`. Anything that only acts returns a `bool`. This is a stopgap and
-will be revisited when `T!` arrives.
+An operation that **produces a value** returns `T!`, so you unwrap it
+with `?`, `must()`, `valueOr()` or a check — see
+[Results](#results--things-that-can-fail).
+
+```qz
+let text = must(os.file.read("notes.txt"))    // or stop, saying why
+
+fn wordCount(path: str) -> int! {
+    let text = os.file.read(path)?            // or hand the reason up
+    return len(split(trim(text), " "))
+}
+```
+
+An operation that **only acts** returns a `bool`. There is no unit type
+to put inside a result, so the reason is lost in that one case — a real
+gap, and the last thing left to tidy here.
 
 ---
 
@@ -1079,16 +1092,16 @@ will be revisited when `T!` arrives.
 
 | Function | Returns | Description |
 | --- | --- | --- |
-| `os.file.read(p)` | `str` | the whole file |
+| `os.file.read(p)` | `str!` | the whole file |
 | `os.file.readOr(p, alt)` | `str` | the file, or `alt` if it cannot be read |
-| `os.file.lines(p)` | `[]str` | the file split into lines |
+| `os.file.lines(p)` | `[]str!` | the file split into lines |
 | `os.file.write(p, text)` | `bool` | write, replacing what was there |
 | `os.file.append(p, text)` | `bool` | add to the end |
-| `os.file.size(p)` | `int` | size in bytes |
+| `os.file.size(p)` | `int!` | size in bytes |
 | `os.file.exists(p)` | `bool` | whether it is there |
 | `os.file.delete(p)` | `bool` | remove it |
 | `os.file.rename(a, b)` | `bool` | move or rename |
-| `os.dir.list(p)` | `[]str` | entry names, sorted |
+| `os.dir.list(p)` | `[]str!` | entry names, sorted |
 | `os.dir.make(p)` | `bool` | create, including parents |
 | `os.dir.delete(p)` | `bool` | remove a directory and its contents |
 | `os.dir.is(p)` | `bool` | whether it is a directory |
@@ -1102,7 +1115,7 @@ will be revisited when `T!` arrives.
 | `os.env.set(n, v)` | `bool` | set one |
 | `os.env.has(n)` | `bool` | whether it is set at all |
 | `os.args()` | `[]str` | command-line arguments |
-| `os.run(cmd, args)` | `str` | run a program, return its output |
+| `os.run(cmd, args)` | `str!` | run a program, return its output |
 | `os.runCode(cmd, args)` | `int` | run a program, return its exit code |
 | `os.name()` `os.arch()` | `str` | the OS and CPU architecture |
 | `os.cpus()` `os.pid()` | `int` | processor count, process id |
@@ -1128,12 +1141,12 @@ the library grows.
 
 | Function | Returns | Description |
 | --- | --- | --- |
-| `http.get(url)` | `str` | the response body |
+| `http.get(url)` | `str!` | the response body; 4xx and 5xx are failures |
 | `http.getOr(url, alt)` | `str` | the body, or `alt` on any failure |
-| `http.getWith(url, headers)` | `str` | with a `{str: str}` of headers |
-| `http.post(url, body)` | `str` | POST as `text/plain` |
-| `http.post(url, body, type)` | `str` | POST with a content type |
-| `http.postJson(url, body)` | `str` | POST as `application/json` |
+| `http.getWith(url, headers)` | `str!` | with a `{str: str}` of headers |
+| `http.post(url, body)` | `str!` | POST as `text/plain` |
+| `http.post(url, body, type)` | `str!` | POST with a content type |
+| `http.postJson(url, body)` | `str!` | POST as `application/json` |
 | `http.status(url)` | `int` | the status code; `0` if it never connected |
 | `http.ok(url)` | `bool` | whether the status was 2xx or 3xx |
 | `http.download(url, path)` | `bool` | save the body to a file |
@@ -1147,14 +1160,14 @@ Every request times out after 30 seconds.
 
 | Function | Returns | Description |
 | --- | --- | --- |
-| `net.ip(host)` | `str` | the first address for a name |
-| `net.ips(host)` | `[]str` | every address, sorted |
+| `net.ip(host)` | `str!` | the first address for a name |
+| `net.ips(host)` | `[]str!` | every address, sorted |
 | `net.names(ip)` | `[]str` | reverse lookup |
 | `net.canConnect(host, port)` | `bool` | whether a TCP connection succeeds |
 | `net.canConnect(host, port, ms)` | `bool` | with a timeout |
 | `net.scan(host, lo, hi)` | `[]int` | which ports in a range accept a connection |
 | `net.scan(host, lo, hi, ms)` | `[]int` | with a per-port timeout |
-| `net.send(host, port, data)` | `str` | send over TCP, return the reply |
+| `net.send(host, port, data)` | `str!` | send over TCP, return the reply |
 | `net.localIP()` | `str` | this machine's outward-facing address |
 | `net.interfaces()` | `[]str` | every non-loopback address |
 
@@ -1185,7 +1198,15 @@ struct Point {
 }
 
 let text = json.encode(Point{x: 1.0, y: 2.0})   // {"x":1,"y":2}
-let p: Point = json.decode(text)
+let p: Point! = json.decode(text)               // decoding can fail
+print(must(p).x)
+```
+
+The annotation names the shape *and* says it can fail. It travels
+through a wrapper too, so this reads the way you would expect:
+
+```qz
+let p: Point = must(json.decode(text))
 ```
 
 Field names are encoded exactly as you wrote them. Lists, maps, nested
@@ -1204,7 +1225,7 @@ let first = json.get(body, "members.0.name")
 | --- | --- | --- |
 | `json.encode(v)` | `str` | any value as JSON |
 | `json.pretty(v)` | `str` | the same, indented |
-| `json.decode(text)` | the annotated type | decode; fatal if the text is bad |
+| `json.decode(text)` | the annotated type | decode; fails if the text is bad |
 | `json.decodeOr(text, alt)` | `alt`'s type | decode, or `alt` if the text is bad |
 | `json.get(text, path)` | `str` | a string field; other values come back as JSON |
 | `json.int(text, path)` | `int` | a whole number |
@@ -1375,10 +1396,9 @@ Honest list of what v0.9 does not do yet.
   value. `has()` and `find()` distinguish it; the bare index was left
   alone because making every map read return `?V` would mean a nil check
   on each one.
-- **The standard library does not use `T!` yet.** The language has the
-  error type, but `os`, `http` and `json` predate it and are still
-  fatal-on-failure — see [Libraries](#libraries). Converting them is the
-  next job.
+- **An action that fails cannot say why.** `os.file.write` returns a
+  plain `bool`, because there is no unit type to put inside a `T!`.
+  Everything that returns a *value* carries its reason properly.
 - **No modules.** One file per program; `import` does nothing.
 - **No global variables.** Top-level variables belong to `main`.
 - **Garbage collected.** Memory is managed automatically. Manual memory,

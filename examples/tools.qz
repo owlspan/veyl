@@ -15,10 +15,18 @@ os.file.write(path, "alpha\n")
 os.file.append(path, "beta\n")
 os.file.append(path, "gamma\n")
 
-let found = os.file.lines(path)
-print("wrote {len(found)} lines, {os.file.size(path)} bytes")
+// Reading can fail, so these hand back a result. must() takes the
+// value or stops with the reason — fine here, where we just wrote it.
+let found = must(os.file.lines(path))
+print("wrote {len(found)} lines, {must(os.file.size(path))} bytes")
 for i, line in found {
     print("  {i + 1}. {upper(line)}")
+}
+
+// The same read, handled rather than assumed.
+let absent = os.file.read("no_such_file_here.txt")
+if failed(absent) {
+    print("as expected: {errorOf(absent)}")
 }
 os.file.delete(path)
 print("cleaned up: exists = {os.file.exists(path)}")

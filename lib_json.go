@@ -22,6 +22,9 @@ package main
 
 var jsonHelperDefs = map[string]helperDef{
 	"jsonEncode": {
+		// Encoding a Quartz value cannot actually fail — every type the
+		// language has is representable — so this stays plain rather than
+		// making every caller unwrap a result that is always ok.
 		code: `func __jsonEncode(v any, indent bool) string {
 	var b []byte
 	var err error
@@ -31,23 +34,21 @@ var jsonHelperDefs = map[string]helperDef{
 		b, err = json.Marshal(v)
 	}
 	if err != nil {
-		__fatal("encode", fmt.Sprintf("%T", v), err)
+		return ""
 	}
 	return string(b)
 }`,
-		imports: []string{"encoding/json", "fmt"},
-		deps:    []string{"qzFatal"},
+		imports: []string{"encoding/json"},
 	},
 
 	"jsonDecode": {
-		// Fatal on malformed input, matching os.file.read. decodeOr is
-		// the variant for input that is expected to be untrustworthy.
-		code: `func __jsonDecode[T any](s string) T {
+		// Decoding is the fallible half: the text comes from outside.
+		code: `func __jsonDecode[T any](s string) __Res[T] {
 	var v T
 	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		__fatal("decode", __jsonSnippet(s), err)
+		return __fail[T](fmt.Sprintf("cannot decode %q: %v", __jsonSnippet(s), err))
 	}
-	return v
+	return __ok(v)
 }
 
 func __jsonDecodeOr[T any](s string, fallback T) T {
@@ -66,8 +67,8 @@ func __jsonSnippet(s string) string {
 	}
 	return s
 }`,
-		imports: []string{"encoding/json"},
-		deps:    []string{"qzFatal"},
+		imports: []string{"encoding/json", "fmt"},
+		deps:    []string{"result"},
 	},
 
 	"jsonPath": {
@@ -218,16 +219,19 @@ func buildJsonBuiltins() {
 			wantsTarget: true,
 			check: func(c *Checker, x *Call, args []*Type) *Type {
 				matches(c, x, 0, Str, "json.decode")
-				if x.Want == nil || x.Want.IsUnknown() {
-					c.errorAt(x, "json.decode needs to know what to decode into — "+
-						"annotate the variable, as in: let p: Point = json.decode(text)")
+				// The annotation carries the result wrapper too, so
+				// `let p: Point! = json.decode(t)` names Point as the shape
+				// to build and Point! as what the call produces.
+				if x.Want == nil || x.Want.IsUnknown() || !x.Want.IsResult() {
+					c.errorAt(x, "json.decode needs to know what to decode into, and it can fail — "+
+						"annotate the variable, as in: let p: Point! = json.decode(text)")
 					return Unknown
 				}
 				return x.Want
 			},
 			helpers: []string{"jsonDecode"},
 			emitT: func(c *Codegen, x *Call, a []string) string {
-				return "__jsonDecode[" + x.Want.Go() + "](" + a[0] + ")"
+				return "__jsonDecode[" + x.Want.Elem.Go() + "](" + a[0] + ")"
 			},
 		},
 		"json.decodeOr": {

@@ -8,16 +8,18 @@ import (
 // The os library: files, directories, paths, environment, time and
 // process control, reached through dotted names — os.file.read(...).
 //
-// Quartz has no error type yet, so every operation here follows one of
-// two conventions, and which one it is is visible from the name:
+// Failure is reported one of two ways, and which one is visible from
+// the signature:
 //
-//   - Operations that return a value are fatal on failure, with a plain
-//     one-line message naming the path. `os.file.readOr(p, fallback)`
-//     is the variant that never fails.
-//   - Operations that only act return a bool for whether they worked.
+//   - An operation that produces a value returns `T!`, carrying the
+//     reason when it fails. `os.file.readOr(p, fallback)` is the
+//     variant for when you would rather not deal with it.
+//   - An operation that only acts returns a `bool`. There is no unit
+//     type to put inside a result, so the reason is lost here — a real
+//     gap, and the one thing left to fix in this file.
 //
-// That is a deliberate stopgap. When the T! error type arrives (v0.7)
-// these become the obvious first candidates to convert.
+// Nothing in this library kills the program any more. That was the
+// stopgap before `T!` existed.
 
 // namespaces are the dotted library roots the compiler knows. Used to
 // tell "you misspelled the function" from "that library isn't a thing".
@@ -39,8 +41,16 @@ func namespaceList() string {
 }
 
 var osHelperDefs = map[string]helperDef{
-	// One place decides how a failed operation is reported, so every
-	// message in the library reads the same way.
+	// One place decides how a failure is worded, so every message in the
+	// library reads the same way.
+	"qzWhy": {
+		code: `func __why(op string, subject string, err error) string {
+	return fmt.Sprintf("cannot %s %q: %v", op, subject, err)
+}`,
+		imports: []string{"fmt"},
+	},
+
+	// Kept for the few places that genuinely cannot continue.
 	"qzFatal": {
 		code: `func __fatal(op string, subject string, err error) {
 	fmt.Fprintf(os.Stderr, "runtime error: cannot %s %q: %v\n", op, subject, err)
@@ -50,15 +60,15 @@ var osHelperDefs = map[string]helperDef{
 	},
 
 	"readFile": {
-		code: `func __readFile(path string) string {
+		code: `func __readFile(path string) __Res[string] {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		__fatal("read", path, err)
+		return __fail[string](__why("read", path, err))
 	}
-	return string(b)
+	return __ok(string(b))
 }`,
 		imports: []string{"os"},
-		deps:    []string{"qzFatal"},
+		deps:    []string{"qzWhy", "result"},
 	},
 	"readFileOr": {
 		code: `func __readFileOr(path string, fallback string) string {
@@ -89,44 +99,47 @@ var osHelperDefs = map[string]helperDef{
 		imports: []string{"os"},
 	},
 	"readLines": {
-		code: `func __readLines(path string) []string {
-	text := __readFile(path)
-	text = strings.ReplaceAll(text, "\r\n", "\n")
+		code: `func __readLines(path string) __Res[[]string] {
+	r := __readFile(path)
+	if r.e != "" {
+		return __fail[[]string](r.e)
+	}
+	text := strings.ReplaceAll(r.v, "\r\n", "\n")
 	text = strings.TrimSuffix(text, "\n")
 	if text == "" {
-		return []string{}
+		return __ok([]string{})
 	}
-	return strings.Split(text, "\n")
+	return __ok(strings.Split(text, "\n"))
 }`,
 		imports: []string{"strings"},
-		deps:    []string{"readFile"},
+		deps:    []string{"readFile", "result"},
 	},
 	"fileSize": {
-		code: `func __fileSize(path string) int {
+		code: `func __fileSize(path string) __Res[int] {
 	info, err := os.Stat(path)
 	if err != nil {
-		__fatal("measure", path, err)
+		return __fail[int](__why("measure", path, err))
 	}
-	return int(info.Size())
+	return __ok(int(info.Size()))
 }`,
 		imports: []string{"os"},
-		deps:    []string{"qzFatal"},
+		deps:    []string{"qzWhy", "result"},
 	},
 	"listDir": {
-		code: `func __listDir(path string) []string {
+		code: `func __listDir(path string) __Res[[]string] {
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		__fatal("list", path, err)
+		return __fail[[]string](__why("list", path, err))
 	}
 	out := make([]string, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, e.Name())
 	}
 	sort.Strings(out)
-	return out
+	return __ok(out)
 }`,
 		imports: []string{"os", "sort"},
-		deps:    []string{"qzFatal"},
+		deps:    []string{"qzWhy", "result"},
 	},
 	"isDir": {
 		code: `func __isDir(path string) bool {
@@ -139,11 +152,22 @@ var osHelperDefs = map[string]helperDef{
 		// Output and exit status are separate calls rather than a pair,
 		// since Quartz has no multiple returns yet. Both capture stdout
 		// and stderr together, which is what a script usually wants.
-		code: `func __runCmd(name string, args []string) string {
-	out, _ := exec.Command(name, args...).CombinedOutput()
-	return string(out)
+		//
+		// A non-zero exit is a failure, and the captured output is put in
+		// the message: a command that failed has usually already said why.
+		code: `func __runCmd(name string, args []string) __Res[string] {
+	out, err := exec.Command(name, args...).CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return __fail[string](fmt.Sprintf("cannot run %q: %s", name, detail))
+	}
+	return __ok(string(out))
 }`,
-		imports: []string{"os/exec"},
+		imports: []string{"fmt", "os/exec", "strings"},
+		deps:    []string{"result"},
 	},
 	"runCode": {
 		code: `func __runCode(name string, args []string) int {
@@ -202,12 +226,12 @@ func buildOsBuiltins() {
 
 		// ---- files ----
 
-		"os.file.read":   fn("__readFile", []*Type{Str}, Str, "readFile"),
+		"os.file.read":   fn("__readFile", []*Type{Str}, ResultOf(Str), "readFile"),
 		"os.file.readOr": fn("__readFileOr", []*Type{Str, Str}, Str, "readFileOr"),
-		"os.file.lines":  fn("__readLines", []*Type{Str}, ListOf(Str), "readLines"),
+		"os.file.lines":  fn("__readLines", []*Type{Str}, ResultOf(ListOf(Str)), "readLines"),
 		"os.file.write":  fn("__writeFile", []*Type{Str, Str}, Bool, "writeFile"),
 		"os.file.append": fn("__appendFile", []*Type{Str, Str}, Bool, "appendFile"),
-		"os.file.size":   fn("__fileSize", []*Type{Str}, Int, "fileSize"),
+		"os.file.size":   fn("__fileSize", []*Type{Str}, ResultOf(Int), "fileSize"),
 		"os.file.exists": {
 			emit: func(a []string) string {
 				return "func() bool { _, err := os.Stat(" + a[0] + "); return err == nil }()"
@@ -228,7 +252,7 @@ func buildOsBuiltins() {
 
 		// ---- directories ----
 
-		"os.dir.list": fn("__listDir", []*Type{Str}, ListOf(Str), "listDir"),
+		"os.dir.list": fn("__listDir", []*Type{Str}, ResultOf(ListOf(Str)), "listDir"),
 		"os.dir.is":   fn("__isDir", []*Type{Str}, Bool, "isDir"),
 		"os.dir.make": {
 			emit:   func(a []string) string { return "(os.MkdirAll(" + a[0] + ", 0o755) == nil)" },
@@ -338,7 +362,7 @@ func buildOsBuiltins() {
 			emit: func(a []string) string {
 				return "__runCmd(" + a[0] + ", " + a[1] + ")"
 			},
-			params: []*Type{Str, ListOf(Str)}, ret: Str,
+			params: []*Type{Str, ListOf(Str)}, ret: ResultOf(Str),
 			minArgs: 2, maxArgs: 2,
 			helpers: []string{"runCmd"},
 		},

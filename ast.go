@@ -13,6 +13,11 @@ type pos struct {
 
 func (p pos) Pos() (int, int) { return p.Line, p.Col }
 
+// setPos lets the parser move a whole subtree, which it needs for
+// expressions parsed out of a string interpolation by a nested lexer
+// that counted lines from one.
+func (p *pos) setPos(q pos) { *p = q }
+
 func at(t Token) pos { return pos{Line: t.Line, Col: t.Col} }
 
 type Expr interface {

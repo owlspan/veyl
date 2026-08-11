@@ -187,7 +187,11 @@ func (t *Type) Accepts(got *Type) bool {
 	}
 	switch t.Kind {
 	case KAny:
-		return got.Kind != KVoid
+		// "Anything" still excludes a result. Passing one to print would
+		// show the wrapper rather than the value, and silently treating a
+		// failure as printable output defeats the point of having the
+		// type at all — unwrap it first.
+		return got.Kind != KVoid && got.Kind != KResult && got.Kind != KErrLit
 	case KNumeric:
 		return got.IsNumeric()
 	case KNullable:

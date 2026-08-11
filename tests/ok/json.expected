@@ -20,6 +20,8 @@ nested object comes back as json {"city":"London","zip":"NW1"}
 missing str is empty true
 missing int 0
 has true false
+broken ok false
+reason starts sensibly true
 valid true false
 fallback default
 team founders has 2, second is alan

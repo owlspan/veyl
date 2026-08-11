@@ -687,8 +687,18 @@ func (c *Checker) expr(e Expr) *Type {
 
 	case *Interp:
 		for i := range x.Parts {
-			if x.Parts[i].X != nil {
-				x.Parts[i].T = c.expr(x.Parts[i].X)
+			if x.Parts[i].X == nil {
+				continue
+			}
+			t := c.expr(x.Parts[i].X)
+			x.Parts[i].T = t
+			// Interpolation is the one place a value gets used without
+			// going through a parameter type, so the result check has to
+			// be made here too — otherwise "{load(p)}" prints the wrapper.
+			if t.IsResult() {
+				c.errorAt(x.Parts[i].X,
+					"%s might have failed — unwrap it with '?', must(...) or valueOr(...) before printing it", t)
+				x.Parts[i].T = Unknown
 			}
 		}
 		return Str
@@ -1239,7 +1249,7 @@ func (c *Checker) call(x *Call) *Type {
 		// A builtin may work out an argument's type from the ones before
 		// it, which a fixed parameter list cannot express.
 		if dynamic != nil {
-			if h := dynamic(args[:i], i); h != nil {
+			if h := dynamic(x, args[:i], i); h != nil {
 				hint = h
 			}
 		}
@@ -1293,7 +1303,7 @@ func (c *Checker) call(x *Call) *Type {
 }
 
 // dynamicHint returns a builtin's hintFor hook, if it has one.
-func (c *Checker) dynamicHint(x *Call) func([]*Type, int) *Type {
+func (c *Checker) dynamicHint(x *Call) func(*Call, []*Type, int) *Type {
 	name, ok := DottedName(x.Callee)
 	if !ok {
 		return nil

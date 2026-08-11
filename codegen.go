@@ -47,12 +47,15 @@ type builtin struct {
 	// builtins. When set, it takes precedence over emit.
 	emitT func(c *Codegen, x *Call, args []string) string
 
-	// hintFor supplies the expected type of argument i, given the types
-	// of the arguments before it. Builtins with a custom check have no
-	// fixed params for the checker to read, so without this an empty
-	// literal passed to one — valueOr(load(), []) — has nothing to infer
-	// from. Return nil to leave an argument unhinted.
-	hintFor func(known []*Type, i int) *Type
+	// hintFor supplies the expected type of argument i, given the call
+	// and the types of the arguments before it. Builtins with a custom
+	// check have no fixed params for the checker to read, so without
+	// this an empty literal passed to one — valueOr(load(), []) — has
+	// nothing to infer from. It also carries an annotation inwards
+	// through a wrapper: in `let p: Point! = must(json.decode(t))` the
+	// decoder learns what to build from must's own expected type.
+	// Return nil to leave an argument unhinted.
+	hintFor func(x *Call, known []*Type, i int) *Type
 }
 
 // showAll builds an emitter that renders every collection argument in

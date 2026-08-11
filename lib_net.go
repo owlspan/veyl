@@ -47,14 +47,20 @@ func __httpDo(method string, url string, contentType string, body string, header
 	},
 
 	"httpGet": {
-		code: `func __httpGet(url string, headers map[string]string) string {
-	body, _, err := __httpDo("GET", url, "", "", headers)
+		// A 4xx or 5xx is a failure with a reason, not a silent empty
+		// body — the status is the most useful thing to say.
+		code: `func __httpGet(url string, headers map[string]string) __Res[string] {
+	body, status, err := __httpDo("GET", url, "", "", headers)
 	if err != nil {
-		__fatal("fetch", url, err)
+		return __fail[string](__why("fetch", url, err))
 	}
-	return body
+	if status >= 400 {
+		return __fail[string](fmt.Sprintf("cannot fetch %q: server replied %d", url, status))
+	}
+	return __ok(body)
 }`,
-		deps: []string{"httpClient", "qzFatal"},
+		imports: []string{"fmt"},
+		deps:    []string{"httpClient", "qzWhy", "result"},
 	},
 	"httpGetOr": {
 		code: `func __httpGetOr(url string, fallback string) string {
@@ -67,14 +73,18 @@ func __httpDo(method string, url string, contentType string, body string, header
 		deps: []string{"httpClient"},
 	},
 	"httpPost": {
-		code: `func __httpPost(url string, contentType string, body string) string {
-	out, _, err := __httpDo("POST", url, contentType, body, nil)
+		code: `func __httpPost(url string, contentType string, body string) __Res[string] {
+	out, status, err := __httpDo("POST", url, contentType, body, nil)
 	if err != nil {
-		__fatal("post to", url, err)
+		return __fail[string](__why("post to", url, err))
 	}
-	return out
+	if status >= 400 {
+		return __fail[string](fmt.Sprintf("cannot post to %q: server replied %d", url, status))
+	}
+	return __ok(out)
 }`,
-		deps: []string{"httpClient", "qzFatal"},
+		imports: []string{"fmt"},
+		deps:    []string{"httpClient", "qzWhy", "result"},
 	},
 	"httpStatus": {
 		// 0 means the request never completed, which is a different thing
@@ -125,13 +135,13 @@ func __urlDecode(s string) string {
 	// ---- net ----
 
 	"netLookup": {
-		code: `func __lookupIPs(host string) []string {
+		code: `func __lookupIPs(host string) __Res[[]string] {
 	addrs, err := net.LookupHost(host)
 	if err != nil {
-		__fatal("resolve", host, err)
+		return __fail[[]string](__why("resolve", host, err))
 	}
 	sort.Strings(addrs)
-	return addrs
+	return __ok(addrs)
 }
 
 func __lookupNames(ip string) []string {
@@ -146,7 +156,7 @@ func __lookupNames(ip string) []string {
 	return names
 }`,
 		imports: []string{"net", "sort", "strings"},
-		deps:    []string{"qzFatal"},
+		deps:    []string{"qzWhy", "result"},
 	},
 	"netConnect": {
 		code: `func __canConnect(host string, port int, timeoutMs int) bool {
@@ -210,23 +220,23 @@ func __lookupNames(ip string) []string {
 		deps:    []string{"netConnect"},
 	},
 	"netSend": {
-		code: `func __tcpSend(host string, port int, data string, timeoutMs int) string {
+		code: `func __tcpSend(host string, port int, data string, timeoutMs int) __Res[string] {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	timeout := time.Duration(timeoutMs) * time.Millisecond
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
-		__fatal("connect to", addr, err)
+		return __fail[string](__why("connect to", addr, err))
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(timeout))
 	if _, err := conn.Write([]byte(data)); err != nil {
-		__fatal("send to", addr, err)
+		return __fail[string](__why("send to", addr, err))
 	}
 	out, _ := io.ReadAll(conn)
-	return string(out)
+	return __ok(string(out))
 }`,
 		imports: []string{"io", "net", "strconv", "time"},
-		deps:    []string{"qzFatal"},
+		deps:    []string{"qzWhy", "result"},
 	},
 	"netLocalIP": {
 		// No packet is sent: dialling a UDP address only picks the route,
@@ -272,12 +282,12 @@ func buildNetBuiltins() {
 
 		"http.get": {
 			emit:   func(a []string) string { return "__httpGet(" + a[0] + ", nil)" },
-			params: []*Type{Str}, ret: Str, minArgs: 1, maxArgs: 1,
+			params: []*Type{Str}, ret: ResultOf(Str), minArgs: 1, maxArgs: 1,
 			helpers: []string{"httpGet"},
 		},
 		"http.getWith": {
 			emit:   func(a []string) string { return "__httpGet(" + a[0] + ", " + a[1] + ")" },
-			params: []*Type{Str, MapOf(Str, Str)}, ret: Str, minArgs: 2, maxArgs: 2,
+			params: []*Type{Str, MapOf(Str, Str)}, ret: ResultOf(Str), minArgs: 2, maxArgs: 2,
 			helpers: []string{"httpGet"},
 		},
 		"http.getOr": {
@@ -292,14 +302,14 @@ func buildNetBuiltins() {
 				}
 				return "__httpPost(" + a[0] + ", " + a[2] + ", " + a[1] + ")"
 			},
-			params: []*Type{Str, Str, Str}, ret: Str, minArgs: 2, maxArgs: 3,
+			params: []*Type{Str, Str, Str}, ret: ResultOf(Str), minArgs: 2, maxArgs: 3,
 			helpers: []string{"httpPost"},
 		},
 		"http.postJson": {
 			emit: func(a []string) string {
 				return `__httpPost(` + a[0] + `, "application/json", ` + a[1] + `)`
 			},
-			params: []*Type{Str, Str}, ret: Str, minArgs: 2, maxArgs: 2,
+			params: []*Type{Str, Str}, ret: ResultOf(Str), minArgs: 2, maxArgs: 2,
 			helpers: []string{"httpPost"},
 		},
 		"http.status": {
@@ -334,14 +344,17 @@ func buildNetBuiltins() {
 
 		"net.ips": {
 			emit:   func(a []string) string { return "__lookupIPs(" + a[0] + ")" },
-			params: []*Type{Str}, ret: ListOf(Str), minArgs: 1, maxArgs: 1,
+			params: []*Type{Str}, ret: ResultOf(ListOf(Str)), minArgs: 1, maxArgs: 1,
 			helpers: []string{"netLookup"},
 		},
 		"net.ip": {
 			emit: func(a []string) string {
-				return "func() string { ips := __lookupIPs(" + a[0] + "); if len(ips) == 0 { return \"\" }; return ips[0] }()"
+				return "func() __Res[string] { r := __lookupIPs(" + a[0] +
+					"); if r.e != \"\" { return __fail[string](r.e) }; " +
+					"if len(r.v) == 0 { return __fail[string](\"no addresses for \" + " + a[0] + ") }; " +
+					"return __ok(r.v[0]) }()"
 			},
-			params: []*Type{Str}, ret: Str, minArgs: 1, maxArgs: 1,
+			params: []*Type{Str}, ret: ResultOf(Str), minArgs: 1, maxArgs: 1,
 			helpers: []string{"netLookup"},
 		},
 		"net.names": {
@@ -379,7 +392,7 @@ func buildNetBuiltins() {
 				}
 				return "__tcpSend(" + a[0] + ", " + a[1] + ", " + a[2] + ", " + timeout + ")"
 			},
-			params: []*Type{Str, Int, Str, Int}, ret: Str, minArgs: 3, maxArgs: 4,
+			params: []*Type{Str, Int, Str, Int}, ret: ResultOf(Str), minArgs: 3, maxArgs: 4,
 			helpers: []string{"netSend"},
 		},
 		"net.localIP": {

@@ -921,9 +921,58 @@ func (p *Parser) parseSubExpr(src string, host Token) Expr {
 	}
 	p.Errors = append(p.Errors, sub.Errors...)
 
-	// Re-anchor to the host string so error positions stay in range.
-	if id, ok := x.(*Ident); ok {
-		id.pos = at(host)
-	}
+	// The nested lexer starts its own line and column count, so every
+	// node in here would otherwise claim to be at 1:something. Point the
+	// whole subtree at the string that contains it. That is coarse — one
+	// position for the entire interpolation — but it is inside the right
+	// line, which is what makes an error findable.
+	reanchor(x, at(host))
 	return x
+}
+
+// reanchor rewrites the position of an expression and everything under
+// it. Nodes embed pos by value, so the pointer receiver reaches it.
+func reanchor(e Expr, at pos) {
+	if e == nil {
+		return
+	}
+	if s, ok := e.(interface{ setPos(pos) }); ok {
+		s.setPos(at)
+	}
+	switch x := e.(type) {
+	case *Unary:
+		reanchor(x.X, at)
+	case *Binary:
+		reanchor(x.L, at)
+		reanchor(x.R, at)
+	case *Call:
+		reanchor(x.Callee, at)
+		for _, a := range x.Args {
+			reanchor(a, at)
+		}
+	case *Index:
+		reanchor(x.X, at)
+		reanchor(x.Idx, at)
+	case *Field:
+		reanchor(x.X, at)
+	case *Try:
+		reanchor(x.X, at)
+	case *ListLit:
+		for _, el := range x.Elems {
+			reanchor(el, at)
+		}
+	case *MapLit:
+		for i := range x.Keys {
+			reanchor(x.Keys[i], at)
+			reanchor(x.Vals[i], at)
+		}
+	case *StructLit:
+		for _, v := range x.Vals {
+			reanchor(v, at)
+		}
+	case *Interp:
+		for _, part := range x.Parts {
+			reanchor(part.X, at)
+		}
+	}
 }

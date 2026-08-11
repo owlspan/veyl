@@ -1,9 +1,15 @@
 read back: f297fh3
 size 18
 lines ["line one", "line two"]
+missing ok false
+reason mentions the path true
+valueOr fallback
 exists true missing false
 readOr default
+words 3
+bad path false
 listed ["a.txt", "b.txt"]
+listing a missing dir fails false
 is dir true is file false
 join a/b/c.txt
 base z.txt dir /x/y ext .txt
@@ -11,4 +17,5 @@ env hello has true missing false
 cpus positive true
 pid positive true
 hostname nonempty true
+bogus command ok false
 cleaned false false
