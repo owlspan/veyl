@@ -212,7 +212,7 @@ func init() {
 				if len(x.ArgT) > 0 {
 					t = x.ArgT[0]
 				}
-				if t.IsCollection() {
+				if t.NeedsShow() {
 					return c.show(t, a[0])
 				}
 				return `fmt.Sprintf("%v", ` + a[0] + ")"
@@ -310,6 +310,9 @@ func (c *Codegen) addHelper(name string) {
 
 // Generate produces a complete Go program from a resolved Quartz AST.
 func (c *Codegen) Generate(p *Program) string {
+	for _, d := range p.Structs {
+		c.structDecl(d)
+	}
 	for _, f := range p.Funcs {
 		c.fnDecl(f)
 	}
@@ -394,10 +397,31 @@ func (c *Codegen) line(n Node) {
 
 // ---- declarations ----
 
+func (c *Codegen) structDecl(d *StructDecl) {
+	c.line(d)
+	c.raw("type %s struct {", d.Name)
+	for _, f := range d.Fields {
+		c.raw("\t%s %s", f.Name, f.T.Go())
+	}
+	c.raw("}")
+	c.raw("")
+}
+
 func (c *Codegen) fnDecl(f *FnDecl) {
-	params := make([]string, len(f.Params))
-	for i, p := range f.Params {
-		params[i] = p.Name + " " + p.T.Go()
+	// A method takes a pointer receiver so it can change the struct it is
+	// called on. Assignment still copies — `let b = a` gives two
+	// independent values — so this only affects methods, and it is what
+	// makes an ordinary bump()/add() method possible at all.
+	recv := ""
+	params := f.Params
+	if f.Recv != "" && len(params) > 0 {
+		recv = fmt.Sprintf("(self *%s) ", f.Recv)
+		params = params[1:]
+	}
+
+	goParams := make([]string, len(params))
+	for i, p := range params {
+		goParams[i] = p.Name + " " + p.T.Go()
 	}
 
 	ret := ""
@@ -406,7 +430,7 @@ func (c *Codegen) fnDecl(f *FnDecl) {
 	}
 
 	c.line(f)
-	c.raw("func %s(%s)%s {", f.Name, strings.Join(params, ", "), ret)
+	c.raw("func %s%s(%s)%s {", recv, f.Name, strings.Join(goParams, ", "), ret)
 	c.indent = 1
 	for _, s := range f.Body.Stmts {
 		c.stmt(s)
@@ -767,6 +791,16 @@ func (c *Codegen) expr(e Expr) string {
 		}
 		return x.T.Go() + "{" + strings.Join(pairs, ", ") + "}"
 
+	case *Field:
+		return c.expr(x.X) + "." + x.Name
+
+	case *StructLit:
+		pairs := make([]string, len(x.Fields))
+		for i, name := range x.Fields {
+			pairs[i] = name + ": " + c.expr(x.Vals[i])
+		}
+		return x.Name + "{" + strings.Join(pairs, ", ") + "}"
+
 	case *Index:
 		// List reads go through a bounds-checked helper so an out-of-range
 		// index produces a Quartz-level message instead of a Go panic and
@@ -813,14 +847,18 @@ func goBinOp(k Kind) string {
 }
 
 func (c *Codegen) call(x *Call) string {
-	name, ok := DottedName(x.Callee)
-	if !ok {
-		return "nil" // the resolver already reported this
-	}
-
 	args := make([]string, len(x.Args))
 	for i, a := range x.Args {
 		args[i] = c.expr(a)
+	}
+
+	if x.Method {
+		return c.methodCall(x, args)
+	}
+
+	name, ok := DottedName(x.Callee)
+	if !ok {
+		return "nil" // the resolver already reported this
 	}
 
 	if b, isBuiltin := builtins[name]; isBuiltin {
@@ -844,11 +882,109 @@ func (c *Codegen) call(x *Call) string {
 // collections pay for the helper — a program with no lists never pulls
 // reflect into its binary.
 func (c *Codegen) show(t *Type, code string) string {
-	if t == nil || !t.IsCollection() {
+	if t == nil || !t.NeedsShow() {
 		return code
 	}
 	c.need(nil, []string{"show"})
 	return "__show(" + code + ")"
+}
+
+// methodCall emits `receiver.name(args)`.
+//
+// Methods take a pointer receiver, and Go only takes the address of an
+// addressable expression. A variable, a field or a list element is
+// addressable; the result of a call is not. For those the value is
+// bound to a temporary first, which is exactly what Go itself would do
+// if it allowed it.
+func (c *Codegen) methodCall(x *Call, args []string) string {
+	fld := x.Callee.(*Field)
+	joined := strings.Join(args, ", ")
+
+	// A map element cannot be addressed at all, so it is copied out,
+	// operated on, and written back — the same dance push() does.
+	if base, viaMap := mapElementBase(fld.X); viaMap {
+		return c.mutate(base, x.T, func(ref string) string {
+			return fmt.Sprintf("(%s)%s.%s(%s)", ref, suffixAfter(fld.X, base), fld.Name, joined)
+		})
+	}
+
+	if isAddressable(fld.X) {
+		return fmt.Sprintf("%s.%s(%s)", c.addressOf(fld.X), fld.Name, joined)
+	}
+
+	// Anything else is a temporary — the result of a call, or a literal.
+	// There is nothing to mutate, so binding a copy loses nothing.
+	c.tmp++
+	tmp := fmt.Sprintf("__recv%d", c.tmp)
+	ret := ""
+	body := fmt.Sprintf("%s.%s(%s)", tmp, fld.Name, joined)
+	if x.T != nil && x.T.Kind != KVoid {
+		ret = " " + x.T.Go()
+		body = "return " + body
+	}
+	return fmt.Sprintf("func()%s { %s := %s; %s }()", ret, tmp, c.expr(fld.X), body)
+}
+
+// addressOf emits an expression Go will let us take the address of.
+// It differs from expr for list elements: the read helper returns a
+// copy, so the pointer-returning variant is used instead. That keeps
+// both the bounds check and the ability to mutate through xs[i].
+func (c *Codegen) addressOf(e Expr) string {
+	switch x := e.(type) {
+	case *Field:
+		return c.addressOf(x.X) + "." + x.Name
+	case *Index:
+		if x.T != nil && x.T.Kind == KList {
+			c.need(nil, []string{"listAt"})
+			return fmt.Sprintf("(*__listAt(%s, %s))", c.addressOf(x.X), c.expr(x.Idx))
+		}
+	}
+	return c.expr(e)
+}
+
+// isAddressable reports whether Go will let us take the address of an
+// expression, which decides whether a pointer-receiver method can be
+// called on it directly.
+func isAddressable(e Expr) bool {
+	switch x := e.(type) {
+	case *Ident:
+		return true
+	case *Field:
+		return isAddressable(x.X)
+	case *Index:
+		return x.T != nil && x.T.Kind == KList && isAddressable(x.X)
+	}
+	return false
+}
+
+// mapElementBase finds the map element an expression is reached
+// through, if any: for `byName["a"].origin` it returns `byName["a"]`.
+func mapElementBase(e Expr) (Expr, bool) {
+	for {
+		switch x := e.(type) {
+		case *Index:
+			if x.T != nil && x.T.Kind == KMap {
+				return x, true
+			}
+			e = x.X
+		case *Field:
+			e = x.X
+		default:
+			return nil, false
+		}
+	}
+}
+
+// suffixAfter renders the field path between a base expression and the
+// receiver — the ".origin" in byName["a"].origin.method().
+func suffixAfter(e Expr, base Expr) string {
+	if e == base {
+		return ""
+	}
+	if f, ok := e.(*Field); ok {
+		return suffixAfter(f.X, base) + "." + f.Name
+	}
+	return ""
 }
 
 // interp turns "a {x} b" into fmt.Sprintf("a %v b", x).

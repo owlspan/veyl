@@ -5,15 +5,40 @@ import (
 	"strings"
 )
 
+// noBrace suppresses struct literals while parsing the header of an if,
+// while or for. Without it `if ready {` reads as the start of a struct
+// literal named ready, and the block brace is never found. Go has the
+// same rule for the same reason; inside brackets the suppression lifts,
+// so `if (Point{x: 1}).x > 0 {` still works.
 type Parser struct {
-	toks   []Token
-	i      int
-	file   string
-	Errors []string
+	toks    []Token
+	i       int
+	file    string
+	noBrace int
+	Errors  []string
 }
 
 func NewParser(file string, toks []Token) *Parser {
 	return &Parser{toks: toks, file: file}
+}
+
+// header parses an expression in a position where a following '{' opens
+// a block rather than a struct literal.
+func (p *Parser) header(parse func() Expr) Expr {
+	p.noBrace++
+	x := parse()
+	p.noBrace--
+	return x
+}
+
+// grouped parses an expression inside brackets, where a '{' is
+// unambiguous again.
+func (p *Parser) grouped(parse func() Expr) Expr {
+	saved := p.noBrace
+	p.noBrace = 0
+	x := parse()
+	p.noBrace = saved
+	return x
 }
 
 // ---- cursor helpers ----
@@ -93,12 +118,26 @@ func (p *Parser) ParseProgram() *Program {
 	for !p.check(EOF) {
 		before := p.i
 
-		if p.check(FN) {
+		switch {
+		case p.check(FN):
 			if f := p.parseFn(); f != nil {
 				prog.Funcs = append(prog.Funcs, f)
 			}
-		} else if s := p.parseStmt(); s != nil {
-			prog.Main = append(prog.Main, s)
+		case p.check(STRUCT):
+			if d := p.parseStruct(); d != nil {
+				prog.Structs = append(prog.Structs, d)
+			}
+		case p.check(IMPL):
+			// Methods are hoisted straight into the function list with a
+			// receiver attached, so nothing downstream needs a notion of an
+			// impl block.
+			if b := p.parseImpl(); b != nil {
+				prog.Funcs = append(prog.Funcs, b.Methods...)
+			}
+		default:
+			if s := p.parseStmt(); s != nil {
+				prog.Main = append(prog.Main, s)
+			}
 		}
 
 		if p.i == before { // guarantee forward progress
@@ -107,6 +146,71 @@ func (p *Parser) ParseProgram() *Program {
 		p.skipNewlines()
 	}
 	return prog
+}
+
+// parseStruct reads `struct User { name: str, age: int }`. Fields are
+// separated by line breaks or commas, whichever the author prefers.
+func (p *Parser) parseStruct() *StructDecl {
+	kw := p.advance() // 'struct'
+	name := p.expect(IDENT, "a struct name")
+	d := &StructDecl{pos: at(kw), Name: name.Lex}
+
+	p.expect(LBRACE, "'{'")
+	p.skipNewlines()
+
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+
+		fn := p.expect(IDENT, "a field name")
+		f := StructField{pos: at(fn), Name: fn.Lex}
+		if p.match(COLON) {
+			f.Type = p.parseTypeRef()
+		} else {
+			p.errorAt(fn, "field %q needs a type, like %s: int", fn.Lex, fn.Lex)
+		}
+		d.Fields = append(d.Fields, f)
+
+		p.match(COMMA)
+		p.skipNewlines()
+		if p.i == before { // guarantee forward progress
+			p.advance()
+		}
+	}
+	p.expect(RBRACE, "'}' to close the struct")
+	p.endStmt()
+	return d
+}
+
+// parseImpl reads `impl User { fn greet(self) -> str { ... } }` and
+// returns the methods with their receiver attached.
+func (p *Parser) parseImpl() *ImplBlock {
+	kw := p.advance() // 'impl'
+	name := p.expect(IDENT, "a struct name after 'impl'")
+	b := &ImplBlock{pos: at(kw), Type: name.Lex}
+
+	p.expect(LBRACE, "'{'")
+	p.skipNewlines()
+
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+		if p.check(FN) {
+			m := p.parseFn()
+			if m != nil {
+				m.Recv = b.Type
+				b.Methods = append(b.Methods, m)
+			}
+		} else {
+			p.errorAt(p.cur(), "an impl block can only contain functions")
+			p.advance()
+		}
+		p.skipNewlines()
+		if p.i == before {
+			p.advance()
+		}
+	}
+	p.expect(RBRACE, "'}' to close the impl block")
+	p.endStmt()
+	return b
 }
 
 func (p *Parser) parseFn() *FnDecl {
@@ -119,6 +223,17 @@ func (p *Parser) parseFn() *FnDecl {
 
 	if !p.check(RPAREN) {
 		for {
+			// `self` is a parameter with no type: the impl block supplies it.
+			if p.check(SELF) {
+				sf := p.advance()
+				f.Params = append(f.Params, Param{pos: at(sf), Name: "self"})
+				p.skipNewlines()
+				if !p.match(COMMA) {
+					break
+				}
+				p.skipNewlines()
+				continue
+			}
 			pn := p.expect(IDENT, "a parameter name")
 			prm := Param{pos: at(pn), Name: pn.Lex}
 			if p.match(COLON) {
@@ -198,6 +313,10 @@ func (p *Parser) parseStmt() Stmt {
 		p.errorAt(p.cur(), "functions can only be declared at the top level")
 		p.synchronize()
 		return nil
+	case STRUCT, IMPL:
+		p.errorAt(p.cur(), "'%s' can only appear at the top level", p.cur().Lex)
+		p.synchronize()
+		return nil
 	default:
 		return p.parseSimpleStmt()
 	}
@@ -233,7 +352,7 @@ func (p *Parser) parseReturn() Stmt {
 func (p *Parser) parseIf() Stmt {
 	kw := p.advance()
 	st := &IfStmt{pos: at(kw)}
-	st.Cond = p.parseExpr(0)
+	st.Cond = p.header(func() Expr { return p.parseExpr(0) })
 	st.Then = p.parseBlock()
 
 	if p.check(ELSE) {
@@ -251,7 +370,7 @@ func (p *Parser) parseIf() Stmt {
 func (p *Parser) parseWhile() Stmt {
 	kw := p.advance()
 	st := &WhileStmt{pos: at(kw)}
-	st.Cond = p.parseExpr(0)
+	st.Cond = p.header(func() Expr { return p.parseExpr(0) })
 	st.Body = p.parseBlock()
 	p.endStmt()
 	return st
@@ -273,7 +392,7 @@ func (p *Parser) parseFor() Stmt {
 		p.errorAt(p.cur(), "expected 'in', as in: for %s in 0..10 { ... }", st.Var)
 	}
 
-	first := p.parseExpr(0)
+	first := p.header(func() Expr { return p.parseExpr(0) })
 
 	// A range if `..` or `..=` follows; otherwise a collection to iterate.
 	switch {
@@ -295,10 +414,10 @@ func (p *Parser) parseFor() Stmt {
 	}
 
 	st.Start = first
-	st.End = p.parseExpr(0)
+	st.End = p.header(func() Expr { return p.parseExpr(0) })
 
 	if p.match(STEP) {
-		st.Step = p.parseExpr(0)
+		st.Step = p.header(func() Expr { return p.parseExpr(0) })
 	}
 
 	st.Body = p.parseBlock()
@@ -335,9 +454,9 @@ func (p *Parser) parseSimpleStmt() Stmt {
 	case ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ:
 		op := p.advance()
 		switch x.(type) {
-		case *Ident, *Index:
+		case *Ident, *Index, *Field:
 		default:
-			p.errorAt(start, "left side of assignment must be a variable or an index like xs[0]")
+			p.errorAt(start, "left side of assignment must be a variable, a field, or an index like xs[0]")
 			p.synchronize()
 			return nil
 		}
@@ -421,7 +540,7 @@ func (p *Parser) parsePostfix() Expr {
 
 			if !p.check(RPAREN) {
 				for {
-					call.Args = append(call.Args, p.parseExpr(0))
+					call.Args = append(call.Args, p.grouped(func() Expr { return p.parseExpr(0) }))
 					p.skipNewlines()
 					if !p.match(COMMA) {
 						break
@@ -436,10 +555,13 @@ func (p *Parser) parsePostfix() Expr {
 		case p.check(LBRACKET):
 			lb := p.advance()
 			p.skipNewlines()
-			idx := p.parseExpr(0)
+			idx := p.grouped(func() Expr { return p.parseExpr(0) })
 			p.skipNewlines()
 			p.expect(RBRACKET, "']'")
 			x = &Index{pos: at(lb), X: x, Idx: idx}
+
+		case p.check(LBRACE) && p.noBrace == 0 && isStructLitTarget(x):
+			x = p.parseStructLit(x.(*Ident))
 
 		case p.check(DOT):
 			dot := p.advance()
@@ -479,10 +601,16 @@ func (p *Parser) parsePrimary() Expr {
 		p.advance()
 		return &Ident{pos: at(t), Name: t.Lex}
 
+	case SELF:
+		// `self` is a keyword so it cannot be declared as a variable, but
+		// inside a method it reads as an ordinary name.
+		p.advance()
+		return &Ident{pos: at(t), Name: "self"}
+
 	case LPAREN:
 		p.advance()
 		p.skipNewlines()
-		x := p.parseExpr(0)
+		x := p.grouped(func() Expr { return p.parseExpr(0) })
 		p.skipNewlines()
 		p.expect(RPAREN, "')'")
 		return x
@@ -497,6 +625,47 @@ func (p *Parser) parsePrimary() Expr {
 	p.errorAt(t, "expected an expression, found %s", describe(t))
 	p.advance()
 	return &StrLit{pos: at(t), Val: ""} // placeholder so later passes don't nil-panic
+}
+
+// isStructLitTarget reports whether `x {` should be read as a struct
+// literal. Only a bare name can name a struct, and only a capitalised
+// one by convention — but the convention is not enforced, so any plain
+// identifier qualifies and the checker decides whether it exists.
+func isStructLitTarget(x Expr) bool {
+	_, ok := x.(*Ident)
+	return ok
+}
+
+// parseStructLit reads the `{name: "ada", age: 36}` half of a struct
+// literal, the name having already been consumed.
+func (p *Parser) parseStructLit(name *Ident) Expr {
+	line, col := name.Pos()
+	lit := &StructLit{pos: pos{Line: line, Col: col}, Name: name.Name}
+
+	p.advance() // '{'
+	p.skipNewlines()
+
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+
+		fn := p.expect(IDENT, "a field name")
+		p.expect(COLON, "':' after a field name")
+		p.skipNewlines()
+		lit.Fields = append(lit.Fields, fn.Lex)
+		lit.Vals = append(lit.Vals, p.grouped(func() Expr { return p.parseExpr(0) }))
+
+		p.skipNewlines()
+		if !p.match(COMMA) {
+			break
+		}
+		p.skipNewlines()
+		if p.i == before {
+			p.advance()
+		}
+	}
+	p.skipNewlines()
+	p.expect(RBRACE, "'}' to close the struct literal")
+	return lit
 }
 
 // parseListLit reads `[]`, `[1, 2, 3]`, or a list spread over lines.

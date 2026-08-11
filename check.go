@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // Checker is the fourth pipeline stage, between resolve and codegen. The
 // resolver answers "does this name exist"; the checker answers "does this
@@ -10,15 +14,53 @@ import "fmt"
 // Like every other stage it accumulates errors rather than aborting, and
 // every error names Quartz types (str, float) and never Go ones.
 type Checker struct {
-	file   string
-	funcs  map[string]*FnDecl
-	scopes []map[string]*Type
-	curFn  *FnDecl
-	Errors []string
+	file    string
+	funcs   map[string]*FnDecl
+	structs map[string]*StructDecl
+	methods map[string]map[string]*FnDecl // struct name -> method name -> decl
+	scopes  []map[string]*Type
+	curFn   *FnDecl
+	Errors  []string
 }
 
 func NewChecker(file string) *Checker {
-	return &Checker{file: file, funcs: map[string]*FnDecl{}}
+	return &Checker{
+		file:    file,
+		funcs:   map[string]*FnDecl{},
+		structs: map[string]*StructDecl{},
+		methods: map[string]map[string]*FnDecl{},
+	}
+}
+
+// fieldType looks up one field of a struct.
+func (c *Checker) fieldType(structName, field string) (*Type, bool) {
+	d, ok := c.structs[structName]
+	if !ok {
+		return nil, false
+	}
+	for _, f := range d.Fields {
+		if f.Name == field {
+			return f.T, true
+		}
+	}
+	return nil, false
+}
+
+// fieldNames lists a struct's fields, for error messages.
+func (c *Checker) fieldNames(structName string) string {
+	d, ok := c.structs[structName]
+	if !ok {
+		return ""
+	}
+	names := make([]string, 0, len(d.Fields))
+	for _, f := range d.Fields {
+		names = append(names, f.Name)
+	}
+	for m := range c.methods[structName] {
+		names = append(names, m+"()")
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 func (c *Checker) errorAt(n Node, format string, args ...any) {
@@ -51,21 +93,86 @@ func (c *Checker) resolveAnnotation(text string, n Node) *Type {
 	if text == "" {
 		return nil
 	}
-	if t := ParseType(text); t != nil {
-		return t
+	t := ParseType(text)
+	if t == nil {
+		c.errorAt(n, "unknown type %q", text)
+		return Unknown
 	}
-	c.errorAt(n, "unknown type %q", text)
-	return Unknown
+	if bad := c.undeclaredStruct(t); bad != "" {
+		c.errorAt(n, "unknown type %q", bad)
+		return Unknown
+	}
+	return t
+}
+
+// undeclaredStruct returns the name of the first struct inside a type
+// that was never declared, so `[]Widget` reports Widget rather than the
+// whole type.
+func (c *Checker) undeclaredStruct(t *Type) string {
+	if t == nil {
+		return ""
+	}
+	switch t.Kind {
+	case KStruct:
+		if _, ok := c.structs[t.Name]; !ok {
+			return t.Name
+		}
+	case KList:
+		return c.undeclaredStruct(t.Elem)
+	case KMap:
+		if bad := c.undeclaredStruct(t.Key); bad != "" {
+			return bad
+		}
+		return c.undeclaredStruct(t.Elem)
+	}
+	return ""
 }
 
 // ---- entry point ----
 
 func (c *Checker) Check(p *Program) {
+	// Pass 0: register struct names before resolving anything, so a field
+	// may refer to a struct declared further down the file — including
+	// itself, through a list.
+	for _, d := range p.Structs {
+		c.structs[d.Name] = d
+	}
+	for _, d := range p.Structs {
+		for i := range d.Fields {
+			f := &d.Fields[i]
+			f.T = c.resolveAnnotation(f.Type, f)
+			if f.T == nil {
+				f.T = Unknown
+			}
+			// A struct cannot contain itself by value: the type would need
+			// infinite space. Through a list or map it is fine.
+			if f.T.Kind == KStruct && f.T.Name == d.Name {
+				c.errorAt(f, "%s cannot contain itself — use []%s if you meant a list of them",
+					d.Name, d.Name)
+				f.T = Unknown
+			}
+		}
+	}
+	for _, f := range p.Funcs {
+		if f.Recv == "" {
+			continue
+		}
+		if c.methods[f.Recv] == nil {
+			c.methods[f.Recv] = map[string]*FnDecl{}
+		}
+		c.methods[f.Recv][f.Name] = f
+	}
+
 	// Pass 1: resolve every signature before checking any body, so calls
 	// to functions declared later in the file type-check correctly.
 	for _, f := range p.Funcs {
 		for i := range f.Params {
 			prm := &f.Params[i]
+			// `self` takes its type from the impl block, not an annotation.
+			if i == 0 && f.Recv != "" && prm.Name == "self" {
+				prm.T = StructOf(f.Recv)
+				continue
+			}
 			prm.T = c.resolveAnnotation(prm.Type, prm)
 			if prm.T == nil {
 				prm.T = Unknown
@@ -76,7 +183,9 @@ func (c *Checker) Check(p *Program) {
 		} else {
 			f.RetT = c.resolveAnnotation(f.Ret, f)
 		}
-		c.funcs[f.Name] = f
+		if f.Recv == "" {
+			c.funcs[f.Name] = f
+		}
 	}
 
 	// Pass 2: each function body, in its own scope.
@@ -392,6 +501,12 @@ func (c *Checker) expr(e Expr) *Type {
 		x.T = t
 		return t
 
+	case *Field:
+		return c.field(x)
+
+	case *StructLit:
+		return c.structLit(x)
+
 	case *ListLit:
 		return c.listLit(x)
 
@@ -405,6 +520,70 @@ func (c *Checker) expr(e Expr) *Type {
 		return c.call(x)
 	}
 	return Unknown
+}
+
+// field types `user.name`. A dotted library path never reaches here —
+// the resolver reports those, because they are only valid as a call.
+func (c *Checker) field(x *Field) *Type {
+	recv := c.expr(x.X)
+	if recv.IsUnknown() {
+		return Unknown
+	}
+	if recv.Kind != KStruct {
+		c.errorAt(x, "%s has no fields, so %q cannot be read from it", recv, x.Name)
+		return Unknown
+	}
+	if t, ok := c.fieldType(recv.Name, x.Name); ok {
+		return t
+	}
+	if _, isMethod := c.methods[recv.Name][x.Name]; isMethod {
+		c.errorAt(x, "%s is a method on %s; did you mean %s()?", x.Name, recv.Name, x.Name)
+		return Unknown
+	}
+	c.errorAt(x, "%s has no field called %q — it has: %s",
+		recv.Name, x.Name, c.fieldNames(recv.Name))
+	return Unknown
+}
+
+// structLit checks `User{name: "ada"}`. Fields may come in any order,
+// and any left out take their zero value — but a name that is not a
+// field at all, or given twice, is an error.
+func (c *Checker) structLit(x *StructLit) *Type {
+	d, ok := c.structs[x.Name]
+	if !ok {
+		for i := range x.Vals {
+			c.expr(x.Vals[i])
+		}
+		x.T = Unknown
+		return Unknown // the resolver already reported it
+	}
+
+	seen := map[string]bool{}
+	for i, name := range x.Fields {
+		want, isField := c.fieldType(x.Name, name)
+		if !isField {
+			c.expr(x.Vals[i])
+			c.errorAt(x.Vals[i], "%s has no field called %q — it has: %s",
+				x.Name, name, c.fieldNames(x.Name))
+			continue
+		}
+		if seen[name] {
+			c.errorAt(x.Vals[i], "field %q is given twice", name)
+		}
+		seen[name] = true
+
+		got := c.exprWant(x.Vals[i], want)
+		if want.Accepts(got) || (isUntypedInt(x.Vals[i]) && want.Kind == KFloat) {
+			continue
+		}
+		c.errorAt(x.Vals[i], "%s.%s is %s, got %s", x.Name, name, want, got)
+	}
+
+	// Missing fields are allowed and zero-filled, which is what makes
+	// Point{} and Config{debug: true} both reasonable to write.
+	_ = d
+	x.T = StructOf(x.Name)
+	return x.T
 }
 
 // listLit infers a list type from the elements, which must all agree.
@@ -522,6 +701,8 @@ func (c *Checker) index(x *Index) *Type {
 func describeTarget(e Expr) string {
 	switch t := e.(type) {
 	case *Ident:
+		return `"` + t.Name + `"`
+	case *Field:
 		return `"` + t.Name + `"`
 	case *Index:
 		return "this element"
@@ -642,16 +823,26 @@ func (c *Checker) arithmetic(x *Binary, lt, rt *Type) *Type {
 // ---- calls ----
 
 func (c *Checker) call(x *Call) *Type {
-	name, ok := DottedName(x.Callee)
-	if !ok {
-		return Unknown
-	}
-
 	args := make([]*Type, len(x.Args))
 	for i, a := range x.Args {
 		args[i] = c.expr(a)
 	}
 	x.ArgT = args
+
+	// A method call, if the callee is a field on something that types as
+	// a struct. Library paths are not values, so they never get here.
+	if fld, isField := x.Callee.(*Field); isField {
+		if recv := c.receiverType(fld); recv != nil {
+			x.Method = true
+			x.T = c.methodCall(x, fld, recv, args)
+			return x.T
+		}
+	}
+
+	name, ok := DottedName(x.Callee)
+	if !ok {
+		return Unknown
+	}
 
 	if b, isBuiltin := builtins[name]; isBuiltin {
 		if b.check != nil {
@@ -681,6 +872,68 @@ func (c *Checker) call(x *Call) *Type {
 	}
 	x.T = f.RetT
 	return f.RetT
+}
+
+// receiverType returns the struct type a method is being called on, or
+// nil when this is a library path rather than a method call.
+func (c *Checker) receiverType(fld *Field) *Type {
+	// A plain dotted path that names a builtin is a library call.
+	if name, ok := DottedName(fld); ok {
+		if _, isBuiltin := builtins[name]; isBuiltin {
+			return nil
+		}
+		// A path rooted at a name that is not a variable is a library
+		// path too — a broken one, which the resolver has reported.
+		if root, isIdent := rootIdent(fld); isIdent && c.lookup(root) == nil {
+			return nil
+		}
+	}
+	t := c.expr(fld.X)
+	if t.Kind == KStruct {
+		return t
+	}
+	return nil
+}
+
+func rootIdent(e Expr) (string, bool) {
+	for {
+		switch x := e.(type) {
+		case *Ident:
+			return x.Name, true
+		case *Field:
+			e = x.X
+		default:
+			return "", false
+		}
+	}
+}
+
+func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Type {
+	m, ok := c.methods[recv.Name][fld.Name]
+	if !ok {
+		if _, isField := c.fieldType(recv.Name, fld.Name); isField {
+			c.errorAt(x, "%s.%s is a field, not a method", recv.Name, fld.Name)
+			return Unknown
+		}
+		c.errorAt(x, "%s has no method called %q — it has: %s",
+			recv.Name, fld.Name, c.fieldNames(recv.Name))
+		return Unknown
+	}
+
+	// Params[0] is self, which the receiver supplies.
+	want := m.Params[1:]
+	if len(args) != len(want) {
+		c.errorAt(x, "%s.%s expects %s, got %d",
+			recv.Name, fld.Name, arityText(len(want), len(want)), len(args))
+	}
+	for i := 0; i < len(args) && i < len(want); i++ {
+		if want[i].T.Accepts(args[i]) || (isUntypedInt(x.Args[i]) && want[i].T.Kind == KFloat) {
+			continue
+		}
+		c.errorAt(x.Args[i], "%s.%s expects %s for %q, got %s",
+			recv.Name, fld.Name, want[i].T, want[i].Name, args[i])
+	}
+	return m.RetT
 }
 
 func (c *Checker) checkBuiltin(x *Call, name string, b builtin, args []*Type) *Type {

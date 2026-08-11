@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.5** — the language as currently implemented.
+**Version 0.6** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -258,8 +258,126 @@ print({"a": 1})                    // {"a": 1}
 print(["x", "y"])                  // ["x", "y"]
 ```
 
-**Planned:** `?T` nullable types, `struct`, and a `T!` error type with
-`?` propagation.
+**Planned:** `?T` nullable types, and a `T!` error type with `?`
+propagation.
+
+---
+
+## Structs
+
+A `struct` groups named values into a new type.
+
+```qz
+struct Point {
+    x: float
+    y: float
+}
+```
+
+Fields go one per line, or separated by commas — whichever reads better.
+
+### Making one
+
+Name the struct, then give the fields in any order. **Fields you leave
+out take their zero value**, so `Point{}` is a valid origin.
+
+```qz
+let origin = Point{}
+let p = Point{x: 3.0, y: 4.0}
+let q = Point{y: 1.0, x: 2.0}    // order does not matter
+```
+
+Read and write fields with `.`:
+
+```qz
+print(p.x)
+p.x = 6.0
+```
+
+### Methods
+
+Methods go in an `impl` block. The first parameter is always `self`.
+
+```qz
+impl Point {
+    fn length(self) -> float {
+        return sqrt(self.x * self.x + self.y * self.y)
+    }
+
+    fn scale(self, by: float) {
+        self.x *= by
+        self.y *= by
+    }
+}
+
+print(p.length())
+p.scale(0.5)
+```
+
+A method may change `self`, as `scale` does. A method and a field
+cannot share a name.
+
+### Copying
+
+**Assigning a struct copies it.** The two values are independent
+afterwards — there are no references and no aliasing to reason about.
+
+```qz
+let a = Point{x: 1.0, y: 1.0}
+let b = a
+b.x = 99.0
+print(a.x)      // still 1
+```
+
+The exception is a method call, which acts on the original rather than a
+copy — otherwise `scale` could not work at all.
+
+### Structs and collections
+
+They nest in both directions:
+
+```qz
+struct User {
+    name: str
+    tags: []str
+}
+
+let people: []User = []
+push(people, User{name: "ada", tags: ["maths"]})
+push(people[0].tags, "computing")     // changes the element in place
+
+let byName: {str: Point} = {}
+byName["origin"] = Point{}
+```
+
+A struct cannot contain **itself** by value — the type would need
+infinite space. Through a list it is fine:
+
+```qz
+struct Node {
+    value:    int
+    children: []Node    // fine
+}
+```
+
+### One syntax wrinkle
+
+`if p {` is ambiguous: `p` could be a variable, or the start of a struct
+literal `p{...}`. Quartz resolves it the way Go does — a struct literal
+cannot appear unparenthesised in an `if`, `while` or `for` header:
+
+```qz
+if ready { }                                  // fine
+if (Point{x: 1.0, y: 0.0}).length() > 0.5 { } // parens needed
+```
+
+### Printing
+
+Structs print in the same notation you would write them in:
+
+```qz
+print(Point{x: 3.0, y: 4.0})    // Point{x: 3, y: 4}
+```
 
 ---
 
@@ -932,13 +1050,14 @@ In use:
 
 ```
 let const fn return if else while for in step break continue true false
+struct impl self
 ```
 
 Reserved but not yet implemented — the lexer recognises them, so they
 cannot be used as names:
 
 ```
-struct impl self match pub defer own unsafe import nil
+match pub defer own unsafe import nil
 ```
 
 ---
@@ -965,9 +1084,8 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.5 does not do yet.
+Honest list of what v0.6 does not do yet.
 
-- **No structs.** Lists and maps exist; user-defined types do not.
 - **A missing map key is silent.** `m["absent"]` returns the zero value
   rather than an error. `has()` is the way to tell the difference. This
   gets revisited when nullable types arrive.

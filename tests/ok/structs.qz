@@ -1,0 +1,126 @@
+struct Point {
+    x: float
+    y: float
+}
+
+struct User {
+    name: str
+    age:  int
+    tags: []str
+}
+
+// Methods go in an impl block. `self` is the receiver.
+impl Point {
+    fn length(self) -> float {
+        return sqrt(self.x * self.x + self.y * self.y)
+    }
+
+    fn scale(self, by: float) {
+        self.x *= by
+        self.y *= by
+    }
+
+    fn show(self) -> str {
+        return "({self.x}, {self.y})"
+    }
+}
+
+impl User {
+    fn greet(self) -> str {
+        return "hi, {self.name}"
+    }
+
+    fn birthday(self) {
+        self.age += 1
+    }
+
+    fn addTag(self, tag: str) {
+        push(self.tags, tag)
+    }
+
+    fn isAdult(self) -> bool {
+        return self.age >= 18
+    }
+}
+
+// literals, in any field order, with omissions zero-filled
+let origin = Point{}
+let p = Point{x: 3.0, y: 4.0}
+let q = Point{y: 1.0, x: 2.0}
+print("origin {origin.show()} p {p.show()} q {q.show()}")
+
+// reading and writing fields
+print("p.x is {p.x}, length {p.length()}")
+p.x = 6.0
+print("after write, length {p.length()}")
+
+// a method that changes the receiver
+p.scale(0.5)
+print("after scale {p.show()}")
+
+// assignment copies, so the two are independent
+let copied = p
+p.x = 99.0
+print("copied {copied.show()} original {p.show()}")
+
+// structs with collections inside them
+let u = User{name: "ada", age: 17, tags: ["maths"]}
+print("{u.greet()}, adult? {u.isAdult()}")
+u.birthday()
+u.addTag("computing")
+print("now {u.age}, adult? {u.isAdult()}, tags {u.tags}")
+
+// structs inside collections
+let people: []User = []
+push(people, User{name: "alan", age: 41})
+push(people, User{name: "grace", age: 45})
+for person in people {
+    print("  {person.greet()} ({person.age})")
+}
+print("first is {people[0].name}, method on element: {people[0].greet()}")
+
+// mutating a struct held in a list, through the element
+people[0].birthday()
+print("alan is now {people[0].age}")
+
+// a map of structs
+let byName: {str: Point} = {}
+byName["a"] = Point{x: 1.0, y: 0.0}
+byName["b"] = Point{x: 0.0, y: 2.0}
+for key, value in byName {
+    print("  {key} -> {value.show()} length {value.length()}")
+}
+
+// structs through functions
+fn midpoint(a: Point, b: Point) -> Point {
+    return Point{x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0}
+}
+let mid = midpoint(Point{x: 0.0, y: 0.0}, Point{x: 4.0, y: 6.0})
+print("midpoint {mid.show()}")
+
+// a method on a value returned from a call
+print("length of a fresh point {midpoint(origin, Point{x: 6.0, y: 8.0}).length()}")
+
+// nested structs
+struct Line {
+    from: Point
+    to:   Point
+}
+let seg = Line{from: Point{x: 0.0, y: 0.0}, to: Point{x: 3.0, y: 4.0}}
+print("segment {seg.from.show()} to {seg.to.show()}")
+seg.to.x = 6.0
+print("after nested write {seg.to.show()}")
+
+// printing a struct uses Quartz notation, not Go's
+print("direct {p}")
+print("in a list {people}")
+print("str() gives {str(mid)}")
+
+// the brace ambiguity: a struct literal in a condition needs parens
+let ready = true
+if ready {
+    print("plain identifier condition still parses")
+}
+if (Point{x: 1.0, y: 0.0}).length() > 0.5 {
+    print("parenthesised struct literal in a condition works")
+}

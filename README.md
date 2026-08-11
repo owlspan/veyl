@@ -371,9 +371,10 @@ More detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 | v0.2    | functions, resolver, builtins, Windows GUI          |
 | v0.3    | `for` loops, `break`/`continue`, math and strings   |
 | v0.4    | type checker, test suite                            |
-| **v0.5**| **lists and maps**                                  |
+| v0.5    | lists and maps                                      |
+| v0.5.1  | dotted libraries: `os`, `http`, `net`, `time`, `mem`|
 | v0.6    | structs and `impl`                                  |
-| v0.7    | JSON                                                |
+| **v0.7**| **JSON**                                            |
 | v0.8    | file I/O and SQLite                                 |
 | v0.9    | error type `T!` with `?` propagation                |
 | v1.0    | modules, `import`, a package layout                 |

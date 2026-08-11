@@ -28,8 +28,9 @@ type Stmt interface {
 // Program is a whole .qz file: zero or more functions, plus the
 // top-level statements that become main().
 type Program struct {
-	Funcs []*FnDecl
-	Main  []Stmt
+	Structs []*StructDecl
+	Funcs   []*FnDecl
+	Main    []Stmt
 }
 
 // ---- expressions ----
@@ -85,6 +86,12 @@ type Call struct {
 	// decide what to emit.
 	ArgT []*Type
 	T    *Type
+
+	// Method is set by the checker when the callee turned out to be a
+	// method on a struct rather than a function or a library path.
+	// Codegen must not re-derive this: os.file.read and user.rename are
+	// the same shape, and only the checker knows the receiver's type.
+	Method bool
 }
 
 // ListLit is `[1, 2, 3]`. An empty literal carries no element type of
@@ -164,7 +171,43 @@ func (*ListLit) exprNode()  {}
 func (*MapLit) exprNode()   {}
 func (*Index) exprNode()    {}
 
+// StructLit is `User{name: "ada", age: 36}`. Fields may be given in any
+// order; any left out take their zero value.
+type StructLit struct {
+	pos
+	Name   string
+	Fields []string
+	Vals   []Expr
+	T      *Type // filled in by the checker
+}
+
+func (*StructLit) exprNode() {}
+
 // ---- declarations ----
+
+// StructField is one `name: type` line in a struct declaration.
+type StructField struct {
+	pos
+	Name string
+	Type string // as written
+	T    *Type  // resolved by the checker
+}
+
+// StructDecl is `struct User { ... }`.
+type StructDecl struct {
+	pos
+	Name   string
+	Fields []StructField
+}
+
+// ImplBlock is `impl User { fn ... }`. Its methods are hoisted into the
+// program's function list with a receiver attached, so most of the
+// compiler never has to know impl blocks exist.
+type ImplBlock struct {
+	pos
+	Type    string
+	Methods []*FnDecl
+}
 
 type Param struct {
 	pos
@@ -180,6 +223,11 @@ type FnDecl struct {
 	Ret    string // "" means the function returns nothing
 	RetT   *Type  // resolved by the checker; Void when Ret is ""
 	Body   *Block
+
+	// Recv is the struct this is a method on, or "" for a plain
+	// function. Methods are stored alongside functions and told apart by
+	// this field alone.
+	Recv string
 }
 
 // ---- statements ----
@@ -221,6 +269,8 @@ func (a *AssignStmt) TargetName() string {
 		case *Ident:
 			return t.Name
 		case *Index:
+			e = t.X
+		case *Field:
 			e = t.X
 		default:
 			return ""

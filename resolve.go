@@ -17,16 +17,23 @@ type varInfo struct {
 // codegen shouldn't have to: does this name exist, is it a constant,
 // is it ever read, does this function actually return.
 type Resolver struct {
-	file   string
-	funcs  map[string]*FnDecl
-	scopes []map[string]*varInfo
-	curFn  *FnDecl
-	loops  int // nesting depth, so break/continue can be validated
-	Errors []string
+	file    string
+	funcs   map[string]*FnDecl
+	structs map[string]*StructDecl
+	methods map[string]map[string]*FnDecl // struct name -> method name -> decl
+	scopes  []map[string]*varInfo
+	curFn   *FnDecl
+	loops   int // nesting depth, so break/continue can be validated
+	Errors  []string
 }
 
 func NewResolver(file string) *Resolver {
-	return &Resolver{file: file, funcs: map[string]*FnDecl{}}
+	return &Resolver{
+		file:    file,
+		funcs:   map[string]*FnDecl{},
+		structs: map[string]*StructDecl{},
+		methods: map[string]map[string]*FnDecl{},
+	}
 }
 
 func (r *Resolver) errorAt(n Node, format string, args ...any) {
@@ -73,11 +80,37 @@ func (r *Resolver) lookup(name string) *varInfo {
 // ---- entry point ----
 
 func (r *Resolver) Resolve(p *Program) {
+	// Pass 0: struct declarations, so a field or parameter may name any
+	// struct regardless of the order they appear in.
+	for _, d := range p.Structs {
+		if prev, dup := r.structs[d.Name]; dup {
+			line, _ := prev.Pos()
+			r.errorAt(d, "struct %q is already defined on line %d", d.Name, line)
+			continue
+		}
+		seen := map[string]bool{}
+		for _, f := range d.Fields {
+			if seen[f.Name] {
+				r.errorAt(f, "struct %q already has a field called %q", d.Name, f.Name)
+			}
+			seen[f.Name] = true
+		}
+		r.structs[d.Name] = d
+	}
+
 	// Pass 1: collect every signature first, so functions can call each
 	// other (and themselves) regardless of declaration order.
 	for _, f := range p.Funcs {
+		if f.Recv != "" {
+			r.declareMethod(f)
+			continue
+		}
 		if _, isBuiltin := builtins[f.Name]; isBuiltin {
 			r.errorAt(f, "%q is a builtin and cannot be redefined", f.Name)
+			continue
+		}
+		if _, isStruct := r.structs[f.Name]; isStruct {
+			r.errorAt(f, "%q is already a struct, so it cannot also be a function", f.Name)
 			continue
 		}
 		if prev, dup := r.funcs[f.Name]; dup {
@@ -102,6 +135,32 @@ func (r *Resolver) Resolve(p *Program) {
 	r.pop()
 }
 
+func (r *Resolver) declareMethod(f *FnDecl) {
+	if _, known := r.structs[f.Recv]; !known {
+		r.errorAt(f, "there is no struct called %q to add methods to", f.Recv)
+		return
+	}
+	if r.methods[f.Recv] == nil {
+		r.methods[f.Recv] = map[string]*FnDecl{}
+	}
+	if prev, dup := r.methods[f.Recv][f.Name]; dup {
+		line, _ := prev.Pos()
+		r.errorAt(f, "%s already has a method called %q, defined on line %d",
+			f.Recv, f.Name, line)
+		return
+	}
+	// A method and a field cannot share a name, or `u.total` would be
+	// ambiguous between reading a field and forgetting to call a method.
+	for _, fld := range r.structs[f.Recv].Fields {
+		if fld.Name == f.Name {
+			r.errorAt(f, "%s already has a field called %q, so it cannot also have a method with that name",
+				f.Recv, f.Name)
+			return
+		}
+	}
+	r.methods[f.Recv][f.Name] = f
+}
+
 func (r *Resolver) resolveFn(f *FnDecl) {
 	prev := r.curFn
 	prevLoops := r.loops
@@ -112,6 +171,9 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 	for _, prm := range f.Params {
 		// Parameters are exempt from the unused check; Go allows them.
 		r.declare(prm.Name, &varInfo{used: true}, prm)
+	}
+	if f.Recv != "" && !hasSelf(f) {
+		r.errorAt(f, "a method needs 'self' as its first parameter, as in: fn %s(self)", f.Name)
 	}
 
 	for _, s := range f.Body.Stmts {
@@ -140,8 +202,11 @@ func (r *Resolver) stmt(s Stmt) {
 		r.expr(st.Value)
 		// Index targets are expressions in their own right: `xs[i] = v`
 		// reads both xs and i before it writes.
-		if idx, ok := st.Target.(*Index); ok {
-			r.expr(idx)
+		switch t := st.Target.(type) {
+		case *Index:
+			r.expr(t)
+		case *Field:
+			r.expr(t)
 		}
 		name := st.TargetName()
 		info := r.lookup(name)
@@ -269,6 +334,14 @@ func (r *Resolver) expr(e Expr) {
 			r.expr(el)
 		}
 
+	case *StructLit:
+		for _, v := range x.Vals {
+			r.expr(v)
+		}
+		if _, known := r.structs[x.Name]; !known {
+			r.errorAt(x, "there is no struct called %q", x.Name)
+		}
+
 	case *MapLit:
 		for i := range x.Keys {
 			r.expr(x.Keys[i])
@@ -280,8 +353,13 @@ func (r *Resolver) expr(e Expr) {
 		r.expr(x.Idx)
 
 	case *Field:
-		// A dotted path is only meaningful as the callee of a call, which
-		// r.call handles. Reaching here means it was used as a value.
+		// `a.b` is field access when a is a variable, and a library path
+		// otherwise. Variables win, so a local named `os` shadows the
+		// library rather than being silently ignored.
+		if r.rootsAtVariable(x) {
+			r.expr(x.X)
+			return
+		}
 		if name, ok := DottedName(x); ok {
 			if _, isBuiltin := builtins[name]; isBuiltin {
 				r.errorAt(x, "%s is a function; did you mean %s(...)?", name, name)
@@ -290,7 +368,9 @@ func (r *Resolver) expr(e Expr) {
 			r.errorAt(x, "there is no value called %s%s", name, nearestNamespaceHint(name))
 			return
 		}
-		r.errorAt(x, "'.' can only be used on a library name for now")
+		// Not a plain path — the base is some other expression, so this is
+		// field access on whatever it evaluates to.
+		r.expr(x.X)
 
 	case *Call:
 		for _, a := range x.Args {
@@ -300,7 +380,33 @@ func (r *Resolver) expr(e Expr) {
 	}
 }
 
+// rootsAtVariable reports whether `a.b.c` is access on a value rather
+// than a library path. It is a library path only when the whole chain
+// is plain names and the outermost one is not in scope — so a local
+// called `os` shadows the library, and anything that is not a bare name
+// chain (a literal, a call, an index) is a value by definition.
+func (r *Resolver) rootsAtVariable(e Expr) bool {
+	for {
+		switch x := e.(type) {
+		case *Ident:
+			return r.lookup(x.Name) != nil
+		case *Field:
+			e = x.X
+		default:
+			return true
+		}
+	}
+}
+
 func (r *Resolver) call(x *Call) {
+	// A method call: the receiver is a value, not a library name. Whether
+	// the method exists depends on the receiver's type, which only the
+	// checker knows, so all the resolver does here is walk the receiver.
+	if fld, isField := x.Callee.(*Field); isField && r.rootsAtVariable(fld) {
+		r.expr(fld.X)
+		return
+	}
+
 	name, ok := DottedName(x.Callee)
 	if !ok {
 		r.errorAt(x, "this expression is not a function")
@@ -380,6 +486,11 @@ func arityText(min, max int) string {
 	default:
 		return fmt.Sprintf("%d to %d arguments", min, max)
 	}
+}
+
+// hasSelf reports whether a method's first parameter is the receiver.
+func hasSelf(f *FnDecl) bool {
+	return len(f.Params) > 0 && f.Params[0].Name == "self"
 }
 
 // ---- return-path analysis ----

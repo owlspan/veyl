@@ -17,6 +17,7 @@ const (
 	KBool
 	KList
 	KMap
+	KStruct
 
 	// Signature-only kinds. These never appear as the type of a real
 	// expression — they exist so a builtin can say "any number" or
@@ -29,9 +30,15 @@ const (
 // so nesting like [][]int or {str: []int} needs no special cases.
 type Type struct {
 	Kind TypeKind
-	Elem *Type // list element, or map value
-	Key  *Type // map key
+	Elem *Type  // list element, or map value
+	Key  *Type  // map key
+	Name string // struct name
 }
+
+// StructOf names a struct type. Two struct types are the same exactly
+// when their names are, so this carries no field list — the declaration
+// table in the checker is the single source of truth for those.
+func StructOf(name string) *Type { return &Type{Kind: KStruct, Name: name} }
 
 // The scalar types are singletons; nothing ever mutates a Type.
 var (
@@ -50,6 +57,11 @@ func MapOf(key, val *Type) *Type   { return &Type{Kind: KMap, Key: key, Elem: va
 func (t *Type) IsUnknown() bool    { return t == nil || t.Kind == KUnknown }
 func (t *Type) IsNumeric() bool    { return t != nil && (t.Kind == KInt || t.Kind == KFloat) }
 func (t *Type) IsCollection() bool { return t != nil && (t.Kind == KList || t.Kind == KMap) }
+
+// NeedsShow reports whether printing this type has to go through the
+// Quartz formatting helper. Scalars are fine with Go's own %v; anything
+// with structure would otherwise leak Go's notation.
+func (t *Type) NeedsShow() bool { return t.IsCollection() || (t != nil && t.Kind == KStruct) }
 
 // String prints a type in Quartz's vocabulary. The whole point of the
 // checker is that users never see "float64" or "string" again.
@@ -72,6 +84,8 @@ func (t *Type) String() string {
 		return "[]" + t.Elem.String()
 	case KMap:
 		return "{" + t.Key.String() + ": " + t.Elem.String() + "}"
+	case KStruct:
+		return t.Name
 	case KNumeric:
 		return "int or float"
 	case KAny:
@@ -93,6 +107,8 @@ func (t *Type) Equal(u *Type) bool {
 		return t.Elem.Equal(u.Elem)
 	case KMap:
 		return t.Key.Equal(u.Key) && t.Elem.Equal(u.Elem)
+	case KStruct:
+		return t.Name == u.Name
 	}
 	return true
 }
@@ -135,6 +151,8 @@ func (t *Type) Go() string {
 		return "[]" + t.Elem.Go()
 	case KMap:
 		return "map[" + t.Key.Go() + "]" + t.Elem.Go()
+	case KStruct:
+		return t.Name
 	}
 	return "any"
 }
@@ -157,6 +175,8 @@ func (t *Type) Zero() string {
 		return "false"
 	case KList, KMap:
 		return t.Go() + "{}"
+	case KStruct:
+		return t.Name + "{}"
 	}
 	return "nil"
 }
@@ -223,5 +243,27 @@ func ParseType(s string) *Type {
 		}
 	}
 
+	// Anything else that looks like a name is taken to be a struct. The
+	// checker owns the question of whether that struct was declared —
+	// this function has no table to consult.
+	if isTypeName(s) {
+		return StructOf(s)
+	}
 	return nil
+}
+
+func isTypeName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }

@@ -29,6 +29,18 @@ var collectionHelperDefs = map[string]helperDef{
 }`,
 		deps: []string{"qzBounds"},
 	},
+	// __listAt is __listGet that hands back the element's address rather
+	// than a copy, so a method called on xs[i] can change the element in
+	// place while still being bounds-checked.
+	"listAt": {
+		code: `func __listAt[T any](xs []T, i int) *T {
+	if i < 0 || i >= len(xs) {
+		__bounds(i, len(xs))
+	}
+	return &xs[i]
+}`,
+		deps: []string{"qzBounds"},
+	},
 	"listSet": {
 		// Assigning through a slice header mutates the shared backing
 		// array, so this needs no pointer.
@@ -195,16 +207,22 @@ var collectionHelperDefs = map[string]helperDef{
 	// It only ever runs on a value being printed, so the cost is
 	// irrelevant.
 	"show": {
-		code: `func __show(v any) string {
-	rv := reflect.ValueOf(v)
+		// Everything walks reflect.Value rather than `any`, because
+		// Quartz field names are lower case and therefore unexported in
+		// the generated Go. reflect refuses .Interface() on an unexported
+		// field, but reading the Value itself is fine, and fmt prints a
+		// reflect.Value as the value it holds.
+		code: `func __show(v any) string { return __showV(reflect.ValueOf(v)) }
+
+func __showV(rv reflect.Value) string {
 	if !rv.IsValid() {
 		return "nil"
 	}
 	switch rv.Kind() {
-	case reflect.Slice:
+	case reflect.Slice, reflect.Array:
 		parts := make([]string, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
-			parts[i] = __showInner(rv.Index(i).Interface())
+			parts[i] = __showInner(rv.Index(i))
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case reflect.Map:
@@ -213,24 +231,36 @@ var collectionHelperDefs = map[string]helperDef{
 			if keys[i].Kind() == reflect.Int {
 				return keys[i].Int() < keys[j].Int()
 			}
-			return fmt.Sprintf("%v", keys[i].Interface()) < fmt.Sprintf("%v", keys[j].Interface())
+			return keys[i].String() < keys[j].String()
 		})
 		parts := make([]string, len(keys))
 		for i, k := range keys {
-			parts[i] = __showInner(k.Interface()) + ": " + __showInner(rv.MapIndex(k).Interface())
+			parts[i] = __showInner(k) + ": " + __showInner(rv.MapIndex(k))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
+	case reflect.Struct:
+		t := rv.Type()
+		parts := make([]string, rv.NumField())
+		for i := 0; i < rv.NumField(); i++ {
+			parts[i] = t.Field(i).Name + ": " + __showInner(rv.Field(i))
+		}
+		return t.Name() + "{" + strings.Join(parts, ", ") + "}"
+	case reflect.Pointer, reflect.Interface:
+		if rv.IsNil() {
+			return "nil"
+		}
+		return __showV(rv.Elem())
 	}
-	return fmt.Sprintf("%v", v)
+	return fmt.Sprintf("%v", rv)
 }
 
 // __showInner quotes strings, so a list of words reads as ["a", "b"]
 // rather than [a, b] and an empty string is visible.
-func __showInner(v any) string {
-	if s, ok := v.(string); ok {
-		return strconv.Quote(s)
+func __showInner(rv reflect.Value) string {
+	if rv.Kind() == reflect.String {
+		return strconv.Quote(rv.String())
 	}
-	return __show(v)
+	return __showV(rv)
 }`,
 		imports: []string{"fmt", "reflect", "sort", "strconv", "strings"},
 	},
@@ -274,9 +304,9 @@ func wantAssignable(c *Checker, x *Call, i int, fn string) {
 		return
 	}
 	switch x.Args[i].(type) {
-	case *Ident, *Index:
+	case *Ident, *Index, *Field:
 	default:
-		c.errorAt(x.Args[i], "%s changes the list, so its first argument must be a variable", fn)
+		c.errorAt(x.Args[i], "%s changes the list, so its first argument must be a variable, a field, or an element", fn)
 	}
 }
 
