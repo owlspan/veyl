@@ -1,0 +1,42 @@
+// The example from the brief, in the shorthand spelling.
+let coolVariable = "f297fh3"
+os.write.file("qz_scratch.txt", coolVariable)
+let thing1 = os.read.file("qz_scratch.txt")
+print("read back: {thing1}")
+
+// The same calls in the documented noun-first spelling.
+os.file.write("qz_scratch.txt", "line one\n")
+os.file.append("qz_scratch.txt", "line two\n")
+print("size {os.file.size("qz_scratch.txt")}")
+print("lines {os.file.lines("qz_scratch.txt")}")
+
+print("exists {os.file.exists("qz_scratch.txt")} missing {os.file.exists("nope.txt")}")
+print("readOr {os.file.readOr("nope.txt", "default")}")
+
+// directories
+os.dir.make("qz_scratch_dir")
+os.file.write("qz_scratch_dir/a.txt", "a")
+os.file.write("qz_scratch_dir/b.txt", "b")
+print("listed {os.dir.list("qz_scratch_dir")}")
+print("is dir {os.dir.is("qz_scratch_dir")} is file {os.dir.is("qz_scratch.txt")}")
+
+// Paths never touch the disk. Separators are normalised here so the
+// expected output is the same on Windows and everywhere else.
+let joined = replace(os.path.join("a", "b", "c.txt"), "\\", "/")
+let parent = replace(os.path.dir("/x/y/z.txt"), "\\", "/")
+print("join {joined}")
+print("base {os.path.base("/x/y/z.txt")} dir {parent} ext {os.path.ext("/x/y/z.txt")}")
+
+// environment
+os.env.set("QUARTZ_TEST_VAR", "hello")
+print("env {os.env.get("QUARTZ_TEST_VAR")} has {os.env.has("QUARTZ_TEST_VAR")} missing {os.env.has("QUARTZ_NOT_SET_VAR")}")
+
+// machine facts that are stable enough to assert on
+print("cpus positive {os.cpus() > 0}")
+print("pid positive {os.pid() > 0}")
+print("hostname nonempty {len(os.hostname()) > 0}")
+
+// tidy up, and prove deletion worked
+os.file.delete("qz_scratch.txt")
+os.dir.delete("qz_scratch_dir")
+print("cleaned {os.file.exists("qz_scratch.txt")} {os.dir.is("qz_scratch_dir")}")

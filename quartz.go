@@ -146,8 +146,9 @@ func run(cmd, path string) error {
 	build.Stderr = os.Stderr
 	build.Stdout = os.Stderr
 	if err := build.Run(); err != nil {
-		return fmt.Errorf("backend rejected the program (see above; Quartz has no type checker yet, "+
-			"so type errors surface from Go — run 'quartz emit %s' to inspect the generated code)", path)
+		return fmt.Errorf("the Go backend rejected the generated program (see above). "+
+			"This is a compiler bug, not a mistake in %s — the type checker should have "+
+			"caught it first. Run 'quartz emit %s' to see what was generated.", path, path)
 	}
 
 	if cmd == "build" {

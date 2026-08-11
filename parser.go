@@ -441,6 +441,11 @@ func (p *Parser) parsePostfix() Expr {
 			p.expect(RBRACKET, "']'")
 			x = &Index{pos: at(lb), X: x, Idx: idx}
 
+		case p.check(DOT):
+			dot := p.advance()
+			name := p.expect(IDENT, "a name after '.'")
+			x = &Field{pos: at(dot), X: x, Name: name.Lex}
+
 		default:
 			return x
 		}

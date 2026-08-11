@@ -1,0 +1,379 @@
+package main
+
+import (
+	"sort"
+	"strings"
+)
+
+// The os library: files, directories, paths, environment, time and
+// process control, reached through dotted names — os.file.read(...).
+//
+// Quartz has no error type yet, so every operation here follows one of
+// two conventions, and which one it is is visible from the name:
+//
+//   - Operations that return a value are fatal on failure, with a plain
+//     one-line message naming the path. `os.file.readOr(p, fallback)`
+//     is the variant that never fails.
+//   - Operations that only act return a bool for whether they worked.
+//
+// That is a deliberate stopgap. When the T! error type arrives (v0.7)
+// these become the obvious first candidates to convert.
+
+// namespaces are the dotted library roots the compiler knows. Used to
+// tell "you misspelled the function" from "that library isn't a thing".
+var namespaces = map[string]bool{}
+
+func registerNamespace(names ...string) {
+	for _, n := range names {
+		namespaces[n] = true
+	}
+}
+
+func namespaceList() string {
+	out := make([]string, 0, len(namespaces))
+	for n := range namespaces {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return strings.Join(out, ", ")
+}
+
+var osHelperDefs = map[string]helperDef{
+	// One place decides how a failed operation is reported, so every
+	// message in the library reads the same way.
+	"qzFatal": {
+		code: `func __fatal(op string, subject string, err error) {
+	fmt.Fprintf(os.Stderr, "runtime error: cannot %s %q: %v\n", op, subject, err)
+	os.Exit(1)
+}`,
+		imports: []string{"fmt", "os"},
+	},
+
+	"readFile": {
+		code: `func __readFile(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		__fatal("read", path, err)
+	}
+	return string(b)
+}`,
+		imports: []string{"os"},
+		deps:    []string{"qzFatal"},
+	},
+	"readFileOr": {
+		code: `func __readFileOr(path string, fallback string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fallback
+	}
+	return string(b)
+}`,
+		imports: []string{"os"},
+	},
+	"writeFile": {
+		code: `func __writeFile(path string, text string) bool {
+	return os.WriteFile(path, []byte(text), 0o644) == nil
+}`,
+		imports: []string{"os"},
+	},
+	"appendFile": {
+		code: `func __appendFile(path string, text string) bool {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	_, err = f.WriteString(text)
+	return err == nil
+}`,
+		imports: []string{"os"},
+	},
+	"readLines": {
+		code: `func __readLines(path string) []string {
+	text := __readFile(path)
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return []string{}
+	}
+	return strings.Split(text, "\n")
+}`,
+		imports: []string{"strings"},
+		deps:    []string{"readFile"},
+	},
+	"fileSize": {
+		code: `func __fileSize(path string) int {
+	info, err := os.Stat(path)
+	if err != nil {
+		__fatal("measure", path, err)
+	}
+	return int(info.Size())
+}`,
+		imports: []string{"os"},
+		deps:    []string{"qzFatal"},
+	},
+	"listDir": {
+		code: `func __listDir(path string) []string {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		__fatal("list", path, err)
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	sort.Strings(out)
+	return out
+}`,
+		imports: []string{"os", "sort"},
+		deps:    []string{"qzFatal"},
+	},
+	"isDir": {
+		code: `func __isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}`,
+		imports: []string{"os"},
+	},
+	"runCmd": {
+		// Output and exit status are separate calls rather than a pair,
+		// since Quartz has no multiple returns yet. Both capture stdout
+		// and stderr together, which is what a script usually wants.
+		code: `func __runCmd(name string, args []string) string {
+	out, _ := exec.Command(name, args...).CombinedOutput()
+	return string(out)
+}`,
+		imports: []string{"os/exec"},
+	},
+	"runCode": {
+		code: `func __runCode(name string, args []string) int {
+	cmd := exec.Command(name, args...)
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return ee.ExitCode()
+		}
+		return -1
+	}
+	return 0
+}`,
+		imports: []string{"os/exec"},
+	},
+	"osArgs": {
+		code: `func __args() []string {
+	if len(os.Args) < 2 {
+		return []string{}
+	}
+	out := make([]string, len(os.Args)-1)
+	copy(out, os.Args[1:])
+	return out
+}`,
+		imports: []string{"os"},
+	},
+}
+
+var osBuiltins map[string]builtin
+
+func buildOsBuiltins() {
+	// A tiny constructor keeps the table readable: most entries are just
+	// "call this helper with these argument types".
+	fn := func(goFn string, params []*Type, ret *Type, helper string, imports ...string) builtin {
+		return builtin{
+			emit: func(a []string) string {
+				return goFn + "(" + strings.Join(a, ", ") + ")"
+			},
+			params: params, ret: ret,
+			minArgs: len(params), maxArgs: len(params),
+			helpers: []string{helper},
+			imports: imports,
+		}
+	}
+	direct := func(goFn string, params []*Type, ret *Type, imports ...string) builtin {
+		return builtin{
+			emit: func(a []string) string {
+				return goFn + "(" + strings.Join(a, ", ") + ")"
+			},
+			params: params, ret: ret,
+			minArgs: len(params), maxArgs: len(params),
+			imports: imports,
+		}
+	}
+
+	osBuiltins = map[string]builtin{
+
+		// ---- files ----
+
+		"os.file.read":   fn("__readFile", []*Type{Str}, Str, "readFile"),
+		"os.file.readOr": fn("__readFileOr", []*Type{Str, Str}, Str, "readFileOr"),
+		"os.file.lines":  fn("__readLines", []*Type{Str}, ListOf(Str), "readLines"),
+		"os.file.write":  fn("__writeFile", []*Type{Str, Str}, Bool, "writeFile"),
+		"os.file.append": fn("__appendFile", []*Type{Str, Str}, Bool, "appendFile"),
+		"os.file.size":   fn("__fileSize", []*Type{Str}, Int, "fileSize"),
+		"os.file.exists": {
+			emit: func(a []string) string {
+				return "func() bool { _, err := os.Stat(" + a[0] + "); return err == nil }()"
+			},
+			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+		"os.file.delete": {
+			emit:   func(a []string) string { return "(os.Remove(" + a[0] + ") == nil)" },
+			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+		"os.file.rename": {
+			emit:   func(a []string) string { return "(os.Rename(" + a[0] + ", " + a[1] + ") == nil)" },
+			params: []*Type{Str, Str}, ret: Bool, minArgs: 2, maxArgs: 2,
+			imports: []string{"os"},
+		},
+
+		// ---- directories ----
+
+		"os.dir.list": fn("__listDir", []*Type{Str}, ListOf(Str), "listDir"),
+		"os.dir.is":   fn("__isDir", []*Type{Str}, Bool, "isDir"),
+		"os.dir.make": {
+			emit:   func(a []string) string { return "(os.MkdirAll(" + a[0] + ", 0o755) == nil)" },
+			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+		"os.dir.delete": {
+			emit:   func(a []string) string { return "(os.RemoveAll(" + a[0] + ") == nil)" },
+			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+		"os.dir.current": {
+			emit:    func(a []string) string { return "func() string { d, _ := os.Getwd(); return d }()" },
+			ret:     Str,
+			imports: []string{"os"},
+		},
+		"os.dir.change": {
+			emit:   func(a []string) string { return "(os.Chdir(" + a[0] + ") == nil)" },
+			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+		"os.dir.temp": {
+			emit:    func(a []string) string { return "os.TempDir()" },
+			ret:     Str,
+			imports: []string{"os"},
+		},
+		"os.dir.home": {
+			emit:    func(a []string) string { return "func() string { d, _ := os.UserHomeDir(); return d }()" },
+			ret:     Str,
+			imports: []string{"os"},
+		},
+
+		// ---- paths ----
+		// Pure string manipulation: these never touch the filesystem.
+
+		"os.path.join": {
+			emit:    func(a []string) string { return "filepath.Join(" + strings.Join(a, ", ") + ")" },
+			rest:    Str,
+			ret:     Str,
+			minArgs: 1, maxArgs: -1,
+			imports: []string{"path/filepath"},
+		},
+		"os.path.base":  direct("filepath.Base", []*Type{Str}, Str, "path/filepath"),
+		"os.path.dir":   direct("filepath.Dir", []*Type{Str}, Str, "path/filepath"),
+		"os.path.ext":   direct("filepath.Ext", []*Type{Str}, Str, "path/filepath"),
+		"os.path.clean": direct("filepath.Clean", []*Type{Str}, Str, "path/filepath"),
+		"os.path.absolute": {
+			emit: func(a []string) string {
+				return "func() string { p, err := filepath.Abs(" + a[0] + "); if err != nil { return " + a[0] + " }; return p }()"
+			},
+			params: []*Type{Str}, ret: Str, minArgs: 1, maxArgs: 1,
+			imports: []string{"path/filepath"},
+		},
+
+		// ---- environment and process ----
+
+		"os.env.get": {
+			emit:   func(a []string) string { return "os.Getenv(" + a[0] + ")" },
+			params: []*Type{Str}, ret: Str, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+		"os.env.set": {
+			emit:   func(a []string) string { return "(os.Setenv(" + a[0] + ", " + a[1] + ") == nil)" },
+			params: []*Type{Str, Str}, ret: Bool, minArgs: 2, maxArgs: 2,
+			imports: []string{"os"},
+		},
+		"os.env.has": {
+			emit: func(a []string) string {
+				return "func() bool { _, ok := os.LookupEnv(" + a[0] + "); return ok }()"
+			},
+			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
+			imports: []string{"os"},
+		},
+
+		"os.args": {
+			emit:    func(a []string) string { return "__args()" },
+			ret:     ListOf(Str),
+			helpers: []string{"osArgs"},
+		},
+		"os.name": {
+			emit:    func(a []string) string { return "runtime.GOOS" },
+			ret:     Str,
+			imports: []string{"runtime"},
+		},
+		"os.arch": {
+			emit:    func(a []string) string { return "runtime.GOARCH" },
+			ret:     Str,
+			imports: []string{"runtime"},
+		},
+		"os.cpus": {
+			emit:    func(a []string) string { return "runtime.NumCPU()" },
+			ret:     Int,
+			imports: []string{"runtime"},
+		},
+		"os.pid": {
+			emit:    func(a []string) string { return "os.Getpid()" },
+			ret:     Int,
+			imports: []string{"os"},
+		},
+		"os.hostname": {
+			emit:    func(a []string) string { return "func() string { h, _ := os.Hostname(); return h }()" },
+			ret:     Str,
+			imports: []string{"os"},
+		},
+
+		"os.run": {
+			emit: func(a []string) string {
+				return "__runCmd(" + a[0] + ", " + a[1] + ")"
+			},
+			params: []*Type{Str, ListOf(Str)}, ret: Str,
+			minArgs: 2, maxArgs: 2,
+			helpers: []string{"runCmd"},
+		},
+		"os.runCode": {
+			emit: func(a []string) string {
+				return "__runCode(" + a[0] + ", " + a[1] + ")"
+			},
+			params: []*Type{Str, ListOf(Str)}, ret: Int,
+			minArgs: 2, maxArgs: 2,
+			helpers: []string{"runCode"},
+		},
+	}
+
+	// The user's own shorthand reads verb-first. Both spellings resolve
+	// to the same builtin, so os.read.file and os.file.read are the same
+	// call; the noun-first form is the documented one because it groups.
+	for alias, canonical := range map[string]string{
+		"os.read.file":   "os.file.read",
+		"os.write.file":  "os.file.write",
+		"os.append.file": "os.file.append",
+		"os.delete.file": "os.file.delete",
+		"os.list.dir":    "os.dir.list",
+		"os.make.dir":    "os.dir.make",
+	} {
+		osBuiltins[alias] = osBuiltins[canonical]
+	}
+}
+
+func registerOs() {
+	buildOsBuiltins()
+	registerNamespace("os")
+	for k, v := range osHelperDefs {
+		helperDefs[k] = v
+	}
+	for k, v := range osBuiltins {
+		builtins[k] = v
+	}
+}

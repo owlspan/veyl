@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // varInfo tracks one declared name within a scope.
 type varInfo struct {
@@ -275,6 +279,19 @@ func (r *Resolver) expr(e Expr) {
 		r.expr(x.X)
 		r.expr(x.Idx)
 
+	case *Field:
+		// A dotted path is only meaningful as the callee of a call, which
+		// r.call handles. Reaching here means it was used as a value.
+		if name, ok := DottedName(x); ok {
+			if _, isBuiltin := builtins[name]; isBuiltin {
+				r.errorAt(x, "%s is a function; did you mean %s(...)?", name, name)
+				return
+			}
+			r.errorAt(x, "there is no value called %s%s", name, nearestNamespaceHint(name))
+			return
+		}
+		r.errorAt(x, "'.' can only be used on a library name for now")
+
 	case *Call:
 		for _, a := range x.Args {
 			r.expr(a)
@@ -284,23 +301,64 @@ func (r *Resolver) expr(e Expr) {
 }
 
 func (r *Resolver) call(x *Call) {
-	id, ok := x.Callee.(*Ident)
+	name, ok := DottedName(x.Callee)
 	if !ok {
 		r.errorAt(x, "this expression is not a function")
 		return
 	}
 
-	if b, isBuiltin := builtins[id.Name]; isBuiltin {
-		r.checkArity(x, id.Name, len(x.Args), b.minArgs, b.maxArgs)
+	if b, isBuiltin := builtins[name]; isBuiltin {
+		r.checkArity(x, name, len(x.Args), b.minArgs, b.maxArgs)
 		return
 	}
 
-	f, isUser := r.funcs[id.Name]
-	if !isUser {
-		r.errorAt(x, "undefined function %q", id.Name)
+	// A dotted name that is not a builtin is a mistake in a library path,
+	// so say which part is wrong rather than "undefined function".
+	if _, dotted := x.Callee.(*Field); dotted {
+		r.errorAt(x, "there is no builtin called %s%s", name, nearestNamespaceHint(name))
 		return
 	}
-	r.checkArity(x, id.Name, len(x.Args), len(f.Params), len(f.Params))
+
+	f, isUser := r.funcs[name]
+	if !isUser {
+		r.errorAt(x, "undefined function %q", name)
+		return
+	}
+	r.checkArity(x, name, len(x.Args), len(f.Params), len(f.Params))
+}
+
+// nearestNamespaceHint suggests what the user may have meant when a
+// dotted path does not exist.
+//
+// It walks the path from the deepest prefix outward, so os.file.slurp
+// suggests the other os.file.* names rather than everything in os. A
+// misspelt leaf is far more common than a misremembered library, and
+// listing the whole library buries the answer.
+func nearestNamespaceHint(name string) string {
+	parts := strings.Split(name, ".")
+	if !namespaces[parts[0]] {
+		return fmt.Sprintf(" — %q is not a library (try one of: %s)", parts[0], namespaceList())
+	}
+
+	for depth := len(parts) - 1; depth >= 1; depth-- {
+		prefix := strings.Join(parts[:depth], ".") + "."
+		var near []string
+		for candidate := range builtins {
+			if strings.HasPrefix(candidate, prefix) {
+				near = append(near, candidate)
+			}
+		}
+		if len(near) == 0 {
+			continue
+		}
+		sort.Strings(near)
+		suffix := ""
+		if len(near) > 6 {
+			near, suffix = near[:6], ", ..."
+		}
+		return " — did you mean one of: " + strings.Join(near, ", ") + suffix
+	}
+	return ""
 }
 
 func (r *Resolver) checkArity(x *Call, name string, got, min, max int) {

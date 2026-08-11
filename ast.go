@@ -103,6 +103,31 @@ type MapLit struct {
 	T    *Type // the map type, filled in by the checker
 }
 
+// Field is `a.b`. Today it only ever forms a dotted builtin path such
+// as os.file.read; when structs arrive it becomes field access too.
+type Field struct {
+	pos
+	X    Expr
+	Name string
+}
+
+// DottedName flattens a chain of Field nodes rooted at an Ident into
+// "os.file.read". It reports false for anything else, which is how the
+// compiler tells a namespace path from an expression.
+func DottedName(e Expr) (string, bool) {
+	switch x := e.(type) {
+	case *Ident:
+		return x.Name, true
+	case *Field:
+		base, ok := DottedName(x.X)
+		if !ok {
+			return "", false
+		}
+		return base + "." + x.Name, true
+	}
+	return "", false
+}
+
 // Index is `xs[i]` for a list or `m[k]` for a map.
 type Index struct {
 	pos
@@ -134,6 +159,7 @@ func (*Unary) exprNode()    {}
 func (*Binary) exprNode()   {}
 func (*Call) exprNode()     {}
 func (*Interp) exprNode()   {}
+func (*Field) exprNode()    {}
 func (*ListLit) exprNode()  {}
 func (*MapLit) exprNode()   {}
 func (*Index) exprNode()    {}

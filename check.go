@@ -642,7 +642,7 @@ func (c *Checker) arithmetic(x *Binary, lt, rt *Type) *Type {
 // ---- calls ----
 
 func (c *Checker) call(x *Call) *Type {
-	id, ok := x.Callee.(*Ident)
+	name, ok := DottedName(x.Callee)
 	if !ok {
 		return Unknown
 	}
@@ -653,16 +653,16 @@ func (c *Checker) call(x *Call) *Type {
 	}
 	x.ArgT = args
 
-	if b, isBuiltin := builtins[id.Name]; isBuiltin {
+	if b, isBuiltin := builtins[name]; isBuiltin {
 		if b.check != nil {
 			x.T = b.check(c, x, args)
 			return x.T
 		}
-		x.T = c.checkBuiltin(x, id.Name, b, args)
+		x.T = c.checkBuiltin(x, name, b, args)
 		return x.T
 	}
 
-	f, isUser := c.funcs[id.Name]
+	f, isUser := c.funcs[name]
 	if !isUser {
 		return Unknown // the resolver reported it
 	}
@@ -677,7 +677,7 @@ func (c *Checker) call(x *Call) *Type {
 			continue
 		}
 		c.errorAt(x.Args[i], "%s expects %s for %q, got %s",
-			id.Name, want, f.Params[i].Name, args[i])
+			name, want, f.Params[i].Name, args[i])
 	}
 	x.T = f.RetT
 	return f.RetT

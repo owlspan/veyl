@@ -251,6 +251,7 @@ func init() {
 
 	registerStdlib()
 	registerCollections()
+	registerOs()
 	registerWindowsRuntime()
 }
 
@@ -450,7 +451,17 @@ func (c *Codegen) stmt(s Stmt) {
 
 	case *ExprStmt:
 		c.line(st)
-		c.w("%s", c.expr(st.X))
+		code := c.expr(st.X)
+		// Go accepts only a call as a bare statement, but plenty of
+		// builtins compile to something else — `(os.Remove(p) == nil)`,
+		// or a func literal. Discarding the result makes any of them a
+		// legal statement. Void calls are left alone so the common case
+		// stays readable.
+		if t := staticType(st.X); t != nil && t.Kind != KVoid {
+			c.w("_ = %s", code)
+			return
+		}
+		c.w("%s", code)
 
 	case *ReturnStmt:
 		c.line(st)
@@ -613,6 +624,22 @@ func (c *Codegen) blockBody(b *Block) {
 		c.stmt(s)
 	}
 	c.indent--
+}
+
+// staticType reports the checker's verdict for an expression, or nil
+// where nothing recorded one.
+func staticType(e Expr) *Type {
+	switch x := e.(type) {
+	case *Call:
+		return x.T
+	case *Binary:
+		return x.T
+	case *ListLit:
+		return x.T
+	case *MapLit:
+		return x.T
+	}
+	return nil
 }
 
 // lvalue emits an expression in a position that is written to rather
@@ -784,7 +811,7 @@ func goBinOp(k Kind) string {
 }
 
 func (c *Codegen) call(x *Call) string {
-	id, ok := x.Callee.(*Ident)
+	name, ok := DottedName(x.Callee)
 	if !ok {
 		return "nil" // the resolver already reported this
 	}
@@ -794,10 +821,10 @@ func (c *Codegen) call(x *Call) string {
 		args[i] = c.expr(a)
 	}
 
-	if b, isBuiltin := builtins[id.Name]; isBuiltin {
+	if b, isBuiltin := builtins[name]; isBuiltin {
 		if b.osOnly != "" && b.osOnly != c.target {
 			c.errorAt(x, "%s() is only available on %s (building for %s)",
-				id.Name, b.osOnly, c.target)
+				name, b.osOnly, c.target)
 			return "nil"
 		}
 		c.need(b.imports, b.helpers)
@@ -807,7 +834,7 @@ func (c *Codegen) call(x *Call) string {
 		return b.emit(args)
 	}
 	// User-defined function; the resolver verified it exists.
-	return fmt.Sprintf("%s(%s)", id.Name, strings.Join(args, ", "))
+	return fmt.Sprintf("%s(%s)", name, strings.Join(args, ", "))
 }
 
 // show wraps a generated expression in the Quartz-formatting helper when

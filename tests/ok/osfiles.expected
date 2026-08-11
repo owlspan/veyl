@@ -1,0 +1,14 @@
+read back: f297fh3
+size 18
+lines ["line one", "line two"]
+exists true missing false
+readOr default
+listed ["a.txt", "b.txt"]
+is dir true is file false
+join a/b/c.txt
+base z.txt dir /x/y ext .txt
+env hello has true missing false
+cpus positive true
+pid positive true
+hostname nonempty true
+cleaned false false
