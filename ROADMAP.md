@@ -446,13 +446,25 @@ A canonical formatter. The AST already exists; this is a pretty-printer.
 A TextMate grammar is about an hour of work for syntax highlighting.
 Disproportionate morale value.
 
-**10.8 Installer**
-Inno Setup script: PATH entry, stdlib next to the binary, `.qz` file
-association with an icon, and a right-click "Run with Quartz" verb.
+**10.8 Installer** — **DONE**
+`installer\quartz.iss`, built by `installer\build.ps1`. PATH entry,
+`.qz` association with an icon and a right-click "Run with Quartz"
+verb, Start Menu shortcuts, components, and a clean uninstall. Verified
+by installing it silently to a temp directory, compiling a program with
+PATH stripped to `System32`, and uninstalling again.
 
-**10.9 Bundle the Go toolchain**
-Quartz currently requires Go to be installed. Either bundle it (~100 MB,
-but it Just Works) or document the requirement prominently.
+**10.9 Bundle the Go toolchain** — **DONE**
+Bundled, not documented-around. A trimmed GOROOT (177 MB on disk, 36 MB
+inside the installer once LZMA2 has had it) ships as an optional
+component and is found by position rather than PATH, so a developer's
+own Go is never shadowed. `findGo` in `toolchain.go` prefers
+`QUARTZ_GO`, then the bundled copy, then PATH. `quartz doctor` reports
+which one was chosen.
+
+Worth knowing: the first compile against a fresh bundled toolchain
+takes about 13 seconds because Go is building its standard library into
+an empty cache. Every compile after that is ~1.6 seconds. That is
+alarming exactly once, so it is written down here.
 
 **10.10 Website and tutorial**
 `README.md` is the seed. A "learn Quartz in 20 minutes" page matters

@@ -12,7 +12,7 @@ import (
 )
 
 // Version is stamped into `quartz version`. Bump it with the tag.
-const Version = "0.14"
+const Version = "0.15"
 
 const usage = `Quartz ` + Version + ` — a small language that compiles to native executables
 
@@ -23,17 +23,23 @@ usage:
   quartz emit   <file.qz>    print the generated Go
   quartz tokens <file.qz>    print the token stream
   quartz builtins            list every builtin, for editor tooling
+  quartz doctor              check that everything Quartz needs is present
   quartz version             print the version
   quartz help                print this
 
   quartz <file.qz>           same as 'run'
 
+Anything after the .qz file is passed to the program, not to Quartz.
+
 environment:
   QUARTZ_TARGET=windows      cross-compile for another OS
   QUARTZ_QUIET=1             suppress warnings
+  QUARTZ_GO=<path to go.exe> use a specific Go toolchain
 
-Go must be installed: Quartz hands its generated code to the Go
-toolchain. Language reference: SYNTAX.md
+Quartz hands its generated code to the Go toolchain, so Go has to be
+present. The installer ships a copy; otherwise get it from
+https://go.dev/dl. Run 'quartz doctor' to check.
+Language reference: SYNTAX.md
 `
 
 func main() {
@@ -60,6 +66,14 @@ func main() {
 		return
 	case "-v", "--version", "version":
 		fmt.Printf("quartz %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+		return
+	case "doctor":
+		// Exists so that "it doesn't work on my machine" can be
+		// answered without guessing at the environment.
+		if err := doctor(); err != nil {
+			fmt.Fprintf(os.Stderr, "\n%v\n", err)
+			os.Exit(1)
+		}
 		return
 	case "builtins":
 		// Exists so editor tooling can be generated from the compiler
@@ -185,11 +199,25 @@ func run(cmd, path string, progArgs []string) error {
 		return err
 	}
 
+	tc, err := findGo()
+	if err != nil {
+		return err
+	}
+
 	outPath := filepath.Join(tmp, exeName)
-	build := exec.Command("go", "build", "-o", outPath, ".")
+	build := exec.Command(tc.exe, "build", "-o", outPath, ".")
 	build.Dir = tmp
 	if target != runtime.GOOS {
 		build.Env = append(os.Environ(), "GOOS="+target)
+	}
+	// A bundled toolchain is not on PATH and has no GOROOT set for it,
+	// so point it at its own tree. Layout is <root>/bin/go.exe.
+	if tc.source != "PATH" {
+		root := filepath.Dir(filepath.Dir(tc.exe))
+		if build.Env == nil {
+			build.Env = os.Environ()
+		}
+		build.Env = append(build.Env, "GOROOT="+root)
 	}
 	build.Stderr = os.Stderr
 	build.Stdout = os.Stderr

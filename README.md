@@ -73,16 +73,29 @@ to ship and no C compiler involved anywhere.
 
 ---
 
-## Requirements
+## Installing
 
-- **Go 1.21 or newer** — <https://go.dev/dl/>
-
-Go is needed both to build the compiler and to compile Quartz programs,
-since Quartz hands its generated code to the Go toolchain. Verify with:
+**The easy way, on Windows:** run `quartz-<version>-setup.exe`. It
+installs the compiler, adds it to PATH if you let it, associates `.qz`
+files, and ships a private copy of the Go toolchain so there is nothing
+else to install. Then check it:
 
 ```
-go version
+quartz doctor
 ```
+
+The bundled toolchain lives inside Quartz's own folder and is kept off
+PATH deliberately, so if you already have Go it is left completely
+alone. Untick that component during setup and Quartz will use yours.
+
+**Building it yourself** needs **Go 1.21 or newer** —
+<https://go.dev/dl/>. Go is required both to build the compiler and to
+compile Quartz programs, since Quartz hands its generated code to the
+Go toolchain.
+
+If Quartz cannot find a Go toolchain it says so and tells you what to
+do, rather than failing with a PATH error. `QUARTZ_GO` forces a
+specific one.
 
 ---
 
@@ -386,10 +399,11 @@ quartz/
   stdlib.go       math and string builtins
   runtime_win.go  Win32 builtins and helpers
   quartz.go       CLI driver
+  toolchain.go    finding the Go toolchain, and 'quartz doctor'
   quartz_test.go  the test harness
   examples/       sample programs
   editors/vscode/ syntax highlighting
-  installer/      an Inno Setup script (never compiled — see its header)
+  installer/      Inno Setup script and its build script
   tests/ok/       programs that must compile and run
   tests/err/      programs that must be rejected
   TUTORIAL.md     learn the language in 20 minutes
@@ -501,8 +515,9 @@ Honest list of what v0.10 does not do.
   a C backend and are not available.
 - **The formatter does not reflow lines.** `quartz fmt` fixes
   indentation and spacing; where you break a line is left to you.
-- **No editor support and no installer.** A VS Code grammar and an
-  installer are the remaining v1.0 items.
+- **The installer is Windows only.** `installer\quartz.iss` builds a
+  Windows setup program. Linux and macOS have no packaging at all; you
+  build from source there.
 - **Windows only for GUI.** No Linux or macOS equivalent yet.
 - **Windows are blank.** `openWindow` opens and manages a real window,
   but there is no drawing or event API — no buttons, no input handling,

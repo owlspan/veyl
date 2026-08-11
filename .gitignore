@@ -16,6 +16,11 @@ examples/hello
 # `git reset --hard`, which is exactly when it is wanted.
 Working version/
 
+# Installer build output: a staged copy of the Go toolchain (~177 MB)
+# and the setup executable built from it. Both are reproducible from
+# installer\build.ps1, and neither belongs in git.
+dist/
+
 # editor / OS noise
 .vscode/
 .idea/

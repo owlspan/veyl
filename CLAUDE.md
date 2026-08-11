@@ -22,7 +22,7 @@ learning project, on **Windows 10**, using VS Code. They do not have
 Linux or a VM. They know Git basics only (`add`, `commit`, `log`,
 `status`, `checkout`, `--amend`).
 
-**Current version: v0.3.** Working and committed.
+**Current version: v0.15.** Working, committed, and tagged.
 
 ---
 
@@ -276,107 +276,108 @@ certain way.
 
 ---
 
-## Current state (v0.3)
+## Current state (v0.15)
 
-**Implemented**
+**The language**
 
-- `let` / `const`, type inference, optional `: type` annotations
-- `int`, `float`, `str`, `bool`
-- Full operator precedence via Pratt parsing; `+ - * / %`,
-  `== != < <= > >=`, `&& || !`, `+= -= *= /=`
-- String interpolation `"{expr}"`, with nesting and `{{` escapes
-- `if` / `else if` / `else`, `while`
-- `for i in a..b`, `..=` inclusive, `step` (negative counts down)
-- `break`, `continue`
-- `fn` with typed params, optional return type, recursion,
-  order-independent declaration, return-path checking
-- ~60 builtins: I/O, conversion, math, trig, random, strings
-- Constants `PI`, `E`, `INF`, `NAN`
-- Windows: `setTitle`, `beep`, `messageBox`, `hideConsole`, `winBuild`,
-  `isWin11`, `openWindow`
+- `let` / `const`, inference, optional `: type` annotations
+- `int`, `float`, `str`, `bool`, and a real type checker in `check.go`
+- Lists `[]T`, maps `{K: V}`, `struct` with `impl` methods
+- First-class functions, closures, higher-order list operations
+- Nullable `?T` with narrowing; error type `T!` with `?` propagation
+- `match`, bitwise operators, hex/binary literals, digit separators
+- Raw backtick strings; interpolation `"{expr}"` with nesting
+- `if` / `while` / `for i in a..b` with `step`, `break`, `continue`
+- Multi-file programs via `import` and `pub`
+- Structured concurrency through `task` — no raw goroutines exposed
 - Cross-compilation via `QUARTZ_TARGET`
+
+**The library** — all failures reported as `T!`, never a panic:
+`os`, `http`, `net`, `json`, `time`, `mem`, `task`, `re`, `hash`,
+`csv`, plus `win` for the Windows-only parts.
+
+**Tooling:** `quartz fmt`, `quartz doctor`, `quartz builtins`,
+`quartz emit`, warnings for unused variables and unreachable code, a
+VS Code extension in `editors/vscode`, and a verified Windows installer.
 
 **Not implemented**
 
-- Type checker (biggest gap)
-- Lists, maps, structs
-- JSON, file I/O, databases
-- Modules / `import`
-- Global variables
-- Error handling of any kind
-- Manual memory, pointers, `unsafe`
+- Generics
+- Databases — SQLite needs a Go dependency; flag the trade-off first
+- Manual memory, pointers, `unsafe` — all need the C backend
+- GUI event handling; `openWindow` opens a real but inert window
+- Any GUI outside Windows
 
-**Reserved but inert keywords:** `struct impl self match pub defer own
-unsafe import nil`
+**Reserved but inert keywords:** `self defer own unsafe nil`
 
 ---
 
-## Next milestone: the type checker (v0.4)
+## Finding the Go toolchain
 
-This is the agreed next step and it is a hard dependency for almost
-everything after it.
+Quartz compiles to Go source and shells out to the Go toolchain, so one
+has to exist. `findGo` in `toolchain.go` looks in three places, in this
+order:
 
-### Why it blocks everything
+1. `$QUARTZ_GO`, to force a specific one
+2. `go\bin\go.exe` next to `quartz.exe` — the installer's private copy
+3. `PATH`
 
-The moment a user writes `let xs = []`, codegen must emit a Go type.
-`[]int`? `[]string`? Nothing in the compiler currently tracks the type
-of an expression. Lists, maps, structs, JSON, and database rows all
-need this. It is not a nice-to-have.
+The bundled copy beats `PATH` on purpose, so an installed Quartz keeps
+working the same way whatever else the machine picks up later. It is
+also kept **off** `PATH` on purpose, so a developer's own Go is never
+shadowed. When a bundled toolchain is used, codegen sets `GOROOT` for
+the child process, since nothing else will have.
 
-It also fixes two visible problems:
+`quartz doctor` prints which one was found and where. That is the first
+thing to ask for when someone says it does not work.
 
-- Type errors currently surface from the Go backend in Go's vocabulary
-  (`string`, `float64`) rather than Quartz's (`str`, `float`).
-- `7 / 2` truncates to `3` because the compiler cannot distinguish
-  integer division from float division.
+---
 
-### Suggested shape
+## Building the installer
 
-A new file `check.go`, structurally parallel to `resolve.go`. Walk the
-tree, but return a type from each expression instead of only validating
-names.
-
-```go
-type Type int
-const (
-    TypeUnknown Type = iota  // error already reported; suppress cascades
-    TypeInt
-    TypeFloat
-    TypeStr
-    TypeBool
-    TypeVoid
-)
-
-func (c *Checker) expr(e Expr) Type   // returns the type, reports mismatches
-func (c *Checker) stmt(s Stmt)
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\build.ps1
 ```
 
-Points to handle:
+That builds `quartz.exe`, stages a trimmed GOROOT into `dist\stage\go`,
+proves the staged toolchain can compile `hello.qz` with `PATH` stripped,
+and only then spends two minutes on LZMA2. Output is
+`dist\quartz-<version>-setup.exe`.
 
-- Store the inferred type on `LetStmt` so codegen can emit an explicit
-  Go type rather than relying on `var x = ...`.
-- Verify an explicit `: type` annotation matches the value's type.
-- Binary operators: `+` works on `int`, `float`, `str`; the rest are
-  numeric only; comparisons yield `bool`; `&&`/`||` require `bool`.
-- Numeric promotion: decide whether `int + float` is legal (implicit
-  widening) or an error requiring `float(x)`. **Recommend: an error.**
-  It matches the language's existing no-implicit-conversion rule and
-  keeps codegen simple.
-- Builtins need declared signatures. Currently `builtin` has only arity.
-  Add param types and a return type, which also removes the `float64()`
-  wrapping hack.
-- Function calls: check argument types against parameter types.
-- Once types are known, fix `/`: emit integer division for two `int`s
-  and float division otherwise, and consider making `divf` redundant.
-- `TypeUnknown` must suppress downstream errors so one mistake does not
-  cascade into ten.
+Things learned doing it, worth not rediscovering:
 
-### After that
+- **Inno Setup installs per-user via winget**, to
+  `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`, not to
+  `Program Files`. `build.ps1` checks all three locations.
+- **A full GOROOT is ~225 MB; trimmed it is 177 MB; compressed into the
+  installer it is 36 MB.** The trimming drops `api`, `test`, `doc`,
+  `misc`, every `testdata` directory and every `*_test.go`. None of it
+  is needed to compile someone else's program.
+- **The first compile against a fresh bundled toolchain takes ~13
+  seconds** because Go is building its standard library into an empty
+  cache. It is ~1.6 s afterwards. This looks like a hang exactly once.
+- **`dist/` must stay gitignored.** It holds a 177 MB copy of Go.
+- **Verify by installing it.** Silent-install to a temp directory with
+  `/DIR=... /TASKS=` so no PATH or registry entries are touched, strip
+  `PATH` to `System32`, compile something, then run `unins000.exe
+  /VERYSILENT`. That is how the current script was checked; do not
+  weaken it to "it compiled".
 
-lists and maps -> structs and `impl` -> JSON -> file I/O and SQLite ->
-error type `T!` with `?` propagation -> modules -> C backend for
-`unsafe` and manual memory.
+---
 
-SQLite will require a Go dependency (`database/sql` plus a driver),
-which breaks the zero-dependency property. Flag that trade-off to the
-user before doing it.
+## Next milestone: the C backend (11.1)
+
+v1.0 is essentially done. The next real step is emitting C instead of
+Go behind the same AST, because it is the prerequisite for everything
+low-level: `own T`, `defer`, `alloc`/`free`, pointers, and `unsafe`.
+
+Design the IR boundary so it is one module swapped and not a rewrite.
+Keep the Go backend as the default; put C behind `QUARTZ_TARGET=c`.
+Concurrency is the hard part — `task` maps almost directly onto
+goroutines and not at all onto C, which is an argument for pinning the
+API down before the backend exists rather than after.
+
+The honest framing for the user: compiling through Go is a normal
+technique, not a fake language — but it does cost a garbage collector,
+a runtime, a ~2 MB floor on binary size, and any hope of manual memory.
+The C backend is what buys those back.
