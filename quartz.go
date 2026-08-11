@@ -94,6 +94,13 @@ func run(cmd, path string) error {
 		return err
 	}
 
+	// ---- type check ----
+	ck := NewChecker(name)
+	ck.Check(prog)
+	if err := reportErrors(ck.Errors); err != nil {
+		return err
+	}
+
 	// ---- codegen ----
 	target := os.Getenv("QUARTZ_TARGET")
 	if target == "" {

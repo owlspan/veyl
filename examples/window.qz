@@ -2,12 +2,14 @@
 
 setTitle("Quartz Demo")
 
-print("Opening a native window with rounded corners...")
-print("Close it to continue.")
+print("Windows build {winBuild()}, Windows 11: {isWin11()}")
+print("Opening a native window. Close it to continue.")
 beep(880, 150)
 
-openWindow("Hello from Quartz", 800, 500)
+// openWindow reports whether the corners were actually rounded, which
+// is false on Windows 10 no matter what was requested.
+let rounded = openWindow("Hello from Quartz", 800, 500)
 
-print("Window closed.")
+print("Window closed. Corners were rounded: {rounded}")
 messageBox("Quartz", "That window was created by your own language.")
 pause()

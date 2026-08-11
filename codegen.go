@@ -7,21 +7,6 @@ import (
 	"strings"
 )
 
-// qzTypes maps Quartz type names to their Go equivalents.
-var qzTypes = map[string]string{
-	"int":   "int",
-	"float": "float64",
-	"str":   "string",
-	"bool":  "bool",
-}
-
-func goType(qz string) string {
-	if g, ok := qzTypes[qz]; ok {
-		return g
-	}
-	return "any"
-}
-
 // ---- the builtin library ----
 
 type builtin struct {
@@ -34,6 +19,34 @@ type builtin struct {
 	maxArgs int // -1 means unlimited
 	// osOnly restricts a builtin to one target OS; "" means portable.
 	osOnly string
+
+	// ---- type signature, read by the checker ----
+
+	// params are the positional parameter types. Entries past minArgs are
+	// optional. Numeric accepts int or float; Any accepts anything.
+	params []*Type
+	// rest types the variadic tail, for builtins with maxArgs == -1.
+	rest *Type
+	// ret is the return type. Void means the builtin produces no value.
+	ret *Type
+	// retOf overrides ret for the few polymorphic builtins — min and max
+	// return whatever type they were given.
+	retOf func(args []*Type) *Type
+}
+
+// sameAsFirst is the return rule for min/max: the result is whatever
+// type the arguments were.
+func sameAsFirst(args []*Type) *Type {
+	if len(args) == 0 {
+		return Unknown
+	}
+	first := args[0]
+	for _, a := range args[1:] {
+		if !a.Equal(first) {
+			return Unknown
+		}
+	}
+	return first
 }
 
 var builtins map[string]builtin
@@ -116,10 +129,12 @@ func init() {
 		"print": {
 			emit:    func(a []string) string { return "fmt.Println(" + join(a) + ")" },
 			imports: []string{"fmt"}, minArgs: 0, maxArgs: -1,
+			rest: Any, ret: Void,
 		},
 		"write": {
 			emit:    func(a []string) string { return "fmt.Print(" + join(a) + ")" },
 			imports: []string{"fmt"}, minArgs: 0, maxArgs: -1,
+			rest: Any, ret: Void,
 		},
 		"input": {
 			emit: func(a []string) string {
@@ -129,10 +144,12 @@ func init() {
 				return "__input(" + a[0] + ")"
 			},
 			helpers: []string{"input"}, minArgs: 0, maxArgs: 1,
+			params: []*Type{Str}, ret: Str,
 		},
 		"pause": {
 			emit:    func(a []string) string { return "__pause()" },
 			helpers: []string{"pause"}, minArgs: 0, maxArgs: 0,
+			ret: Void,
 		},
 		"toInt": {
 			emit: func(a []string) string {
@@ -142,6 +159,7 @@ func init() {
 				return "__toInt(" + a[0] + ", " + a[1] + ")"
 			},
 			helpers: []string{"toInt"}, minArgs: 1, maxArgs: 2,
+			params: []*Type{Str, Int}, ret: Int,
 		},
 		"toFloat": {
 			emit: func(a []string) string {
@@ -151,40 +169,49 @@ func init() {
 				return "__toFloat(" + a[0] + ", " + a[1] + ")"
 			},
 			helpers: []string{"toFloat"}, minArgs: 1, maxArgs: 2,
+			params: []*Type{Str, Float}, ret: Float,
 		},
 		"isInt": {
 			emit:    func(a []string) string { return "__isInt(" + a[0] + ")" },
 			helpers: []string{"isInt"}, minArgs: 1, maxArgs: 1,
+			params: []*Type{Str}, ret: Bool,
 		},
 		"isFloat": {
 			emit:    func(a []string) string { return "__isFloat(" + a[0] + ")" },
 			helpers: []string{"isFloat"}, minArgs: 1, maxArgs: 1,
+			params: []*Type{Str}, ret: Bool,
 		},
 		"str": {
 			emit:    func(a []string) string { return `fmt.Sprintf("%v", ` + a[0] + ")" },
 			imports: []string{"fmt"}, minArgs: 1, maxArgs: 1,
+			params: []*Type{Any}, ret: Str,
 		},
 		"len": {
 			emit:    func(a []string) string { return "len(" + a[0] + ")" },
 			minArgs: 1, maxArgs: 1,
+			params: []*Type{Any}, ret: Int,
 		},
 		"min": {
 			emit:    func(a []string) string { return "min(" + join(a) + ")" },
 			minArgs: 2, maxArgs: -1,
+			rest: Numeric, retOf: sameAsFirst,
 		},
 		"max": {
 			emit:    func(a []string) string { return "max(" + join(a) + ")" },
 			minArgs: 2, maxArgs: -1,
+			rest: Numeric, retOf: sameAsFirst,
 		},
 		"sleep": {
 			emit: func(a []string) string {
 				return "time.Sleep(time.Duration(" + a[0] + ") * time.Millisecond)"
 			},
 			imports: []string{"time"}, minArgs: 1, maxArgs: 1,
+			params: []*Type{Int}, ret: Void,
 		},
 		"exit": {
 			emit:    func(a []string) string { return "os.Exit(" + a[0] + ")" },
 			imports: []string{"os"}, minArgs: 1, maxArgs: 1,
+			params: []*Type{Int}, ret: Void,
 		},
 	}
 
@@ -332,12 +359,12 @@ func (c *Codegen) line(n Node) {
 func (c *Codegen) fnDecl(f *FnDecl) {
 	params := make([]string, len(f.Params))
 	for i, p := range f.Params {
-		params[i] = p.Name + " " + goType(p.Type)
+		params[i] = p.Name + " " + p.T.Go()
 	}
 
 	ret := ""
-	if f.Ret != "" {
-		ret = " " + goType(f.Ret)
+	if f.RetT != nil && f.RetT.Kind != KVoid {
+		ret = " " + f.RetT.Go()
 	}
 
 	c.line(f)
@@ -358,11 +385,10 @@ func (c *Codegen) stmt(s Stmt) {
 
 	case *LetStmt:
 		c.line(st)
-		typ := ""
-		if st.Type != "" {
-			typ = " " + goType(st.Type)
-		}
-		c.w("var %s%s = %s", st.Name, typ, c.expr(st.Value))
+		// The checker resolved a type for every binding, written or
+		// inferred, so the Go type is always stated explicitly. That keeps
+		// Go's inference from quietly disagreeing with Quartz's.
+		c.w("var %s %s = %s", st.Name, st.T.Go(), c.expr(st.Value))
 		// Go rejects unused locals. The resolver already worked out
 		// whether this variable is ever read, so the discard is only
 		// emitted where it's actually needed.

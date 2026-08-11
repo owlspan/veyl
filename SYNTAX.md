@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.3** — the language as currently implemented.
+**Version 0.4** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -143,13 +143,80 @@ A number literal is an `int` unless it contains a `.`, in which case it
 is a `float`.
 
 Quartz does not convert between types automatically. Mixing them is an
-error — use `str()`, `toInt()`, or `toFloat()` to convert explicitly.
+error — use `str()`, `int()`, or `float()` to convert explicitly.
 
 ```qz
 let n = 5
-print("count: " + n)        // error: mismatched types
+print("count: " + n)        // error: cannot add str and int
 print("count: " + str(n))   // fine
 print("count: {n}")         // better — interpolation handles it
+```
+
+### The rules
+
+The compiler knows the type of every expression and checks it before
+generating any code. The rules are short:
+
+| Construct | Rule |
+| --- | --- |
+| `+` | two numbers of the same type, or two `str` |
+| `- * /` | two numbers of the same type |
+| `%` | two `int` — use `mod()` for floats |
+| `< <= > >=` | two numbers of the same type, or two `str` |
+| `== !=` | two values of the same type |
+| `&& \|\| !` | `bool` only |
+| `if` / `while` | the condition must be `bool` — `if 5` is an error |
+| `let x: T = v` | `v` must be a `T` |
+| `x = v` | `v` must match the type `x` was declared with |
+| `return v` | `v` must match the function's return type |
+| `f(a, b)` | each argument must match the parameter's type |
+| `for i in a..b` | the bounds and the `step` must be `int` |
+
+There is **no implicit conversion between two values**. This is an
+error, and the message says so in Quartz's words:
+
+```qz
+let a = 1
+let b = 2.5
+let c = a + b   // error: cannot mix int and float in '+'
+                //        convert one with int(...) or float(...)
+```
+
+### Integer literals are flexible
+
+The one exception is a plain integer literal, which will happily become
+a float where one is expected. This follows Go's untyped-constant rule
+and keeps ordinary arithmetic readable:
+
+```qz
+let radius = 2.5
+let area = PI * radius * radius   // fine
+let wide  = radius * 2            // fine — 2 becomes 2.0
+let ratio: float = 1              // fine
+```
+
+The flexibility belongs to the *literal*, not to the type. Once a value
+is in a variable, its type is fixed:
+
+```qz
+let two = 2                       // an int variable
+let nope = radius * two           // error: cannot mix float and int
+let ok   = radius * float(two)    // fine
+```
+
+### Division
+
+`/` between two `int` values is integer division, so `7 / 2` is `3`.
+That is now a stated rule rather than a leaked backend detail — the
+compiler knows both operands are `int` and emits integer division
+deliberately.
+
+For a fractional result, use `divf()` or make a side a float:
+
+```qz
+print(7 / 2)          // 3
+print(divf(7, 2))     // 3.5
+print(7.0 / 2.0)      // 3.5
 ```
 
 **Planned:** `?T` nullable types, `[]T` lists, `{K: V}` maps, `struct`,
@@ -514,20 +581,25 @@ Using one on another target is a compile error, not a runtime crash.
 | `beep(freq, ms)`                      | plays a tone at `freq` Hz for `ms` ms          |
 | `messageBox(title, text)`             | shows a native dialog and waits                |
 | `hideConsole()`                       | hides the console window                       |
-| `openWindow(title, w, h)`             | opens a real window and waits until it closes  |
-| `openWindow(title, w, h, rounded)`    | same, with rounded corners on or off           |
+| `winBuild()`                          | the Windows build number, as an `int`          |
+| `isWin11()`                           | whether the build is 22000 or higher           |
+| `openWindow(title, w, h)`             | opens a real window; returns whether corners were rounded |
+| `openWindow(title, w, h, rounded)`    | same, with rounded corners requested or not    |
 
 ```qz
 setTitle("My App")
 beep(880, 150)
-openWindow("Hello from Quartz", 800, 500)
-messageBox("Done", "The window was closed.")
+let rounded = openWindow("Hello from Quartz", 800, 500)
+messageBox("Done", "Corners rounded: {rounded}")
 ```
 
 `openWindow` **blocks** until the user closes the window — it runs the
-Win32 message loop internally. Rounded corners default to on; they need
-Windows 11, and on Windows 10 the request is ignored and the window is
-square.
+Win32 message loop internally.
+
+**Rounded corners need Windows 11** (build 22000+). They are requested
+by default. On Windows 10 the attribute does not exist, so the window
+stays square and `openWindow` returns `false` — it reports what actually
+happened, never what was asked for.
 
 `hideConsole()` combined with `openWindow` gives a GUI-only program with
 no console behind it.
@@ -588,12 +660,8 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.2 does not do yet.
+Honest list of what v0.4 does not do yet.
 
-- **No type checker.** Quartz checks names, arity, constants and return
-  paths, but not types. Type errors are caught by the Go backend and
-  reported against your `.qz` line numbers. The messages use Go's
-  vocabulary, so `str` appears as `string` and `float` as `float64`.
 - **No collections.** No lists, maps, or structs.
 - **No modules.** One file per program; `import` does nothing.
 - **No global variables.** Top-level variables belong to `main`.

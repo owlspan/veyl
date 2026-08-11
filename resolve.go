@@ -81,9 +81,6 @@ func (r *Resolver) Resolve(p *Program) {
 			r.errorAt(f, "function %q is already defined on line %d", f.Name, line)
 			continue
 		}
-		if f.Ret != "" {
-			r.checkType(f.Ret, f)
-		}
 		r.funcs[f.Name] = f
 	}
 
@@ -109,9 +106,6 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 	r.push()
 
 	for _, prm := range f.Params {
-		if prm.Type != "" {
-			r.checkType(prm.Type, prm)
-		}
 		// Parameters are exempt from the unused check; Go allows them.
 		r.declare(prm.Name, &varInfo{used: true}, prm)
 	}
@@ -129,12 +123,6 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 	r.loops = prevLoops
 }
 
-func (r *Resolver) checkType(name string, n Node) {
-	if _, ok := qzTypes[name]; !ok {
-		r.errorAt(n, "unknown type %q (Quartz has int, float, str, bool)", name)
-	}
-}
-
 // ---- statements ----
 
 func (r *Resolver) stmt(s Stmt) {
@@ -142,9 +130,6 @@ func (r *Resolver) stmt(s Stmt) {
 
 	case *LetStmt:
 		r.expr(st.Value) // resolve the value before the name is in scope
-		if st.Type != "" {
-			r.checkType(st.Type, st)
-		}
 		r.declare(st.Name, &varInfo{isConst: st.Const, decl: st}, st)
 
 	case *AssignStmt:

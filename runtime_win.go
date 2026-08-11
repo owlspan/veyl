@@ -15,6 +15,7 @@ var winHelperDefs = map[string]helperDef{
 	__user32   = syscall.NewLazyDLL("user32.dll")
 	__kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	__dwmapi   = syscall.NewLazyDLL("dwmapi.dll")
+	__ntdll    = syscall.NewLazyDLL("ntdll.dll")
 )
 
 func __utf16(s string) uintptr {
@@ -58,24 +59,63 @@ func __utf16(s string) uintptr {
 		deps: []string{"win_dlls"},
 	},
 
-	// roundCorners asks the Desktop Window Manager to round a window's
-	// corners. DWMWA_WINDOW_CORNER_PREFERENCE is Windows 11 only; on
-	// Windows 10 the call fails harmlessly and the window stays square.
-	"roundCorners": {
-		code: `func __roundCorners(hwnd uintptr, on bool) {
-	const DWMWA_WINDOW_CORNER_PREFERENCE = 33
-	pref := int32(1) // DWMWCP_DONOTROUND
-	if on {
-		pref = 2 // DWMWCP_ROUND
+	// winBuild reports the OS build number. RtlGetVersion is used rather
+	// than GetVersionEx because the latter lies on unmanifested binaries:
+	// it reports 6.2 on Windows 10 and 11 alike, which would make every
+	// version check below useless.
+	"winBuild": {
+		code: `type __osVersionInfoW struct {
+	dwOSVersionInfoSize uint32
+	dwMajorVersion      uint32
+	dwMinorVersion      uint32
+	dwBuildNumber       uint32
+	dwPlatformId        uint32
+	szCSDVersion        [128]uint16
+}
+
+var __winBuildCache = -1
+
+func __winBuild() int {
+	if __winBuildCache >= 0 {
+		return __winBuildCache
 	}
-	__dwmapi.NewProc("DwmSetWindowAttribute").Call(
+	__winBuildCache = 0
+	var info __osVersionInfoW
+	info.dwOSVersionInfoSize = uint32(unsafe.Sizeof(info))
+	r, _, _ := __ntdll.NewProc("RtlGetVersion").Call(uintptr(unsafe.Pointer(&info)))
+	if r == 0 { // STATUS_SUCCESS
+		__winBuildCache = int(info.dwBuildNumber)
+	}
+	return __winBuildCache
+}`,
+		imports: []string{"unsafe"},
+		deps:    []string{"win_dlls"},
+	},
+
+	// roundCorners asks the Desktop Window Manager to round a window's
+	// corners. DWMWA_WINDOW_CORNER_PREFERENCE needs Windows 11 (build
+	// 22000+); on Windows 10 the attribute does not exist. It returns
+	// whether the corners were actually rounded, so no caller can claim
+	// success it did not verify.
+	"roundCorners": {
+		code: `func __roundCorners(hwnd uintptr, on bool) bool {
+	const DWMWA_WINDOW_CORNER_PREFERENCE = 33
+	if !on {
+		return false
+	}
+	if __winBuild() < 22000 {
+		return false
+	}
+	pref := int32(2) // DWMWCP_ROUND
+	r, _, _ := __dwmapi.NewProc("DwmSetWindowAttribute").Call(
 		hwnd,
 		DWMWA_WINDOW_CORNER_PREFERENCE,
 		uintptr(unsafe.Pointer(&pref)),
 		unsafe.Sizeof(pref),
 	)
+	return r == 0 // S_OK
 }`,
-		deps: []string{"win_dlls"},
+		deps: []string{"win_dlls", "winBuild"},
 	},
 
 	"win_window": {
@@ -128,7 +168,9 @@ var __wndProcPtr = syscall.NewCallback(__wndProc)
 
 var __classCount int
 
-func __openWindow(title string, width int, height int, rounded bool) {
+// __openWindow returns whether the window's corners were actually
+// rounded — never whether they were merely requested.
+func __openWindow(title string, width int, height int, rounded bool) bool {
 	// Win32 requires that a window and its message loop live on the same
 	// OS thread. Without this, Go's scheduler may move the goroutine and
 	// the loop stops receiving messages.
@@ -151,7 +193,7 @@ func __openWindow(title string, width int, height int, rounded bool) {
 	__classCount++
 	className, err := syscall.UTF16PtrFromString(fmt.Sprintf("QuartzWindow%d", __classCount))
 	if err != nil {
-		return
+		return false
 	}
 
 	wc := __wndClassExW{
@@ -166,7 +208,7 @@ func __openWindow(title string, width int, height int, rounded bool) {
 
 	atom, _, _ := __user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&wc)))
 	if atom == 0 {
-		return
+		return false
 	}
 
 	hwnd, _, _ := __user32.NewProc("CreateWindowExW").Call(
@@ -179,12 +221,10 @@ func __openWindow(title string, width int, height int, rounded bool) {
 		0, 0, hInstance, 0,
 	)
 	if hwnd == 0 {
-		return
+		return false
 	}
 
-	if rounded {
-		__roundCorners(hwnd, true)
-	}
+	didRound := __roundCorners(hwnd, rounded)
 
 	__user32.NewProc("ShowWindow").Call(hwnd, SW_SHOW)
 	__user32.NewProc("UpdateWindow").Call(hwnd)
@@ -202,6 +242,7 @@ func __openWindow(title string, width int, height int, rounded bool) {
 		translate.Call(uintptr(unsafe.Pointer(&m)))
 		dispatch.Call(uintptr(unsafe.Pointer(&m)))
 	}
+	return didRound
 }`,
 		imports: []string{"fmt", "runtime", "syscall", "unsafe"},
 		deps:    []string{"win_dlls", "roundCorners"},
@@ -212,19 +253,35 @@ var winBuiltins = map[string]builtin{
 	"messageBox": {
 		emit:    func(a []string) string { return "__messageBox(" + a[0] + ", " + a[1] + ")" },
 		helpers: []string{"messageBox"}, minArgs: 2, maxArgs: 2, osOnly: "windows",
+		params: []*Type{Str, Str}, ret: Void,
 	},
 	"setTitle": {
 		emit:    func(a []string) string { return "__setTitle(" + a[0] + ")" },
 		helpers: []string{"setTitle"}, minArgs: 1, maxArgs: 1, osOnly: "windows",
+		params: []*Type{Str}, ret: Void,
 	},
 	"beep": {
 		emit:    func(a []string) string { return "__beep(" + a[0] + ", " + a[1] + ")" },
 		helpers: []string{"beep"}, minArgs: 2, maxArgs: 2, osOnly: "windows",
+		params: []*Type{Int, Int}, ret: Void,
 	},
 	"hideConsole": {
 		emit:    func(a []string) string { return "__hideConsole()" },
 		helpers: []string{"hideConsole"}, minArgs: 0, maxArgs: 0, osOnly: "windows",
+		ret: Void,
 	},
+	"winBuild": {
+		emit:    func(a []string) string { return "__winBuild()" },
+		helpers: []string{"winBuild"}, minArgs: 0, maxArgs: 0, osOnly: "windows",
+		ret: Int,
+	},
+	"isWin11": {
+		emit:    func(a []string) string { return "(__winBuild() >= 22000)" },
+		helpers: []string{"winBuild"}, minArgs: 0, maxArgs: 0, osOnly: "windows",
+		ret: Bool,
+	},
+	// Returns whether the corners were actually rounded, which is false on
+	// Windows 10 however the call was written.
 	"openWindow": {
 		emit: func(a []string) string {
 			rounded := "true"
@@ -234,6 +291,7 @@ var winBuiltins = map[string]builtin{
 			return "__openWindow(" + a[0] + ", " + a[1] + ", " + a[2] + ", " + rounded + ")"
 		},
 		helpers: []string{"win_window"}, minArgs: 3, maxArgs: 4, osOnly: "windows",
+		params: []*Type{Str, Int, Int, Bool}, ret: Bool,
 	},
 }
 

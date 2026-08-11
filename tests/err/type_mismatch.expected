@@ -1,0 +1,13 @@
+error: type_mismatch.qz:2:17: cannot add str and int (use "{...}" interpolation or str(...))
+error: type_mismatch.qz:4:4: an if condition must be bool, got int
+error: type_mismatch.qz:8:1: "x" is declared as float but the value is str
+error: type_mismatch.qz:12:11: cannot mix int and float in '+' — convert one with int(...) or float(...)
+error: type_mismatch.qz:14:12: sqrt expects int or float for argument 1, got str
+error: type_mismatch.qz:17:1: cannot assign int to "s", which is str
+error: type_mismatch.qz:20:5: function "f" returns int but this returns str
+error: type_mismatch.qz:24:11: '-' needs a number, got bool
+error: type_mismatch.qz:25:15: '&&' needs bool on both sides, got int and int
+error: type_mismatch.qz:27:7: a while condition must be bool, got str
+error: type_mismatch.qz:31:11: '%' needs two ints, got int and float (use mod(...) for floats)
+error: type_mismatch.qz:33:1: unknown type "nonsense"
+quartz: 12 error(s)

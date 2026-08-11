@@ -69,6 +69,10 @@ type Binary struct {
 	pos
 	Op   Kind
 	L, R Expr
+
+	// T is the result type, filled in by the checker. Codegen reads it to
+	// tell integer division from float division.
+	T *Type
 }
 
 type Call struct {
@@ -105,7 +109,8 @@ func (*Interp) exprNode()   {}
 type Param struct {
 	pos
 	Name string
-	Type string
+	Type string // as written in the source
+	T    *Type  // resolved by the checker
 }
 
 type FnDecl struct {
@@ -113,6 +118,7 @@ type FnDecl struct {
 	Name   string
 	Params []Param
 	Ret    string // "" means the function returns nothing
+	RetT   *Type  // resolved by the checker; Void when Ret is ""
 	Body   *Block
 }
 
@@ -127,7 +133,8 @@ type LetStmt struct {
 	pos
 	Name  string
 	Const bool
-	Type  string // "" when inferred
+	Type  string // as written; "" when inferred
+	T     *Type  // resolved by the checker, whether written or inferred
 	Value Expr
 
 	// Used is filled in by the resolver. Go rejects unused locals, so
