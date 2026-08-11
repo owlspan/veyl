@@ -252,6 +252,8 @@ func init() {
 	registerStdlib()
 	registerCollections()
 	registerOs()
+	registerNet()
+	registerTime()
 	registerWindowsRuntime()
 }
 

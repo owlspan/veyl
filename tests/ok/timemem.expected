@@ -1,0 +1,16 @@
+iso    2023-11-14
+long   Tuesday 14 November 2023
+short  14/11/23
+clock  true
+roundtrip true
+bad parse -1
+now is recent true
+millis bigger true
+date length true
+weekday nonempty true
+month in range true
+allocated true
+list length 50000
+collections happened true
+goroutines at least one true
+system memory positive true

@@ -696,6 +696,185 @@ Builtin names cannot be redefined.
 
 ---
 
+## Libraries
+
+Everything above is a bare name. The rest of the standard library lives
+under a dotted path:
+
+```qz
+let text = os.file.read("notes.txt")
+let page = http.get("https://example.com")
+print(time.stamp())
+```
+
+There is still no `import` — the names are always available, and the
+dots are there to group them, not to load anything.
+
+If you get a path wrong the compiler suggests the near misses:
+
+```
+error: there is no builtin called os.file.slurp
+       — did you mean one of: os.file.append, os.file.delete,
+         os.file.exists, os.file.lines, os.file.read, ...
+```
+
+### How failure is reported
+
+Quartz has no error type yet, so the convention is visible in the name:
+
+| Shape | On failure |
+| --- | --- |
+| `os.file.read(p)` | stops the program with a one-line message naming the path |
+| `os.file.readOr(p, fallback)` | returns the fallback |
+| `os.file.write(p, text)` | returns `false` |
+
+Anything returning a value is fatal on failure unless its name ends in
+`Or`. Anything that only acts returns a `bool`. This is a stopgap and
+will be revisited when `T!` arrives.
+
+---
+
+### `os` — files, directories, paths, processes
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `os.file.read(p)` | `str` | the whole file |
+| `os.file.readOr(p, alt)` | `str` | the file, or `alt` if it cannot be read |
+| `os.file.lines(p)` | `[]str` | the file split into lines |
+| `os.file.write(p, text)` | `bool` | write, replacing what was there |
+| `os.file.append(p, text)` | `bool` | add to the end |
+| `os.file.size(p)` | `int` | size in bytes |
+| `os.file.exists(p)` | `bool` | whether it is there |
+| `os.file.delete(p)` | `bool` | remove it |
+| `os.file.rename(a, b)` | `bool` | move or rename |
+| `os.dir.list(p)` | `[]str` | entry names, sorted |
+| `os.dir.make(p)` | `bool` | create, including parents |
+| `os.dir.delete(p)` | `bool` | remove a directory and its contents |
+| `os.dir.is(p)` | `bool` | whether it is a directory |
+| `os.dir.current()` | `str` | the working directory |
+| `os.dir.change(p)` | `bool` | change directory |
+| `os.dir.home()` `os.dir.temp()` | `str` | well-known directories |
+| `os.path.join(a, b, ...)` | `str` | join with the right separator |
+| `os.path.base(p)` `os.path.dir(p)` `os.path.ext(p)` | `str` | split a path |
+| `os.path.clean(p)` `os.path.absolute(p)` | `str` | tidy or resolve |
+| `os.env.get(n)` | `str` | an environment variable, `""` if unset |
+| `os.env.set(n, v)` | `bool` | set one |
+| `os.env.has(n)` | `bool` | whether it is set at all |
+| `os.args()` | `[]str` | command-line arguments |
+| `os.run(cmd, args)` | `str` | run a program, return its output |
+| `os.runCode(cmd, args)` | `int` | run a program, return its exit code |
+| `os.name()` `os.arch()` | `str` | the OS and CPU architecture |
+| `os.cpus()` `os.pid()` | `int` | processor count, process id |
+| `os.hostname()` | `str` | this machine's name |
+
+The path functions never touch the disk — they are string manipulation.
+
+```qz
+os.file.write("notes.txt", "hello")
+for line in os.file.lines("notes.txt") {
+    print(line)
+}
+```
+
+**Shorthand.** `os.read.file(p)`, `os.write.file(p, text)` and a few
+others are aliases for the noun-first spellings. Both compile to the
+same call; the noun-first form is documented because it groups better as
+the library grows.
+
+---
+
+### `http` — fetching things
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `http.get(url)` | `str` | the response body |
+| `http.getOr(url, alt)` | `str` | the body, or `alt` on any failure |
+| `http.getWith(url, headers)` | `str` | with a `{str: str}` of headers |
+| `http.post(url, body)` | `str` | POST as `text/plain` |
+| `http.post(url, body, type)` | `str` | POST with a content type |
+| `http.postJson(url, body)` | `str` | POST as `application/json` |
+| `http.status(url)` | `int` | the status code; `0` if it never connected |
+| `http.ok(url)` | `bool` | whether the status was 2xx or 3xx |
+| `http.download(url, path)` | `bool` | save the body to a file |
+| `http.encode(s)` `http.decode(s)` | `str` | URL escaping |
+
+Every request times out after 30 seconds.
+
+---
+
+### `net` — addresses and ports
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `net.ip(host)` | `str` | the first address for a name |
+| `net.ips(host)` | `[]str` | every address, sorted |
+| `net.names(ip)` | `[]str` | reverse lookup |
+| `net.canConnect(host, port)` | `bool` | whether a TCP connection succeeds |
+| `net.canConnect(host, port, ms)` | `bool` | with a timeout |
+| `net.scan(host, lo, hi)` | `[]int` | which ports in a range accept a connection |
+| `net.scan(host, lo, hi, ms)` | `[]int` | with a per-port timeout |
+| `net.send(host, port, data)` | `str` | send over TCP, return the reply |
+| `net.localIP()` | `str` | this machine's outward-facing address |
+| `net.interfaces()` | `[]str` | every non-loopback address |
+
+`net.scan` probes concurrently, so a thousand ports takes well under a
+second. Only scan hosts you are responsible for.
+
+```qz
+for port in net.scan("127.0.0.1", 1, 1024) {
+    print("open: {port}")
+}
+```
+
+---
+
+### `time` — clocks and formatting
+
+Format strings use readable tokens rather than a reference date:
+
+| Token | Means | Token | Means |
+| --- | --- | --- | --- |
+| `YYYY` `YY` | year | `HH` | hour, 24-hour |
+| `MMMM` `MMM` `MM` | month | `hh` | hour, 12-hour |
+| `DDDD` `DDD` `DD` | day | `mm` `ss` | minute, second |
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `time.now()` | `int` | seconds since 1970 |
+| `time.millis()` `time.nanos()` | `int` | finer resolution, for timing |
+| `time.format(unix, fmt)` | `str` | render a timestamp |
+| `time.parse(text, fmt)` | `int` | read one back; `-1` if it does not match |
+| `time.date()` `time.clock()` `time.stamp()` | `str` | now, preformatted |
+| `time.since(unix)` | `int` | seconds elapsed |
+| `time.year()` `time.month()` `time.day()` | `int` | parts of today |
+| `time.weekday()` | `str` | the day's name |
+| `time.sleep(ms)` | — | pause |
+
+```qz
+let started = time.millis()
+work()
+print("took {time.millis() - started} ms")
+```
+
+---
+
+### `mem` — what the program is using
+
+Quartz is garbage collected, so these report and nudge rather than
+allocate and free. Manual memory needs the C backend and does not exist.
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `mem.used()` | `int` | bytes currently allocated |
+| `mem.total()` | `int` | bytes allocated over the whole run |
+| `mem.system()` | `int` | bytes obtained from the OS |
+| `mem.objects()` | `int` | live object count |
+| `mem.collections()` | `int` | how many times the collector has run |
+| `mem.collect()` | — | run the collector now |
+| `mem.goroutines()` | `int` | concurrent tasks in flight |
+
+---
+
 ## Windows library
 
 These call into Win32 and are available only when building for Windows.
