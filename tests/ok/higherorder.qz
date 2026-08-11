@@ -24,17 +24,17 @@ print("all positive {all(nums, fn(n: int) -> bool { return n > 0 })}")
 print("all big {all(nums, fn(n: int) -> bool { return n > 4 })}")
 
 // each just does the work.
-each(words, fn (w: str) {
-    write("{upper(w)} ")
-})
+each(words, fn(w: str) {
+        write("{upper(w)} ")
+    })
 print("")
 
 // They compose, which is the point.
 let result = reduce(
-filter(map(nums, fn (n: int) -> int { return n * n }),
-fn (n: int) -> bool { return n % 2 == 1 }),
-0,
-fn (acc: int, n: int) -> int { return acc + n }
+    filter(map(nums, fn(n: int) -> int { return n * n }),
+        fn(n: int) -> bool { return n % 2 == 1 }),
+    0,
+    fn(acc: int, n: int) -> int { return acc + n }
 )
 print("odd squares summed {result}")
 
@@ -57,7 +57,7 @@ let people = [
     Person{name: "ada", age: 36},
     Person{name: "alan", age: 41}
 ]
-let byAge = sortBy(people, fn (a: Person, b: Person) -> bool { return a.age < b.age })
+let byAge = sortBy(people, fn(a: Person, b: Person) -> bool { return a.age < b.age })
 print("youngest {byAge[0].name} oldest {byAge[2].name}")
 print("names {map(people, fn(p: Person) -> str { return p.name })}")
 

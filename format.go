@@ -131,9 +131,9 @@ func (f *formatter) run() string {
 		case NEWLINE:
 			f.endLine()
 
-		case RBRACE, RBRACKET:
-			// A closing brace outdents itself, so it lines up with the
-			// line that opened the block rather than its contents.
+		case RBRACE, RBRACKET, RPAREN:
+			// A closing bracket outdents itself, so it lines up with the
+			// line that opened the group rather than its contents.
 			if !f.lineStarted && !(t.Kind == RBRACE && f.isLiteralClose(i)) {
 				f.indent--
 				if f.indent < 0 {
@@ -147,13 +147,13 @@ func (f *formatter) run() string {
 		}
 
 		switch t.Kind {
-		case LBRACKET:
+		case LBRACKET, LPAREN:
 			f.indent++
 		case LBRACE:
 			if !f.literalBrace[i] {
 				f.indent++
 			}
-		case RBRACKET:
+		case RBRACKET, RPAREN:
 			if f.wasMidLine(i) {
 				f.indent--
 			}
@@ -310,8 +310,8 @@ func (f *formatter) needsSpace(i int) bool {
 		return !(f.literalBrace[i] && hugsLeft(left))
 	case LPAREN, LBRACKET:
 		// `f(x)` and `xs[0]` hug what they apply to. `if (a)`,
-		// `x & (y)` and `= [1, 2]` do not.
-		return !hugsLeft(left)
+		// `x & (y)` and `= [1, 2]` do not. `fn(` is one word.
+		return !hugsLeft(left) && left != FN
 	}
 	return true
 }

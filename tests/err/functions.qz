@@ -3,7 +3,7 @@ fn double(n: int) -> int {
 }
 
 // wrong signature for the annotation
-let f: fn (str) -> str = double
+let f: fn(str) -> str = double
 
 // calling something that is not a function
 let n = 5
@@ -18,9 +18,9 @@ print(g("text"))
 // higher-order builtins check the callback
 let nums = [1, 2, 3]
 print(map(nums, 5))
-print(map(nums, fn (s: str) -> int { return 1 }))
-print(map(nums, fn (a: int, b: int) -> int { return a }))
-print(map(nums, fn (a: int) { print(a) }))
-print(filter(nums, fn (a: int) -> int { return a }))
-print(sortBy(nums, fn (a: int) -> bool { return true }))
-print(reduce(nums, "", fn (acc: int, n: int) -> int { return acc }))
+print(map(nums, fn(s: str) -> int { return 1 }))
+print(map(nums, fn(a: int, b: int) -> int { return a }))
+print(map(nums, fn(a: int) { print(a) }))
+print(filter(nums, fn(a: int) -> int { return a }))
+print(sortBy(nums, fn(a: int) -> bool { return true }))
+print(reduce(nums, "", fn(acc: int, n: int) -> int { return acc }))
