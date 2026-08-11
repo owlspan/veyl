@@ -331,6 +331,18 @@ func (c *Codegen) Generate(p *Program) string {
 	for _, d := range p.Structs {
 		c.structDecl(d)
 	}
+	// Globals become package-level vars, which is what lets a function
+	// see them. Go works out the initialisation order from the
+	// dependencies between them, so declaration order does not matter
+	// here any more than it does for functions.
+	for _, g := range p.Globals {
+		c.line(g)
+		c.raw("var %s %s = %s", g.Name, g.T.Go(), c.expr(g.Value))
+		c.flushGlobalPending()
+	}
+	if len(p.Globals) > 0 {
+		c.raw("")
+	}
 	for _, f := range p.Funcs {
 		c.fnDecl(f)
 	}
@@ -408,6 +420,12 @@ func (c *Codegen) w(format string, args ...any) {
 	fmt.Fprintf(&c.body, format, args...)
 	c.body.WriteByte('\n')
 }
+
+// flushGlobalPending discards anything an initialiser tried to hoist.
+// Only `?` hoists, and the resolver already rejects it outside a
+// function — there is nothing at package level to return from. This
+// just makes sure a slip cannot leak into the next declaration.
+func (c *Codegen) flushGlobalPending() { c.pending = nil }
 
 func (c *Codegen) flushPending() {
 	if len(c.pending) == 0 {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -17,14 +18,25 @@ type varInfo struct {
 // codegen shouldn't have to: does this name exist, is it a constant,
 // is it ever read, does this function actually return.
 type Resolver struct {
-	file    string
-	funcs   map[string]*FnDecl
-	structs map[string]*StructDecl
-	methods map[string]map[string]*FnDecl // struct name -> method name -> decl
-	scopes  []map[string]*varInfo
-	curFn   *FnDecl
-	loops   int // nesting depth, so break/continue can be validated
-	Errors  []string
+	file     string
+	funcs    map[string]*FnDecl
+	structs  map[string]*StructDecl
+	methods  map[string]map[string]*FnDecl // struct name -> method name -> decl
+	scopes   []map[string]*varInfo
+	curFn    *FnDecl
+	curFile  string // the file whose code is being walked, for pub checks
+	mainFile string
+	locals   map[string]bool // names the program body declares with `let`
+	inGlobal bool            // walking a global's initialiser
+	loops    int             // nesting depth, so break/continue can be validated
+	Errors   []string
+}
+
+// visible reports whether a declaration in declFile may be used from
+// the file currently being walked. Same file, always. Different file,
+// only if it was marked pub.
+func (r *Resolver) visible(declFile string, pub bool) bool {
+	return pub || declFile == "" || declFile == r.curFile
 }
 
 func NewResolver(file string) *Resolver {
@@ -80,12 +92,38 @@ func (r *Resolver) lookup(name string) *varInfo {
 // ---- entry point ----
 
 func (r *Resolver) Resolve(p *Program) {
+	r.mainFile = p.MainFile
+	r.curFile = r.mainFile
+
+	// Names the program body declares. A global cannot use one, and
+	// saying why beats "undefined variable".
+	r.locals = map[string]bool{}
+	for _, s := range p.Main {
+		if l, ok := s.(*LetStmt); ok {
+			r.locals[l.Name] = true
+		}
+	}
+
+	// Scope 0 holds the globals — top-level consts, from every file.
+	// Functions sit on top of it, which is what makes a global visible
+	// inside one where a top-level `let` is not.
+	r.inGlobal = true
+	r.push()
+	for _, g := range p.Globals {
+		r.curFile = g.File
+		r.expr(g.Value)
+		r.declare(g.Name, &varInfo{isConst: true, decl: g, used: true}, g)
+	}
+	r.inGlobal = false
+	r.curFile = r.mainFile
+
 	// Pass 0: struct declarations, so a field or parameter may name any
 	// struct regardless of the order they appear in.
 	for _, d := range p.Structs {
 		if prev, dup := r.structs[d.Name]; dup {
 			line, _ := prev.Pos()
-			r.errorAt(d, "struct %q is already defined on line %d", d.Name, line)
+			r.errorAt(d, "struct %q is already defined on line %d (in %s)",
+				d.Name, line, filepath.Base(prev.File))
 			continue
 		}
 		seen := map[string]bool{}
@@ -115,24 +153,29 @@ func (r *Resolver) Resolve(p *Program) {
 		}
 		if prev, dup := r.funcs[f.Name]; dup {
 			line, _ := prev.Pos()
-			r.errorAt(f, "function %q is already defined on line %d", f.Name, line)
+			r.errorAt(f, "function %q is already defined on line %d (in %s)",
+				f.Name, line, filepath.Base(prev.File))
 			continue
 		}
 		r.funcs[f.Name] = f
 	}
 
-	// Pass 2: walk each body.
+	// Pass 2: walk each body, remembering which file it came from so a
+	// reference to something private to another file can be caught.
 	for _, f := range p.Funcs {
+		r.curFile = f.File
 		r.resolveFn(f)
 	}
 
 	// Pass 3: top-level statements become main().
 	r.curFn = nil
+	r.curFile = r.mainFile
 	r.push()
 	for _, s := range p.Main {
 		r.stmt(s)
 	}
 	r.pop()
+	r.pop() // globals
 }
 
 func (r *Resolver) declareMethod(f *FnDecl) {
@@ -322,7 +365,23 @@ func (r *Resolver) expr(e Expr) {
 				r.errorAt(x, "%q is a function; did you mean %s(...)?", x.Name, x.Name)
 				return
 			}
+			// Two cases where the name does exist, just not from here.
+			if r.locals[x.Name] {
+				if r.inGlobal {
+					r.errorAt(x, "a top-level const is global, so it cannot use %q, "+
+						"which belongs to the program body — use 'let' instead of 'const' here", x.Name)
+				} else {
+					r.errorAt(x, "%q belongs to the program body and is not visible inside a function — "+
+						"pass it in as a parameter, or declare it with 'const' to make it global", x.Name)
+				}
+				return
+			}
 			r.errorAt(x, "undefined variable %q", x.Name)
+			return
+		}
+		if g := info.decl; g != nil && g.Global && !r.visible(g.File, g.Pub) {
+			r.errorAt(x, "%q is private to %s — mark it 'pub const %s' to use it from another file",
+				x.Name, filepath.Base(g.File), x.Name)
 			return
 		}
 		info.used = true
@@ -356,8 +415,13 @@ func (r *Resolver) expr(e Expr) {
 		for _, v := range x.Vals {
 			r.expr(v)
 		}
-		if _, known := r.structs[x.Name]; !known {
+		d, known := r.structs[x.Name]
+		switch {
+		case !known:
 			r.errorAt(x, "there is no struct called %q", x.Name)
+		case !r.visible(d.File, d.Pub):
+			r.errorAt(x, "struct %q is private to %s — mark it 'pub struct %s' to use it from another file",
+				x.Name, filepath.Base(d.File), x.Name)
 		}
 
 	case *MapLit:
@@ -446,6 +510,11 @@ func (r *Resolver) call(x *Call) {
 	f, isUser := r.funcs[name]
 	if !isUser {
 		r.errorAt(x, "undefined function %q", name)
+		return
+	}
+	if !r.visible(f.File, f.Pub) {
+		r.errorAt(x, "%q is private to %s — mark it 'pub fn %s' to use it from another file",
+			name, filepath.Base(f.File), name)
 		return
 	}
 	r.checkArity(x, name, len(x.Args), len(f.Params), len(f.Params))

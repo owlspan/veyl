@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.9** — the language as currently implemented.
+**Version 0.10** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -798,19 +798,23 @@ fn bad(n: int) -> int {
 
 ### Scope
 
-Each function has its own scope. Top-level variables are local to the
-implicit `main`, so functions cannot see them — pass values in as
-parameters instead.
+Each function has its own scope. A top-level `let` is local to the
+implicit `main`, so functions cannot see it — pass it in as a
+parameter, or make it a `const`, which is global.
 
 ```qz
 let total = 10
+const LIMIT = 100
 
 fn show() {
-    print(total)        // error: undefined variable "total"
+    print(LIMIT)        // fine — a top-level const is global
+    print(total)        // error: "total" belongs to the program body
 }
 ```
 
-**Planned:** global constants, default parameters, multiple return values.
+See [Globals](#globals) for the rule and why it works that way.
+
+**Planned:** default parameters, multiple return values.
 
 ---
 
@@ -1033,6 +1037,95 @@ print(counts)             // {"a": 2, "b": 1}
 | `exit(code)`    | —       | ends the program with an exit code       |
 
 Builtin names cannot be redefined.
+
+---
+
+## Multiple files
+
+`import` loads another `.qz` file and folds its declarations into your
+program. The path is relative to the file that writes it — there is no
+search path, no registry, and no package names to learn.
+
+```qz
+import "geometry.qz"
+import "shapes/circle.qz"
+```
+
+### `pub` decides what escapes
+
+A declaration is private to its own file unless it is marked `pub`:
+
+```qz
+// geometry.qz
+pub const TAU = 6.283185307179586
+
+pub struct Vec {
+    x: float
+    y: float
+}
+
+pub fn circleArea(radius: float) -> float {
+    return (TAU / 2.0) * radius * radius
+}
+
+fn helper() -> int {      // no pub: this file only
+    return 1
+}
+```
+
+Using something private from another file is an error that says so:
+
+```
+error: "helper" is private to geometry.qz
+       — mark it 'pub fn helper' to use it from another file
+```
+
+**Methods are as visible as their struct.** `pub` inside an `impl`
+block is an error — a `pub struct` brings its methods with it.
+
+### What an imported file may contain
+
+Declarations only: `import`, `const`, `struct`, `fn` and `impl`. A
+loose statement is refused, because there is no sensible moment for it
+to run:
+
+```qz
+// in an imported file
+print("hello")     // error: an imported file can only declare things
+```
+
+Importing the same file twice is harmless — it is folded in once. An
+import cycle is an error rather than a hang.
+
+### Globals
+
+**A top-level `const` is a genuine global.** It is visible inside
+functions, and across files if it is `pub`.
+
+A top-level `let` is not: it belongs to the implicit `main`, so
+functions cannot see it. That is the difference between the two at the
+top level, and the compiler explains it when you trip:
+
+```qz
+let count = 10
+const LIMIT = 100
+
+fn check() -> bool {
+    return LIMIT > 0      // fine, LIMIT is global
+}
+
+fn broken() -> bool {
+    return count > 0      // error: "count" belongs to the program body
+}
+```
+
+Because globals are initialised before the program body runs, a `const`
+cannot use a `let`:
+
+```qz
+let name = "ada"
+const GREETING = "hi {name}"   // error: use 'let' instead of 'const' here
+```
 
 ---
 
@@ -1356,14 +1449,14 @@ In use:
 
 ```
 let const fn return if else while for in step break continue true false
-struct impl self match nil
+struct impl self match nil import pub
 ```
 
 Reserved but not yet implemented — the lexer recognises them, so they
 cannot be used as names:
 
 ```
-pub defer own unsafe import
+defer own unsafe
 ```
 
 ---
@@ -1390,7 +1483,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.9 does not do yet.
+Honest list of what v0.10 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left
@@ -1399,8 +1492,12 @@ Honest list of what v0.9 does not do yet.
 - **An action that fails cannot say why.** `os.file.write` returns a
   plain `bool`, because there is no unit type to put inside a `T!`.
   Everything that returns a *value* carries its reason properly.
-- **No modules.** One file per program; `import` does nothing.
-- **No global variables.** Top-level variables belong to `main`.
+- **No namespacing on imports.** Everything `pub` in an imported file
+  lands in one flat namespace, so two files exporting the same name
+  collide. The error names both files.
+- **No global *variables*.** A top-level `const` is global, but a
+  top-level `let` belongs to the program body and functions cannot see
+  it. Pass it in, or make it a `const`.
 - **Garbage collected.** Memory is managed automatically. Manual memory,
   pointers, and `unsafe` require a C backend and are not available.
 - **Windows library is Windows-only.** There is no Linux or macOS

@@ -118,20 +118,53 @@ func (p *Parser) ParseProgram() *Program {
 	for !p.check(EOF) {
 		before := p.i
 
+		// `pub` marks the next declaration as visible to files that
+		// import this one.
+		pub := false
+		if p.check(PUB) {
+			kw := p.advance()
+			pub = true
+			switch p.cur().Kind {
+			case FN, STRUCT, CONST:
+			default:
+				p.errorAt(kw, "'pub' can only go before fn, struct or const")
+			}
+		}
+
 		switch {
+		case p.check(IMPORT):
+			if d := p.parseImport(); d != nil {
+				prog.Imports = append(prog.Imports, d)
+			}
 		case p.check(FN):
 			if f := p.parseFn(); f != nil {
+				f.Pub = pub
+				f.File = p.file
 				prog.Funcs = append(prog.Funcs, f)
 			}
 		case p.check(STRUCT):
 			if d := p.parseStruct(); d != nil {
+				d.Pub = pub
+				d.File = p.file
 				prog.Structs = append(prog.Structs, d)
+			}
+		case p.check(CONST):
+			// A top-level const is a genuine global: visible inside
+			// functions, unlike a top-level `let`, which stays a local of
+			// the implicit main.
+			if s := p.parseLet(); s != nil {
+				g := s.(*LetStmt)
+				g.Global, g.Pub, g.File = true, pub, p.file
+				prog.Globals = append(prog.Globals, g)
 			}
 		case p.check(IMPL):
 			// Methods are hoisted straight into the function list with a
 			// receiver attached, so nothing downstream needs a notion of an
 			// impl block.
 			if b := p.parseImpl(); b != nil {
+				for _, m := range b.Methods {
+					m.File = p.file
+				}
 				prog.Funcs = append(prog.Funcs, b.Methods...)
 			}
 		default:
@@ -146,6 +179,19 @@ func (p *Parser) ParseProgram() *Program {
 		p.skipNewlines()
 	}
 	return prog
+}
+
+// parseImport reads `import "helpers.qz"`. The path is a plain string
+// resolved relative to the file the import appears in — there is no
+// module registry and no search path to learn.
+func (p *Parser) parseImport() *ImportDecl {
+	kw := p.advance() // 'import'
+	pathTok := p.expect(STRING, `a file path in quotes, as in: import "helpers.qz"`)
+	p.endStmt()
+	if pathTok.Kind != STRING {
+		return nil
+	}
+	return &ImportDecl{pos: at(kw), Path: pathTok.Lex, File: p.file}
 }
 
 // parseStruct reads `struct User { name: str, age: int }`. Fields are
@@ -193,13 +239,22 @@ func (p *Parser) parseImpl() *ImplBlock {
 
 	for !p.check(RBRACE) && !p.check(EOF) {
 		before := p.i
-		if p.check(FN) {
+		switch {
+		case p.check(PUB):
+			// A method is as visible as the struct it belongs to, so
+			// marking one individually would mean nothing.
+			p.errorAt(p.cur(), "methods are as visible as their struct — put 'pub' on 'struct %s' instead",
+				b.Type)
+			p.advance()
+
+		case p.check(FN):
 			m := p.parseFn()
 			if m != nil {
 				m.Recv = b.Type
 				b.Methods = append(b.Methods, m)
 			}
-		} else {
+
+		default:
 			p.errorAt(p.cur(), "an impl block can only contain functions")
 			p.advance()
 		}

@@ -86,6 +86,15 @@ func run(cmd, path string) error {
 	if err := reportErrors(ps.Errors); err != nil {
 		return err
 	}
+	stampFile(prog, abs)
+	prog.MainFile = abs
+
+	// ---- load imports ----
+	loader := &loader{seen: map[string]bool{abs: true}}
+	loader.resolve(prog, abs)
+	if err := reportErrors(loader.errors); err != nil {
+		return err
+	}
 
 	// ---- resolve ----
 	rs := NewResolver(name)
@@ -174,6 +183,132 @@ func run(cmd, path string) error {
 		return err
 	}
 	return nil
+}
+
+// ---- modules ----
+//
+// An import loads another .qz file and folds its declarations into the
+// same program. There is no module registry, no search path and no
+// package naming: a path is a path, relative to the file that wrote it.
+//
+// Imported files may only declare things. A statement at the top level
+// of an imported file would have to run at some point, and there is no
+// module-initialisation order worth inventing, so it is refused.
+
+type loader struct {
+	seen   map[string]bool // absolute paths already loaded
+	stack  []string        // in-progress, for cycle detection
+	errors []string
+}
+
+func (l *loader) resolve(prog *Program, from string) {
+	for _, imp := range prog.Imports {
+		target := imp.Path
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(from), target)
+		}
+		target, err := filepath.Abs(target)
+		if err != nil {
+			l.errorAt(imp, "cannot resolve %q: %v", imp.Path, err)
+			continue
+		}
+		if !strings.HasSuffix(target, ".qz") {
+			l.errorAt(imp, "an import must name a .qz file, got %q", imp.Path)
+			continue
+		}
+		if l.onStack(target) {
+			l.errorAt(imp, "import cycle: %s imports itself, directly or indirectly",
+				filepath.Base(target))
+			continue
+		}
+		if l.seen[target] {
+			continue // already folded in; importing twice is harmless
+		}
+		l.seen[target] = true
+
+		sub, ok := l.load(imp, target)
+		if !ok {
+			continue
+		}
+
+		l.stack = append(l.stack, target)
+		l.resolve(sub, target)
+		l.stack = l.stack[:len(l.stack)-1]
+
+		prog.Structs = append(prog.Structs, sub.Structs...)
+		prog.Funcs = append(prog.Funcs, sub.Funcs...)
+		prog.Globals = append(prog.Globals, sub.Globals...)
+	}
+}
+
+// load parses one imported file. Its top-level statements are refused
+// rather than silently dropped.
+func (l *loader) load(imp *ImportDecl, target string) (*Program, bool) {
+	srcBytes, err := os.ReadFile(target)
+	if err != nil {
+		// The path as written, not the resolved one. The absolute path
+		// is noise here, and it would make error output differ between
+		// machines for no reason.
+		if os.IsNotExist(err) {
+			l.errorAt(imp, "cannot find %q next to %s", imp.Path, filepath.Base(imp.File))
+		} else {
+			l.errorAt(imp, "cannot read %q", imp.Path)
+		}
+		return nil, false
+	}
+
+	name := filepath.Base(target)
+	lx := NewLexer(name, string(srcBytes))
+	toks := lx.Scan()
+	l.errors = append(l.errors, lx.Errors...)
+
+	ps := NewParser(name, toks)
+	sub := ps.ParseProgram()
+	l.errors = append(l.errors, ps.Errors...)
+
+	for _, s := range sub.Main {
+		line, col := s.Pos()
+		l.errors = append(l.errors, fmt.Sprintf(
+			"%s:%d:%d: an imported file can only declare things — "+
+				"move this statement into the program that imports it", name, line, col))
+	}
+
+	stampFile(sub, target)
+	return sub, true
+}
+
+func (l *loader) onStack(path string) bool {
+	for _, p := range l.stack {
+		if p == path {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *loader) errorAt(n Node, format string, args ...any) {
+	line, col := n.Pos()
+	file := "?"
+	if imp, ok := n.(*ImportDecl); ok {
+		file = imp.File
+	}
+	l.errors = append(l.errors,
+		fmt.Sprintf("%s:%d:%d: %s", file, line, col, fmt.Sprintf(format, args...)))
+}
+
+// stampFile records which file every declaration came from, using the
+// absolute path as the identity. That is what lets `pub` be enforced
+// across files that happen to share a base name.
+func stampFile(prog *Program, abs string) {
+	for _, d := range prog.Structs {
+		d.File = abs
+	}
+	for _, f := range prog.Funcs {
+		f.File = abs
+	}
+	for _, g := range prog.Globals {
+		g.File = abs
+	}
 }
 
 func reportErrors(errs []string) error {

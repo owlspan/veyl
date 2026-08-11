@@ -1,0 +1,37 @@
+import "mod/geometry.qz"
+
+// Importing the same file twice is harmless — it is folded in once.
+import "mod/geometry.qz"
+
+// A top-level const is a real global: visible inside functions, unlike
+// a top-level `let`, which stays local to the implicit main.
+const LABEL = "vector"
+
+fn tag(v: Vec) -> str {
+    // LABEL and TAU both reach in here, one local to this file and one
+    // from the import.
+    return "{LABEL}: {describe(v)} (tau is {TAU})"
+}
+
+let a = Vec{x: 3.0, y: 4.0}
+let b = Vec{x: 1.0, y: 2.0}
+
+print("a length {a.length()}")
+print("sum {describe(a.plus(b))}")
+print("area {circleArea(1.0)}")
+print(tag(a))
+
+// Globals are constant, and shared with everything.
+print("tau {TAU} label {LABEL}")
+
+// A struct from the module works everywhere a local one would.
+let all: []Vec = [a, b, a.plus(b)]
+let total = 0.0
+for v in all {
+    total += v.length()
+}
+print("three vectors, total length {total}")
+
+let byName: {str: Vec} = {}
+byName["first"] = a
+print("from a map {describe(byName["first"])}")

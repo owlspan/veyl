@@ -281,6 +281,12 @@ func (c *Checker) Check(p *Program) {
 		c.methods[f.Recv][f.Name] = f
 	}
 
+	// Scope 0 is the globals, so a function body can see them.
+	c.push()
+	for _, g := range p.Globals {
+		c.stmt(g)
+	}
+
 	// Pass 1: resolve every signature before checking any body, so calls
 	// to functions declared later in the file type-check correctly.
 	for _, f := range p.Funcs {
@@ -318,11 +324,14 @@ func (c *Checker) Check(p *Program) {
 		c.stmt(s)
 	}
 	c.pop()
+	c.pop() // globals
 }
 
 func (c *Checker) checkFn(f *FnDecl) {
 	prev := c.curFn
 	c.curFn = f
+	// A function body sees the globals and its own parameters, and
+	// nothing from the implicit main.
 	c.push()
 	for _, prm := range f.Params {
 		c.define(prm.Name, prm.T)

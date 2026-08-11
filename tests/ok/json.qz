@@ -49,7 +49,7 @@ let scores: {str: int} = must(json.decode(scoreText))
 print("scores {scores}")
 
 // reading single values by path, no struct declared at the far end
-const doc = json.encode(ada)
+let doc = json.encode(ada)
 print("name {json.get(doc, "name")}")
 print("age {json.int(doc, "age")}")
 print("height {json.num(doc, "height")}")

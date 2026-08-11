@@ -1,0 +1,5 @@
+error: private.qz:4:13: "secret" is private to geometry.qz — mark it 'pub fn secret' to use it from another file
+error: private.qz:5:7: "fudge" is private to geometry.qz — mark it 'pub const fudge' to use it from another file
+error: private.qz:9:9: struct "Hidden" is private to hidden.qz — mark it 'pub struct Hidden' to use it from another file
+error: private.qz:10:17: "usesHidden" is private to hidden.qz — mark it 'pub fn usesHidden' to use it from another file
+quartz: 4 error(s)

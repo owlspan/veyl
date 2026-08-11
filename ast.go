@@ -32,10 +32,27 @@ type Stmt interface {
 
 // Program is a whole .qz file: zero or more functions, plus the
 // top-level statements that become main().
+// Program is a whole compilation: the main file plus everything it
+// imported, flattened into one set of declarations. Which file each
+// declaration came from is remembered so `pub` can be enforced.
 type Program struct {
 	Structs []*StructDecl
 	Funcs   []*FnDecl
-	Main    []Stmt
+	Globals []*LetStmt // top-level const, visible everywhere
+	Main    []Stmt     // top-level statements of the main file only
+	Imports []*ImportDecl
+
+	// MainFile is the absolute path of the file the compiler was invoked
+	// on, as opposed to anything it pulled in.
+	MainFile string
+}
+
+// ImportDecl is `import "helpers.qz"`. The path is relative to the file
+// containing the import.
+type ImportDecl struct {
+	pos
+	Path string
+	File string // the file this import was written in
 }
 
 // ---- expressions ----
@@ -238,6 +255,8 @@ type StructDecl struct {
 	pos
 	Name   string
 	Fields []StructField
+	Pub    bool
+	File   string
 }
 
 // ImplBlock is `impl User { fn ... }`. Its methods are hoisted into the
@@ -268,6 +287,9 @@ type FnDecl struct {
 	// function. Methods are stored alongside functions and told apart by
 	// this field alone.
 	Recv string
+
+	Pub  bool
+	File string
 }
 
 // ---- statements ----
@@ -288,6 +310,12 @@ type LetStmt struct {
 	// Used is filled in by the resolver. Go rejects unused locals, so
 	// codegen emits a `_ = x` discard only when this is false.
 	Used bool
+
+	// Set on a top-level const, which becomes a real global rather than
+	// a local of the implicit main.
+	Global bool
+	Pub    bool
+	File   string
 }
 
 // AssignStmt covers `x = v`, `x += v`, and `xs[i] = v`. Target is an

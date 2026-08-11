@@ -28,9 +28,11 @@ $ quartz run primes.qz
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
-**Status:** v0.4, in development. The language is real and usable, and
-now has a full type checker. Collections are next. See
-[Roadmap](#roadmap).
+**Status:** v0.10, in development. The language is feature-complete for
+everyday work: a full type checker, lists and maps, structs with
+methods, nullable types, an error type, modules, and libraries for
+files, HTTP, networking, JSON and time. What is left before 1.0 is
+tooling and polish. See [Roadmap](#roadmap).
 
 ---
 
@@ -163,8 +165,53 @@ declaration. Assigning to a `const` is a compile error.
 
 ### Types
 
-`int`, `float`, `str`, `bool`. No implicit conversion — use `str()`,
-`int()`, `float()`, `toInt()`, `toFloat()`.
+`int`, `float`, `str`, `bool`, `[]T` lists, `{K: V}` maps, `?T` for a
+value that might be missing, and `T!` for one that might have failed.
+No implicit conversion — use `str()`, `int()`, `float()`.
+
+```qz
+let nums  = [3, 1, 2]
+let ages  = {"ada": 36}
+let note: ?str = nil
+```
+
+### Structs
+
+```qz
+struct Vec {
+    x: float
+    y: float
+}
+
+impl Vec {
+    fn length(self) -> float {
+        return sqrt(self.x * self.x + self.y * self.y)
+    }
+}
+
+print(Vec{x: 3.0, y: 4.0}.length())     // 5
+```
+
+### Handling failure
+
+Anything that can fail returns `T!`. `?` unwraps it or hands the
+failure up, which is Go's four-line error check in one character.
+
+```qz
+fn wordCount(path: str) -> int! {
+    let text = os.file.read(path)?
+    return len(split(trim(text), " "))
+}
+```
+
+### Multiple files
+
+```qz
+import "geometry.qz"
+```
+
+`pub` decides what a file exports. A top-level `const` is a global; a
+top-level `let` belongs to the program body.
 
 ### Strings
 
@@ -239,8 +286,29 @@ No imports needed, ever.
 `endsWith` `indexOf` `count` `replace` `repeat` `charAt` `substr`
 `padLeft` `padRight`
 **System** `sleep` `exit`
+**Lists** `push` `pop` `insert` `removeAt` `clear` `first` `last`
+`slice` `reverse` `sort` `sum` `join` `contains` `indexOf`
+**Maps** `has` `find` `remove` `keys` `values`
+**Splitting** `split` `chars` `lines`
+**Results** `must` `valueOr` `isOk` `failed` `errorOf` `fail`
 
 Every numeric builtin accepts `int` or `float`.
+
+The rest of the library lives under a dotted path — still no imports,
+the dots only group the names:
+
+**`os`** files, directories, paths, environment, processes
+**`http`** get, post, download, URL escaping
+**`net`** DNS, TCP connection tests, a concurrent port scanner
+**`json`** encode, decode, and reading one field by path
+**`time`** clocks and readable date formats
+**`mem`** allocation and collector statistics
+
+```qz
+let page = must(http.get("https://example.com"))
+os.file.write("page.html", page)
+print("saved at {time.stamp()}")
+```
 
 See [SYNTAX.md](SYNTAX.md) for signatures and details.
 
@@ -374,41 +442,53 @@ More detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 | v0.5    | lists and maps                                      |
 | v0.5.1  | dotted libraries: `os`, `http`, `net`, `time`, `mem`|
 | v0.6    | structs and `impl`                                  |
-| **v0.7**| **JSON**                                            |
-| v0.8    | file I/O and SQLite                                 |
+| v0.7    | JSON, bitwise operators, `match`                    |
+| v0.8    | nullable types `?T`                                 |
 | v0.9    | error type `T!` with `?` propagation                |
-| v1.0    | modules, `import`, a package layout                 |
+| v0.9.1  | the whole library reports failure through `T!`      |
+| **v0.10**| **modules, `pub`, global constants**              |
+| v1.0    | a formatter, warnings, an installer, a VS Code grammar |
 | later   | C backend, `unsafe`, manual memory                  |
 
 **The type checker was the bottleneck for everything below it**, and it
-is now in place. Lists, maps, structs, JSON, and databases all need the
+is now in place. Lists, maps, structs, JSON and modules all need the
 compiler to know the type of an expression, and it does: `check.go`
 walks the tree between resolve and codegen and returns a type for every
 node.
 
-It also fixed the two visible problems it was supposed to. Type errors
-are reported in Quartz's vocabulary (`str`, `float`) rather than Go's,
-and `7 / 2` is integer division by design rather than by accident.
+What is left before 1.0 is polish rather than language design: a
+`quartz fmt`, warnings for unused variables and unreachable code, and
+the packaging that makes it installable. SQLite is still open, and
+still carries the dependency trade-off called out in the roadmap.
 
 ---
 
 ## Known limitations
 
-Honest list of what v0.4 does not do.
+Honest list of what v0.10 does not do.
 
 - **Integer division truncates.** `7 / 2` is `3`. This is now a stated
   language rule rather than a leaked backend detail, but it still
   surprises people. Use `divf(7, 2)` for `3.5`.
-- **No collections.** No lists, maps, or structs — and therefore no
-  JSON, no database rows, no `split()`.
-- **No modules.** One file per program. `import` is reserved but does
-  nothing.
-- **No global variables.** Top-level variables belong to the implicit
-  `main`, so functions can't see them. Pass values as parameters.
-- **No error handling.** No exceptions, no `try`, no error type. Failing
-  builtins return a fallback value instead.
+- **An action that fails cannot say why.** `os.file.write` returns a
+  plain `bool`, because there is no unit type to put inside a `T!`.
+  Everything that returns a *value* carries its reason properly.
+- **A missing map key is silent.** `m["absent"]` gives the zero value.
+  `has()` and `find()` tell the difference; the bare index was left
+  alone rather than putting a nil check on every read.
+- **Imports are flat.** Everything `pub` in an imported file lands in
+  one namespace, so two files exporting the same name collide.
+- **No global *variables*.** A top-level `const` is global, but a
+  top-level `let` belongs to the program body.
+- **No databases.** SQLite needs a Go dependency, which would break the
+  zero-dependency property, so it has not been added.
+- **Nil narrowing is syntactic.** `if x != nil` narrows inside the
+  block, and `&&` chains work, but an early `return` does not narrow
+  the rest of the function.
 - **Garbage collected.** Manual memory, pointers, and `unsafe` require
   a C backend and are not available.
+- **No tooling yet.** No formatter, no warnings for unused variables or
+  unreachable code, no editor support, no installer.
 - **Windows only for GUI.** No Linux or macOS equivalent yet.
 - **Windows are blank.** `openWindow` opens and manages a real window,
   but there is no drawing or event API — no buttons, no input handling,

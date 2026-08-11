@@ -1,0 +1,5 @@
+import "loop_a.qz"
+
+pub fn b() -> int {
+    return 2
+}
