@@ -9,6 +9,13 @@ examples/demo
 examples/interactive
 examples/hello
 
+# A verified snapshot kept on disk as a fallback, refreshed by hand
+# after each milestone. Deliberately untracked: git already has every
+# version tagged, and keeping a second copy in history would double the
+# repo for no gain. Being ignored is also what lets it survive a
+# `git reset --hard`, which is exactly when it is wanted.
+Working version/
+
 # editor / OS noise
 .vscode/
 .idea/
