@@ -122,7 +122,7 @@ func (p *Parser) parseFn() *FnDecl {
 			pn := p.expect(IDENT, "a parameter name")
 			prm := Param{pos: at(pn), Name: pn.Lex}
 			if p.match(COLON) {
-				prm.Type = p.expect(IDENT, "a type name").Lex
+				prm.Type = p.parseTypeRef()
 			} else {
 				p.errorAt(pn, "parameter %q needs a type, like %s: int", pn.Lex, pn.Lex)
 			}
@@ -139,12 +139,35 @@ func (p *Parser) parseFn() *FnDecl {
 	p.expect(RPAREN, "')'")
 
 	if p.match(ARROW) {
-		f.Ret = p.expect(IDENT, "a return type").Lex
+		f.Ret = p.parseTypeRef()
 	}
 
 	f.Body = p.parseBlock()
 	p.endStmt()
 	return f
+}
+
+// parseTypeRef reads a type annotation and returns its canonical source
+// text. The checker turns that text into a Type; keeping it as a string
+// here means the parser needs no knowledge of the type system.
+//
+//	int    []str    [][]int    {str: int}    {str: []int}
+func (p *Parser) parseTypeRef() string {
+	switch {
+	case p.match(LBRACKET):
+		p.expect(RBRACKET, "']' — a list type is written []int")
+		return "[]" + p.parseTypeRef()
+
+	case p.match(LBRACE):
+		key := p.parseTypeRef()
+		p.expect(COLON, "':' — a map type is written {str: int}")
+		val := p.parseTypeRef()
+		p.expect(RBRACE, "'}'")
+		return "{" + key + ": " + val + "}"
+
+	default:
+		return p.expect(IDENT, "a type name").Lex
+	}
 }
 
 // ---- statements ----
@@ -187,7 +210,7 @@ func (p *Parser) parseLet() Stmt {
 	st := &LetStmt{pos: at(kw), Name: name.Lex, Const: kw.Kind == CONST}
 
 	if p.match(COLON) {
-		st.Type = p.expect(IDENT, "a type name").Lex
+		st.Type = p.parseTypeRef()
 	}
 	p.expect(ASSIGN, "'='")
 	st.Value = p.parseExpr(0)
@@ -241,19 +264,37 @@ func (p *Parser) parseFor() Stmt {
 	name := p.expect(IDENT, "a loop variable name")
 	st.Var = name.Lex
 
+	// `for k, v in map` binds two names.
+	if p.match(COMMA) {
+		st.Var2 = p.expect(IDENT, "a second loop variable name").Lex
+	}
+
 	if !p.match(IN) {
 		p.errorAt(p.cur(), "expected 'in', as in: for %s in 0..10 { ... }", st.Var)
 	}
 
-	st.Start = p.parseExpr(0)
+	first := p.parseExpr(0)
 
+	// A range if `..` or `..=` follows; otherwise a collection to iterate.
 	switch {
 	case p.match(DOTDOTEQ):
 		st.Inclusive = true
 	case p.match(DOTDOT):
 	default:
-		p.errorAt(p.cur(), "expected '..' or '..=' to give the loop a range")
+		st.Coll = first
+		if p.check(STEP) {
+			p.errorAt(p.cur(), "'step' only applies to a range, as in: for i in 0..10 step 2")
+		}
+		st.Body = p.parseBlock()
+		p.endStmt()
+		return st
 	}
+
+	if st.Var2 != "" {
+		p.errorAt(kw, "a range loop binds one variable, not two")
+	}
+
+	st.Start = first
 	st.End = p.parseExpr(0)
 
 	if p.match(STEP) {
@@ -293,13 +334,14 @@ func (p *Parser) parseSimpleStmt() Stmt {
 	switch p.cur().Kind {
 	case ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ:
 		op := p.advance()
-		id, ok := x.(*Ident)
-		if !ok {
-			p.errorAt(start, "left side of assignment must be a variable")
+		switch x.(type) {
+		case *Ident, *Index:
+		default:
+			p.errorAt(start, "left side of assignment must be a variable or an index like xs[0]")
 			p.synchronize()
 			return nil
 		}
-		st := &AssignStmt{pos: at(start), Name: id.Name, Op: op.Kind}
+		st := &AssignStmt{pos: at(start), Target: x, Op: op.Kind}
 		st.Value = p.parseExpr(0)
 		p.endStmt()
 		return st
@@ -370,26 +412,39 @@ func (p *Parser) parseUnary() Expr {
 
 func (p *Parser) parsePostfix() Expr {
 	x := p.parsePrimary()
-	for p.check(LPAREN) {
-		lp := p.advance()
-		call := &Call{pos: at(lp), Callee: x}
-		p.skipNewlines()
+	for {
+		switch {
+		case p.check(LPAREN):
+			lp := p.advance()
+			call := &Call{pos: at(lp), Callee: x}
+			p.skipNewlines()
 
-		if !p.check(RPAREN) {
-			for {
-				call.Args = append(call.Args, p.parseExpr(0))
-				p.skipNewlines()
-				if !p.match(COMMA) {
-					break
+			if !p.check(RPAREN) {
+				for {
+					call.Args = append(call.Args, p.parseExpr(0))
+					p.skipNewlines()
+					if !p.match(COMMA) {
+						break
+					}
+					p.skipNewlines()
 				}
-				p.skipNewlines()
 			}
+			p.skipNewlines()
+			p.expect(RPAREN, "')'")
+			x = call
+
+		case p.check(LBRACKET):
+			lb := p.advance()
+			p.skipNewlines()
+			idx := p.parseExpr(0)
+			p.skipNewlines()
+			p.expect(RBRACKET, "']'")
+			x = &Index{pos: at(lb), X: x, Idx: idx}
+
+		default:
+			return x
 		}
-		p.skipNewlines()
-		p.expect(RPAREN, "')'")
-		x = call
 	}
-	return x
 }
 
 func (p *Parser) parsePrimary() Expr {
@@ -426,11 +481,62 @@ func (p *Parser) parsePrimary() Expr {
 		p.skipNewlines()
 		p.expect(RPAREN, "')'")
 		return x
+
+	case LBRACKET:
+		return p.parseListLit()
+
+	case LBRACE:
+		return p.parseMapLit()
 	}
 
 	p.errorAt(t, "expected an expression, found %s", describe(t))
 	p.advance()
 	return &StrLit{pos: at(t), Val: ""} // placeholder so later passes don't nil-panic
+}
+
+// parseListLit reads `[]`, `[1, 2, 3]`, or a list spread over lines.
+func (p *Parser) parseListLit() Expr {
+	lb := p.advance() // '['
+	lit := &ListLit{pos: at(lb)}
+	p.skipNewlines()
+
+	for !p.check(RBRACKET) && !p.check(EOF) {
+		lit.Elems = append(lit.Elems, p.parseExpr(0))
+		p.skipNewlines()
+		if !p.match(COMMA) {
+			break
+		}
+		p.skipNewlines()
+	}
+	p.skipNewlines()
+	p.expect(RBRACKET, "']' to close the list")
+	return lit
+}
+
+// parseMapLit reads `{}` or `{"a": 1, "b": 2}`.
+//
+// A map literal cannot start a statement, because `{` there opens a
+// block. That costs nothing in practice — a bare map literal as a
+// statement would do nothing anyway.
+func (p *Parser) parseMapLit() Expr {
+	lb := p.advance() // '{'
+	lit := &MapLit{pos: at(lb)}
+	p.skipNewlines()
+
+	for !p.check(RBRACE) && !p.check(EOF) {
+		lit.Keys = append(lit.Keys, p.parseExpr(0))
+		p.expect(COLON, "':' between a map key and its value")
+		p.skipNewlines()
+		lit.Vals = append(lit.Vals, p.parseExpr(0))
+		p.skipNewlines()
+		if !p.match(COMMA) {
+			break
+		}
+		p.skipNewlines()
+	}
+	p.skipNewlines()
+	p.expect(RBRACE, "'}' to close the map")
+	return lit
 }
 
 // parseStringLit splits "a {x} b" into literal and expression parts.

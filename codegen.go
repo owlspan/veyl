@@ -32,6 +32,31 @@ type builtin struct {
 	// retOf overrides ret for the few polymorphic builtins — min and max
 	// return whatever type they were given.
 	retOf func(args []*Type) *Type
+
+	// check replaces the params/rest/ret machinery entirely for builtins
+	// whose rules cannot be written as a fixed signature: `contains`
+	// means one thing for a str and another for a list. It reports its
+	// own errors and returns the result type.
+	check func(c *Checker, x *Call, args []*Type) *Type
+	// emitT is emit with the argument types available, for the same
+	// builtins. When set, it takes precedence over emit.
+	emitT func(c *Codegen, x *Call, args []string) string
+}
+
+// showAll builds an emitter that renders every collection argument in
+// Quartz's notation before handing them to a Go print function.
+func showAll(goFn string) func(*Codegen, *Call, []string) string {
+	return func(c *Codegen, x *Call, a []string) string {
+		out := make([]string, len(a))
+		for i := range a {
+			var t *Type
+			if i < len(x.ArgT) {
+				t = x.ArgT[i]
+			}
+			out[i] = c.show(t, a[i])
+		}
+		return goFn + "(" + strings.Join(out, ", ") + ")"
+	}
 }
 
 // sameAsFirst is the return rule for min/max: the result is whatever
@@ -127,12 +152,12 @@ func init() {
 
 	builtins = map[string]builtin{
 		"print": {
-			emit:    func(a []string) string { return "fmt.Println(" + join(a) + ")" },
+			emitT:   showAll("fmt.Println"),
 			imports: []string{"fmt"}, minArgs: 0, maxArgs: -1,
 			rest: Any, ret: Void,
 		},
 		"write": {
-			emit:    func(a []string) string { return "fmt.Print(" + join(a) + ")" },
+			emitT:   showAll("fmt.Print"),
 			imports: []string{"fmt"}, minArgs: 0, maxArgs: -1,
 			rest: Any, ret: Void,
 		},
@@ -182,7 +207,16 @@ func init() {
 			params: []*Type{Str}, ret: Bool,
 		},
 		"str": {
-			emit:    func(a []string) string { return `fmt.Sprintf("%v", ` + a[0] + ")" },
+			emitT: func(c *Codegen, x *Call, a []string) string {
+				var t *Type
+				if len(x.ArgT) > 0 {
+					t = x.ArgT[0]
+				}
+				if t.IsCollection() {
+					return c.show(t, a[0])
+				}
+				return `fmt.Sprintf("%v", ` + a[0] + ")"
+			},
 			imports: []string{"fmt"}, minArgs: 1, maxArgs: 1,
 			params: []*Type{Any}, ret: Str,
 		},
@@ -216,6 +250,7 @@ func init() {
 	}
 
 	registerStdlib()
+	registerCollections()
 	registerWindowsRuntime()
 }
 
@@ -398,7 +433,20 @@ func (c *Codegen) stmt(s Stmt) {
 
 	case *AssignStmt:
 		c.line(st)
-		c.w("%s %s %s", st.Name, goAssignOp(st.Op), c.expr(st.Value))
+		// A list element is written through a bounds-checked helper, so
+		// `xs[99] = v` reports a Quartz error rather than panicking. Maps
+		// and plain variables assign directly.
+		if idx, ok := st.Target.(*Index); ok && idx.T != nil && idx.T.Kind == KList {
+			value := c.expr(st.Value)
+			if st.Op != ASSIGN {
+				value = fmt.Sprintf("(__listGet(%s, %s) %s %s)",
+					c.expr(idx.X), c.expr(idx.Idx), strings.TrimSuffix(goAssignOp(st.Op), "="), value)
+			}
+			c.need(nil, []string{"listSet"})
+			c.w("__listSet(%s, %s, %s)", c.lvalue(idx.X), c.expr(idx.Idx), value)
+			return
+		}
+		c.w("%s %s %s", c.lvalue(st.Target), goAssignOp(st.Op), c.expr(st.Value))
 
 	case *ExprStmt:
 		c.line(st)
@@ -462,6 +510,10 @@ func (c *Codegen) stmt(s Stmt) {
 // and tests both directions, so a negative step counts downward and the
 // bounds are evaluated exactly once.
 func (c *Codegen) forStmt(st *ForStmt) {
+	if st.Coll != nil {
+		c.forEach(st)
+		return
+	}
 	cmp := "<"
 	if st.Inclusive {
 		cmp = "<="
@@ -503,12 +555,113 @@ func (c *Codegen) forStmt(st *ForStmt) {
 	c.w("}")
 }
 
+// forEach emits `for x in collection`.
+//
+// Map iteration is emitted in sorted key order rather than Go's
+// randomised order. Random ordering is a genuine source of confusion,
+// and a language aimed at beginners should not hand them a loop whose
+// output changes between runs. The cost is a sort per loop.
+func (c *Codegen) forEach(st *ForStmt) {
+	c.line(st)
+	coll := c.expr(st.Coll)
+
+	if st.CollT != nil && st.CollT.Kind == KMap {
+		c.tmp++
+		keys := fmt.Sprintf("__keys%d", c.tmp)
+		m := fmt.Sprintf("__m%d", c.tmp)
+
+		c.imports["sort"] = true
+		c.w("{")
+		c.indent++
+		c.w("%s := %s", m, coll)
+		c.w("%s := make([]%s, 0, len(%s))", keys, st.CollT.Key.Go(), m)
+		c.w("for __k := range %s {", m)
+		c.w("\t%s = append(%s, __k)", keys, keys)
+		c.w("}")
+		c.w("sort.Slice(%s, func(i, j int) bool { return %s[i] < %s[j] })", keys, keys, keys)
+		c.w("for _, %s := range %s {", st.Var, keys)
+		c.indent++
+		c.w("%s := %s[%s]", st.Var2, m, st.Var)
+		c.w("_, _ = %s, %s", st.Var, st.Var2)
+		c.indent--
+		c.blockBody(st.Body)
+		c.w("}")
+		c.indent--
+		c.w("}")
+		return
+	}
+
+	// A list. One name binds the element; two bind index and element.
+	if st.Var2 != "" {
+		c.w("for %s, %s := range %s {", st.Var, st.Var2, coll)
+		c.indent++
+		c.w("_, _ = %s, %s", st.Var, st.Var2)
+		c.indent--
+	} else {
+		c.w("for _, %s := range %s {", st.Var, coll)
+		c.indent++
+		c.w("_ = %s", st.Var)
+		c.indent--
+	}
+	c.blockBody(st.Body)
+	c.w("}")
+}
+
 func (c *Codegen) blockBody(b *Block) {
 	c.indent++
 	for _, s := range b.Stmts {
 		c.stmt(s)
 	}
 	c.indent--
+}
+
+// lvalue emits an expression in a position that is written to rather
+// than read. It differs from expr in one way: an index is emitted as a
+// plain `xs[i]`, never through the bounds-checked read helper, because
+// `__listGet(xs, i) = v` is not valid Go.
+func (c *Codegen) lvalue(e Expr) string {
+	if idx, ok := e.(*Index); ok {
+		return fmt.Sprintf("%s[%s]", c.lvalue(idx.X), c.expr(idx.Idx))
+	}
+	return c.expr(e)
+}
+
+// mutate emits a call that needs a pointer to `target` — push, pop and
+// friends, which replace a slice header rather than its contents.
+//
+// A variable or a list element is addressable, so `&xs` works directly.
+// A *map* element is not: Go forbids `&m[k]` because a rehash can move
+// it. For that case the value is copied out, mutated, and written back,
+// with the map and key each evaluated exactly once so a call like
+// push(groups[next()], v) does not advance next() twice.
+//
+// ret is the type the call produces, or nil when it produces nothing.
+func (c *Codegen) mutate(target Expr, ret *Type, call func(ref string) string) string {
+	idx, isIndex := target.(*Index)
+	if !isIndex || idx.T == nil || idx.T.Kind != KMap {
+		return call("&" + c.lvalue(target))
+	}
+
+	c.tmp++
+	m := fmt.Sprintf("__mm%d", c.tmp)
+	k := fmt.Sprintf("__mk%d", c.tmp)
+	v := fmt.Sprintf("__mv%d", c.tmp)
+
+	var b strings.Builder
+	if ret != nil && ret.Kind != KVoid {
+		fmt.Fprintf(&b, "func() %s { ", ret.Go())
+	} else {
+		b.WriteString("func() { ")
+	}
+	fmt.Fprintf(&b, "%s := %s; %s := %s; %s := %s[%s]; ",
+		m, c.lvalue(idx.X), k, c.expr(idx.Idx), v, m, k)
+
+	if ret != nil && ret.Kind != KVoid {
+		fmt.Fprintf(&b, "__r := %s; %s[%s] = %s; return __r }()", call("&"+v), m, k, v)
+	} else {
+		fmt.Fprintf(&b, "%s; %s[%s] = %s }()", call("&"+v), m, k, v)
+	}
+	return b.String()
 }
 
 func goAssignOp(k Kind) string {
@@ -570,6 +723,30 @@ func (c *Codegen) expr(e Expr) string {
 
 	case *Interp:
 		return c.interp(x)
+
+	case *ListLit:
+		elems := make([]string, len(x.Elems))
+		for i, el := range x.Elems {
+			elems[i] = c.expr(el)
+		}
+		return x.T.Go() + "{" + strings.Join(elems, ", ") + "}"
+
+	case *MapLit:
+		pairs := make([]string, len(x.Keys))
+		for i := range x.Keys {
+			pairs[i] = c.expr(x.Keys[i]) + ": " + c.expr(x.Vals[i])
+		}
+		return x.T.Go() + "{" + strings.Join(pairs, ", ") + "}"
+
+	case *Index:
+		// List reads go through a bounds-checked helper so an out-of-range
+		// index produces a Quartz-level message instead of a Go panic and
+		// a stack trace full of generated code.
+		if x.T != nil && x.T.Kind == KList {
+			c.need(nil, []string{"listGet"})
+			return fmt.Sprintf("__listGet(%s, %s)", c.expr(x.X), c.expr(x.Idx))
+		}
+		return fmt.Sprintf("%s[%s]", c.expr(x.X), c.expr(x.Idx))
 	}
 	return "nil"
 }
@@ -624,10 +801,25 @@ func (c *Codegen) call(x *Call) string {
 			return "nil"
 		}
 		c.need(b.imports, b.helpers)
+		if b.emitT != nil {
+			return b.emitT(c, x, args)
+		}
 		return b.emit(args)
 	}
 	// User-defined function; the resolver verified it exists.
 	return fmt.Sprintf("%s(%s)", id.Name, strings.Join(args, ", "))
+}
+
+// show wraps a generated expression in the Quartz-formatting helper when
+// its type needs it. Scalars print correctly with %v already, so only
+// collections pay for the helper — a program with no lists never pulls
+// reflect into its binary.
+func (c *Codegen) show(t *Type, code string) string {
+	if t == nil || !t.IsCollection() {
+		return code
+	}
+	c.need(nil, []string{"show"})
+	return "__show(" + code + ")"
 }
 
 // interp turns "a {x} b" into fmt.Sprintf("a %v b", x).
@@ -644,7 +836,7 @@ func (c *Codegen) interp(x *Interp) string {
 			continue
 		}
 		format.WriteString("%v")
-		args = append(args, c.expr(p.X))
+		args = append(args, c.show(p.T, c.expr(p.X)))
 	}
 
 	if len(args) == 0 {

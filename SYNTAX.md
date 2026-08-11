@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.4** — the language as currently implemented.
+**Version 0.5** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -134,10 +134,12 @@ total = 5           // error: undefined variable "total"
 
 | Quartz  | Holds                        | Example        |
 | ------- | ---------------------------- | -------------- |
-| `int`   | whole numbers                | `42`, `-7`     |
-| `float` | numbers with a decimal point | `3.14`, `0.5`  |
-| `str`   | text                         | `"hello"`      |
-| `bool`  | `true` or `false`            | `true`         |
+| `int`     | whole numbers                | `42`, `-7`          |
+| `float`   | numbers with a decimal point | `3.14`, `0.5`       |
+| `str`     | text                         | `"hello"`           |
+| `bool`    | `true` or `false`            | `true`              |
+| `[]T`     | a list of `T`                | `[1, 2, 3]`         |
+| `{K: V}`  | a map from `K` to `V`        | `{"a": 1}`          |
 
 A number literal is an `int` unless it contains a `.`, in which case it
 is a `float`.
@@ -219,8 +221,45 @@ print(divf(7, 2))     // 3.5
 print(7.0 / 2.0)      // 3.5
 ```
 
-**Planned:** `?T` nullable types, `[]T` lists, `{K: V}` maps, `struct`,
-and a `T!` error type with `?` propagation.
+### Lists and maps
+
+`[]T` is a list of `T`. `{K: V}` is a map from `K` to `V`, where the key
+must be `str` or `int`.
+
+```qz
+let nums  = [3, 1, 2]                  // []int
+let words = ["beta", "alpha"]          // []str
+let ages  = {"ada": 36, "alan": 41}    // {str: int}
+```
+
+They nest without any special rules:
+
+```qz
+let grid:   [][]int      = [[1, 2], [3, 4]]
+let groups: {str: []str} = {}
+```
+
+An **empty literal carries no element type**, so it needs an annotation.
+The compiler says exactly that if you forget:
+
+```qz
+let xs: []int = []          // fine
+let m: {str: int} = {}      // fine
+let oops = []               // error: cannot tell what kind of list
+                            //        this is — annotate it
+```
+
+Printing uses Quartz's own notation, so a printed value is something you
+could paste back into your program:
+
+```qz
+print([1, 2, 3])                   // [1, 2, 3]
+print({"a": 1})                    // {"a": 1}
+print(["x", "y"])                  // ["x", "y"]
+```
+
+**Planned:** `?T` nullable types, `struct`, and a `T!` error type with
+`?` propagation.
 
 ---
 
@@ -353,7 +392,27 @@ for i in 0..100 {
 Both work in `for` and `while`, and both apply to the innermost loop.
 Using either outside a loop is a compile error.
 
-**Planned:** `for x in list` once collections exist.
+### Iterating a collection
+
+`for x in list` walks the elements. A second name gives the index too.
+
+```qz
+for w in words { print(w) }
+for i, w in words { print("{i}: {w}") }
+```
+
+A map binds two names, key and value:
+
+```qz
+for name, age in ages { print("{name} is {age}") }
+```
+
+**Map iteration is in sorted key order**, not Go's randomised order. A
+loop whose output changes between runs is a bad thing to hand a
+beginner, so the keys are sorted first. `keys()` and `values()` are
+sorted for the same reason.
+
+A `str` is not directly iterable — use `chars(s)` or `split(s, sep)`.
 
 ---
 
@@ -556,11 +615,78 @@ print(padLeft(str(7), 3, "0"))    // 007
 print(substr("Hello, world", 7, 12))
 ```
 
+### Lists
+
+`xs[i]` reads an element and `xs[i] = v` writes one. An out-of-range
+index stops the program with a plain message rather than a Go stack
+trace.
+
+The functions that **change** a list — `push`, `pop`, `insert`,
+`removeAt`, `clear` — take the list itself as their first argument, and
+that argument has to be a variable or an element, not a temporary. The
+functions that **read** a list return a new one and leave the original
+alone.
+
+| Function                | Returns  | Description                                |
+| ----------------------- | -------- | ------------------------------------------ |
+| `push(xs, v, ...)`      | —        | append one or more values                   |
+| `pop(xs)`               | element  | remove and return the last element          |
+| `insert(xs, i, v)`      | —        | insert `v` at position `i`                  |
+| `removeAt(xs, i)`       | element  | remove and return the element at `i`        |
+| `clear(xs)`             | —        | remove everything                           |
+| `first(xs)` `last(xs)`  | element  | the first or last element                   |
+| `slice(xs, a, b)`       | list     | a copy of the range; indexes are clamped    |
+| `reverse(xs)`           | list     | a reversed copy                             |
+| `sort(xs)`              | list     | a sorted copy; numbers or strings           |
+| `sum(xs)`               | number   | the total of a list of numbers              |
+| `join(xs, sep)`         | `str`    | every element joined into one string        |
+| `contains(xs, v)`       | `bool`   | whether `v` is in the list                  |
+| `indexOf(xs, v)`        | `int`    | position of `v`, or `-1`                    |
+| `len(xs)`               | `int`    | how many elements                           |
+
+```qz
+let xs: []int = []
+push(xs, 3, 1, 2)
+print(sort(xs))        // [1, 2, 3]
+print(xs)              // [3, 1, 2] — sort returned a copy
+```
+
+### Maps
+
+`m[k]` reads and `m[k] = v` writes. **A missing key reads as the zero
+value** — `0`, `""`, `false` — so use `has()` when the difference
+matters.
+
+| Function        | Returns | Description                            |
+| --------------- | ------- | -------------------------------------- |
+| `has(m, k)`     | `bool`  | whether the key is present              |
+| `remove(m, k)`  | —       | delete a key                            |
+| `keys(m)`       | list    | the keys, sorted                        |
+| `values(m)`     | list    | the values, in sorted key order         |
+| `clear(m)`      | —       | remove everything                       |
+| `len(m)`        | `int`   | how many entries                        |
+
+```qz
+let counts: {str: int} = {}
+for w in split("a b a", " ") {
+    counts[w] += 1        // a missing key starts at 0
+}
+print(counts)             // {"a": 2, "b": 1}
+```
+
+### Splitting strings
+
+| Function          | Returns  | Description                          |
+| ----------------- | -------- | ------------------------------------ |
+| `split(s, sep)`   | `[]str`  | split on a separator                  |
+| `chars(s)`        | `[]str`  | one entry per character               |
+| `lines(s)`        | `[]str`  | split on line breaks                  |
+
 ### Utility
 
 | Function        | Returns | Description                             |
 | --------------- | ------- | --------------------------------------- |
-| `len(s)`        | `int`   | number of bytes in a string              |
+| `len(x)`        | `int`   | length of a `str`, list, or map          |
 | `min(a, b, ...)`| —       | smallest of its arguments                |
 | `max(a, b, ...)`| —       | largest of its arguments                 |
 | `sleep(ms)`     | —       | pauses for `ms` milliseconds             |
@@ -660,9 +786,12 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.4 does not do yet.
+Honest list of what v0.5 does not do yet.
 
-- **No collections.** No lists, maps, or structs.
+- **No structs.** Lists and maps exist; user-defined types do not.
+- **A missing map key is silent.** `m["absent"]` returns the zero value
+  rather than an error. `has()` is the way to tell the difference. This
+  gets revisited when nullable types arrive.
 - **No modules.** One file per program; `import` does nothing.
 - **No global variables.** Top-level variables belong to `main`.
 - **Garbage collected.** Memory is managed automatically. Manual memory,

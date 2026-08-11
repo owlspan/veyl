@@ -79,6 +79,36 @@ type Call struct {
 	pos
 	Callee Expr
 	Args   []Expr
+
+	// ArgT and T are filled in by the checker. Polymorphic builtins —
+	// contains, push, join — need the argument types at codegen time to
+	// decide what to emit.
+	ArgT []*Type
+	T    *Type
+}
+
+// ListLit is `[1, 2, 3]`. An empty literal carries no element type of
+// its own, so it needs an annotation on the binding.
+type ListLit struct {
+	pos
+	Elems []Expr
+	T     *Type // the list type, filled in by the checker
+}
+
+// MapLit is `{"a": 1, "b": 2}`.
+type MapLit struct {
+	pos
+	Keys []Expr
+	Vals []Expr
+	T    *Type // the map type, filled in by the checker
+}
+
+// Index is `xs[i]` for a list or `m[k]` for a map.
+type Index struct {
+	pos
+	X   Expr
+	Idx Expr
+	T   *Type // the type of X, filled in by the checker
 }
 
 // InterpPart is one chunk of an interpolated string: either raw text
@@ -86,6 +116,7 @@ type Call struct {
 type InterpPart struct {
 	Lit string
 	X   Expr
+	T   *Type // the expression's type, filled in by the checker
 }
 
 // Interp is a string literal containing {expr} holes.
@@ -103,6 +134,9 @@ func (*Unary) exprNode()    {}
 func (*Binary) exprNode()   {}
 func (*Call) exprNode()     {}
 func (*Interp) exprNode()   {}
+func (*ListLit) exprNode()  {}
+func (*MapLit) exprNode()   {}
+func (*Index) exprNode()    {}
 
 // ---- declarations ----
 
@@ -142,11 +176,30 @@ type LetStmt struct {
 	Used bool
 }
 
+// AssignStmt covers `x = v`, `x += v`, and `xs[i] = v`. Target is an
+// *Ident or an *Index; nothing else is assignable.
 type AssignStmt struct {
 	pos
-	Name  string
-	Op    Kind // ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ
-	Value Expr
+	Target Expr
+	Op     Kind // ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ
+	Value  Expr
+}
+
+// TargetName returns the variable at the root of an assignment target,
+// which is what the resolver needs for its const and scope checks.
+// `xs[0][1] = v` roots at "xs".
+func (a *AssignStmt) TargetName() string {
+	e := a.Target
+	for {
+		switch t := e.(type) {
+		case *Ident:
+			return t.Name
+		case *Index:
+			e = t.X
+		default:
+			return ""
+		}
+	}
 }
 
 type ExprStmt struct {
@@ -172,16 +225,31 @@ type ReturnStmt struct {
 	Value Expr // nil for a bare `return`
 }
 
-// ForStmt is `for i in start..end` — plus an optional `step`, and an
-// inclusive form written `..=`.
+// ForStmt is either a counted loop over a range —
+//
+//	for i in start..end step n
+//
+// — or a loop over a collection:
+//
+//	for x in list
+//	for k, v in map
+//
+// Coll distinguishes them: nil means the range form.
 type ForStmt struct {
 	pos
-	Var       string
+	Var  string
+	Var2 string // the value variable in `for k, v in map`; "" otherwise
+	Body *Block
+
+	// range form
 	Start     Expr
 	End       Expr
 	Step      Expr // nil means 1
 	Inclusive bool
-	Body      *Block
+
+	// collection form
+	Coll  Expr
+	CollT *Type // the collection's type, filled in by the checker
 }
 
 type BreakStmt struct{ pos }

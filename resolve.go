@@ -134,12 +134,20 @@ func (r *Resolver) stmt(s Stmt) {
 
 	case *AssignStmt:
 		r.expr(st.Value)
-		info := r.lookup(st.Name)
+		// Index targets are expressions in their own right: `xs[i] = v`
+		// reads both xs and i before it writes.
+		if idx, ok := st.Target.(*Index); ok {
+			r.expr(idx)
+		}
+		name := st.TargetName()
+		info := r.lookup(name)
 		switch {
 		case info == nil:
-			r.errorAt(st, "undefined variable %q (declare it with 'let %s = ...')", st.Name, st.Name)
+			r.errorAt(st, "undefined variable %q (declare it with 'let %s = ...')", name, name)
 		case info.isConst:
-			r.errorAt(st, "cannot assign to %q because it was declared const", st.Name)
+			r.errorAt(st, "cannot assign to %q because it was declared const", name)
+		default:
+			info.used = true
 		}
 
 	case *ExprStmt:
@@ -159,15 +167,22 @@ func (r *Resolver) stmt(s Stmt) {
 		r.loops--
 
 	case *ForStmt:
-		r.expr(st.Start)
-		r.expr(st.End)
-		if st.Step != nil {
-			r.expr(st.Step)
+		if st.Coll != nil {
+			r.expr(st.Coll)
+		} else {
+			r.expr(st.Start)
+			r.expr(st.End)
+			if st.Step != nil {
+				r.expr(st.Step)
+			}
 		}
 		// The loop variable lives in its own scope wrapping the body, so
 		// it can shadow an outer name without clashing with it.
 		r.push()
 		r.declare(st.Var, &varInfo{used: true}, st)
+		if st.Var2 != "" {
+			r.declare(st.Var2, &varInfo{used: true}, st)
+		}
 		r.loops++
 		for _, s := range st.Body.Stmts {
 			r.stmt(s)
@@ -244,6 +259,21 @@ func (r *Resolver) expr(e Expr) {
 				r.expr(p.X)
 			}
 		}
+
+	case *ListLit:
+		for _, el := range x.Elems {
+			r.expr(el)
+		}
+
+	case *MapLit:
+		for i := range x.Keys {
+			r.expr(x.Keys[i])
+			r.expr(x.Vals[i])
+		}
+
+	case *Index:
+		r.expr(x.X)
+		r.expr(x.Idx)
 
 	case *Call:
 		for _, a := range x.Args {

@@ -113,8 +113,8 @@ func (c *Checker) stmt(s Stmt) {
 	switch st := s.(type) {
 
 	case *LetStmt:
-		valT := c.expr(st.Value)
 		annot := c.resolveAnnotation(st.Type, st)
+		valT := c.exprWant(st.Value, annot)
 
 		switch {
 		case annot == nil:
@@ -137,17 +137,18 @@ func (c *Checker) stmt(s Stmt) {
 		c.define(st.Name, st.T)
 
 	case *AssignStmt:
-		valT := c.expr(st.Value)
-		want := c.lookup(st.Name)
-		if want == nil {
-			return // the resolver already reported the undefined name
+		want := c.expr(st.Target)
+		valT := c.exprWant(st.Value, want)
+		if want.IsUnknown() {
+			return // already reported
 		}
 		if st.Op != ASSIGN {
 			c.checkCompound(st, want, valT)
 			return
 		}
 		if !want.Accepts(valT) && !(isUntypedInt(st.Value) && want.Kind == KFloat) {
-			c.errorAt(st, "cannot assign %s to %q, which is %s", valT, st.Name, want)
+			c.errorAt(st, "cannot assign %s to %s, which is %s",
+				valT, describeTarget(st.Target), want)
 		}
 
 	case *ExprStmt:
@@ -165,6 +166,10 @@ func (c *Checker) stmt(s Stmt) {
 		c.block(st.Body)
 
 	case *ForStmt:
+		if st.Coll != nil {
+			c.forEach(st)
+			return
+		}
 		startT := c.expr(st.Start)
 		endT := c.expr(st.End)
 		for _, pair := range []struct {
@@ -209,6 +214,54 @@ func (c *Checker) stmt(s Stmt) {
 	}
 }
 
+// forEach checks `for x in list` and `for k, v in map`, binding the
+// loop variables to the collection's element types.
+func (c *Checker) forEach(st *ForStmt) {
+	collT := c.expr(st.Coll)
+	st.CollT = collT
+
+	var keyT, valT *Type
+	switch {
+	case collT.IsUnknown():
+		keyT, valT = Unknown, Unknown
+
+	case collT.Kind == KList:
+		if st.Var2 != "" {
+			// Two names over a list means index and element.
+			keyT, valT = Int, collT.Elem
+		} else {
+			keyT = collT.Elem
+		}
+
+	case collT.Kind == KMap:
+		if st.Var2 == "" {
+			c.errorAt(st, "iterating a map binds two names, as in: for key, value in %s { ... }",
+				exprText(st.Coll))
+			keyT = collT.Key
+		} else {
+			keyT, valT = collT.Key, collT.Elem
+		}
+
+	case collT.Kind == KStr:
+		c.errorAt(st, "cannot iterate a str directly — use chars(...) or split(...)")
+		keyT, valT = Unknown, Unknown
+
+	default:
+		c.errorAt(st, "cannot iterate %s", collT)
+		keyT, valT = Unknown, Unknown
+	}
+
+	c.push()
+	c.define(st.Var, keyT)
+	if st.Var2 != "" {
+		c.define(st.Var2, valT)
+	}
+	for _, s := range st.Body.Stmts {
+		c.stmt(s)
+	}
+	c.pop()
+}
+
 func (c *Checker) block(b *Block) {
 	c.push()
 	for _, s := range b.Stmts {
@@ -231,15 +284,16 @@ func (c *Checker) condition(e Expr, kw string) {
 // operator followed by an assignment.
 func (c *Checker) checkCompound(st *AssignStmt, want, got *Type) {
 	op := map[Kind]Kind{PLUSEQ: PLUS, MINUSEQ: MINUS, STAREQ: STAR, SLASHEQ: SLASH}[st.Op]
+	target := describeTarget(st.Target)
 
 	if op == PLUS && want.Kind == KStr {
 		if got.Kind != KStr && !got.IsUnknown() {
-			c.errorAt(st, "cannot append %s to %q, which is str", got, st.Name)
+			c.errorAt(st, "cannot append %s to %s, which is str", got, target)
 		}
 		return
 	}
 	if !want.IsNumeric() && !want.IsUnknown() {
-		c.errorAt(st, "%s needs a number, but %q is %s", goAssignOp(st.Op), st.Name, want)
+		c.errorAt(st, "%s needs a number, but %s is %s", goAssignOp(st.Op), target, want)
 		return
 	}
 	if !got.IsNumeric() && !got.IsUnknown() {
@@ -248,16 +302,38 @@ func (c *Checker) checkCompound(st *AssignStmt, want, got *Type) {
 	}
 	// An untyped integer literal adapts to a float target, as in Go.
 	if want.Kind == KFloat && got.Kind == KInt && !isUntypedInt(st.Value) {
-		c.errorAt(st, "cannot apply %s with an int to %q, which is float (use float(...))",
-			goAssignOp(st.Op), st.Name)
+		c.errorAt(st, "cannot apply %s with an int to %s, which is float (use float(...))",
+			goAssignOp(st.Op), target)
 	}
 	if want.Kind == KInt && got.Kind == KFloat {
-		c.errorAt(st, "cannot apply %s with a float to %q, which is int (use int(...))",
-			goAssignOp(st.Op), st.Name)
+		c.errorAt(st, "cannot apply %s with a float to %s, which is int (use int(...))",
+			goAssignOp(st.Op), target)
 	}
 }
 
 // ---- expressions ----
+
+// exprWant is expr with an expected type. The hint matters only for
+// empty collection literals, which carry no element type of their own:
+// `let xs: []int = []` is the whole reason this exists.
+func (c *Checker) exprWant(e Expr, want *Type) *Type {
+	if want == nil || want.IsUnknown() {
+		return c.expr(e)
+	}
+	switch x := e.(type) {
+	case *ListLit:
+		if len(x.Elems) == 0 && want.Kind == KList {
+			x.T = want
+			return want
+		}
+	case *MapLit:
+		if len(x.Keys) == 0 && want.Kind == KMap {
+			x.T = want
+			return want
+		}
+	}
+	return c.expr(e)
+}
 
 // expr returns the type of an expression, reporting any mismatch inside
 // it. It never returns nil: unknown stands in for "already reported".
@@ -277,9 +353,9 @@ func (c *Checker) expr(e Expr) *Type {
 		return Bool
 
 	case *Interp:
-		for _, p := range x.Parts {
-			if p.X != nil {
-				c.expr(p.X)
+		for i := range x.Parts {
+			if x.Parts[i].X != nil {
+				x.Parts[i].T = c.expr(x.Parts[i].X)
 			}
 		}
 		return Str
@@ -316,10 +392,155 @@ func (c *Checker) expr(e Expr) *Type {
 		x.T = t
 		return t
 
+	case *ListLit:
+		return c.listLit(x)
+
+	case *MapLit:
+		return c.mapLit(x)
+
+	case *Index:
+		return c.index(x)
+
 	case *Call:
 		return c.call(x)
 	}
 	return Unknown
+}
+
+// listLit infers a list type from the elements, which must all agree.
+func (c *Checker) listLit(x *ListLit) *Type {
+	if len(x.Elems) == 0 {
+		c.errorAt(x, "cannot tell what kind of list this is — annotate it, as in: let xs: []int = []")
+		x.T = Unknown
+		return Unknown
+	}
+
+	elem := c.expr(x.Elems[0])
+	// A list of integer literals mixed with any float becomes a float
+	// list, following the same untyped-constant rule as arithmetic.
+	if elem.Kind == KInt && isUntypedInt(x.Elems[0]) && c.anyFloat(x.Elems) {
+		elem = Float
+	}
+
+	for i, el := range x.Elems {
+		got := c.exprWant(el, elem)
+		if elem.Accepts(got) || (isUntypedInt(el) && elem.Kind == KFloat) {
+			continue
+		}
+		c.errorAt(el, "this list holds %s, but element %d is %s", elem, i+1, got)
+		elem = Unknown
+		break
+	}
+
+	if elem.IsUnknown() {
+		x.T = Unknown
+		return Unknown
+	}
+	x.T = ListOf(elem)
+	return x.T
+}
+
+// anyFloat reports whether any element is a float, so a list written
+// [1, 2.5, 3] becomes []float rather than failing on the first element.
+func (c *Checker) anyFloat(elems []Expr) bool {
+	for _, el := range elems {
+		if _, ok := el.(*FloatLit); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Checker) mapLit(x *MapLit) *Type {
+	if len(x.Keys) == 0 {
+		c.errorAt(x, "cannot tell what kind of map this is — annotate it, as in: let m: {str: int} = {}")
+		x.T = Unknown
+		return Unknown
+	}
+
+	keyT := c.expr(x.Keys[0])
+	if keyT.Kind != KStr && keyT.Kind != KInt && !keyT.IsUnknown() {
+		c.errorAt(x.Keys[0], "a map key must be str or int, got %s", keyT)
+		keyT = Unknown
+	}
+	valT := c.expr(x.Vals[0])
+
+	for i := range x.Keys {
+		if got := c.expr(x.Keys[i]); !keyT.Accepts(got) {
+			c.errorAt(x.Keys[i], "this map has %s keys, but key %d is %s", keyT, i+1, got)
+			keyT = Unknown
+			break
+		}
+		got := c.exprWant(x.Vals[i], valT)
+		if valT.Accepts(got) || (isUntypedInt(x.Vals[i]) && valT.Kind == KFloat) {
+			continue
+		}
+		c.errorAt(x.Vals[i], "this map holds %s, but value %d is %s", valT, i+1, got)
+		valT = Unknown
+		break
+	}
+
+	if keyT.IsUnknown() || valT.IsUnknown() {
+		x.T = Unknown
+		return Unknown
+	}
+	x.T = MapOf(keyT, valT)
+	return x.T
+}
+
+func (c *Checker) index(x *Index) *Type {
+	collT := c.expr(x.X)
+	idxT := c.expr(x.Idx)
+	x.T = collT
+
+	switch {
+	case collT.IsUnknown():
+		return Unknown
+
+	case collT.Kind == KList:
+		if !idxT.IsUnknown() && idxT.Kind != KInt {
+			c.errorAt(x.Idx, "a list index must be int, got %s", idxT)
+		}
+		return collT.Elem
+
+	case collT.Kind == KMap:
+		if !collT.Key.Accepts(idxT) {
+			c.errorAt(x.Idx, "this map has %s keys, got %s", collT.Key, idxT)
+		}
+		return collT.Elem
+
+	case collT.Kind == KStr:
+		c.errorAt(x, "cannot index a str — use charAt(s, i) or substr(s, a, b)")
+		return Unknown
+	}
+
+	c.errorAt(x, "cannot index %s", collT)
+	return Unknown
+}
+
+// describeTarget names an assignment target for an error message.
+func describeTarget(e Expr) string {
+	switch t := e.(type) {
+	case *Ident:
+		return `"` + t.Name + `"`
+	case *Index:
+		return "this element"
+	}
+	return "this target"
+}
+
+// exprText renders an expression compactly, for error messages that
+// want to quote the user's own code back at them.
+func exprText(e Expr) string {
+	switch t := e.(type) {
+	case *Ident:
+		return t.Name
+	case *Index:
+		return exprText(t.X) + "[...]"
+	case *Call:
+		return exprText(t.Callee) + "(...)"
+	}
+	return "it"
 }
 
 func (c *Checker) binary(x *Binary) *Type {
@@ -430,9 +651,15 @@ func (c *Checker) call(x *Call) *Type {
 	for i, a := range x.Args {
 		args[i] = c.expr(a)
 	}
+	x.ArgT = args
 
 	if b, isBuiltin := builtins[id.Name]; isBuiltin {
-		return c.checkBuiltin(x, id.Name, b, args)
+		if b.check != nil {
+			x.T = b.check(c, x, args)
+			return x.T
+		}
+		x.T = c.checkBuiltin(x, id.Name, b, args)
+		return x.T
 	}
 
 	f, isUser := c.funcs[id.Name]
@@ -452,6 +679,7 @@ func (c *Checker) call(x *Call) *Type {
 		c.errorAt(x.Args[i], "%s expects %s for %q, got %s",
 			id.Name, want, f.Params[i].Name, args[i])
 	}
+	x.T = f.RetT
 	return f.RetT
 }
 
