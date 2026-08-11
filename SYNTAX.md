@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.10** — the language as currently implemented.
+**Version 0.11** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -142,6 +142,7 @@ total = 5           // error: undefined variable "total"
 | `{K: V}`  | a map from `K` to `V`        | `{"a": 1}`          |
 | `?T`      | a `T`, or nothing            | `nil`               |
 | `T!`      | a `T`, or a reason it failed | `fail("bad input")` |
+| `fn(A) -> B` | a function                | `fn(n: int) -> int { ... }` |
 
 A number literal is an `int` unless it contains a `.`, in which case it
 is a `float`.
@@ -807,6 +808,69 @@ fn bad(n: int) -> int {
 }
 ```
 
+### Functions are values
+
+A declared function can be handed around like anything else, and
+written down anonymously where it is needed:
+
+```qz
+fn double(n: int) -> int {
+    return n * 2
+}
+
+let f = double                                       // a named function
+let triple = fn(n: int) -> int { return n * 3 }      // an anonymous one
+print(f(21), triple(5))
+```
+
+The type is written the way the signature is:
+
+```qz
+let op: fn(int) -> int = double
+let show: fn(str) = fn(s: str) { print(s) }     // returns nothing
+```
+
+Parameter types are always required, even in a literal — Quartz does
+not infer them.
+
+**Taking and returning them** is what makes callbacks work:
+
+```qz
+fn applyTwice(g: fn(int) -> int, start: int) -> int {
+    return g(g(start))
+}
+
+fn adder(by: int) -> fn(int) -> int {
+    return fn(n: int) -> int { return n + by }
+}
+
+print(applyTwice(adder(10), 1))     // 21
+```
+
+**Literals close over what is around them**, and can change it:
+
+```qz
+let seen = 0
+let tally = fn(n: int) { seen += n }
+tally(3)
+tally(4)
+print(seen)     // 7
+```
+
+They go in lists, maps and struct fields like any other value:
+
+```qz
+struct Rule {
+    label: str
+    test:  fn(int) -> bool
+}
+```
+
+**A builtin is not a value.** `let p = print` is an error — wrap it:
+`fn(s: str) { print(s) }`. Builtins are compiler-known shapes rather
+than real functions, and several are variadic or polymorphic in ways no
+single signature describes.
+
 ### Scope
 
 Each function has its own scope. A top-level `let` is local to the
@@ -997,6 +1061,38 @@ alone.
 | `contains(xs, v)`       | `bool`   | whether `v` is in the list                  |
 | `indexOf(xs, v)`        | `int`    | position of `v`, or `-1`                    |
 | `len(xs)`               | `int`    | how many elements                           |
+
+### Working over a list
+
+These take a function, which is why they only became possible once
+functions were values. Like `sort` and `reverse`, they return a new
+list and leave the original alone.
+
+| Function                | Returns  | Description                                |
+| ----------------------- | -------- | ------------------------------------------ |
+| `map(xs, f)`            | list     | `f` applied to each element; the type may change |
+| `filter(xs, keep)`      | list     | the elements `keep` says yes to             |
+| `reduce(xs, start, f)`  | any      | fold into one value, starting from `start`  |
+| `sortBy(xs, less)`      | list     | sorted by your own comparison               |
+| `any(xs, test)` `all(xs, test)` | `bool` | whether some or every element passes  |
+| `each(xs, do)`          | —        | run `do` for each element                   |
+
+```qz
+let nums = [5, 3, 8, 1]
+
+print(map(nums, fn(n: int) -> int { return n * 2 }))
+print(filter(nums, fn(n: int) -> bool { return n > 4 }))
+print(reduce(nums, 0, fn(acc: int, n: int) -> int { return acc + n }))
+print(sortBy(nums, fn(a: int, b: int) -> bool { return a > b }))
+```
+
+`reduce` starts from a value of the type you want back, so it can build
+something other than a list of the same thing:
+
+```qz
+let words = ["fig", "pear"]
+print(reduce(words, "", fn(acc: str, w: str) -> str { return acc + charAt(w, 0) }))
+```
 
 ```qz
 let xs: []int = []
@@ -1527,7 +1623,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.10 does not do yet.
+Honest list of what v0.11 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left

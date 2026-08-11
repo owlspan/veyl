@@ -238,7 +238,11 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 	r.walkStmts(f.Body.Stmts)
 
 	if f.Ret != "" && !blockReturns(f.Body) {
-		r.errorAt(f, "function %q must return a value of type %s on every path", f.Name, f.Ret)
+		if f.Name == "" {
+			r.errorAt(f, "this function literal must return a value of type %s on every path", f.Ret)
+		} else {
+			r.errorAt(f, "function %q must return a value of type %s on every path", f.Name, f.Ret)
+		}
 	}
 
 	r.pop()
@@ -426,8 +430,18 @@ func (r *Resolver) expr(e Expr) {
 			if _, isConst := builtinConsts[x.Name]; isConst {
 				return
 			}
-			if _, isFn := r.funcs[x.Name]; isFn {
-				r.errorAt(x, "%q is a function; did you mean %s(...)?", x.Name, x.Name)
+			// A declared function used as a value. That is allowed now:
+			// `let double = twice` hands the function around.
+			if f, isFn := r.funcs[x.Name]; isFn {
+				if !r.visible(f.File, f.Pub) {
+					r.errorAt(x, "%q is private to %s — mark it 'pub fn %s' to use it from another file",
+						x.Name, filepath.Base(f.File), x.Name)
+				}
+				return
+			}
+			if _, isBuiltin := builtins[x.Name]; isBuiltin {
+				r.errorAt(x, "%q is a builtin and cannot be used as a value — "+
+					"wrap it in a function literal, as in: fn(s: str) { %s(s) }", x.Name, x.Name)
 				return
 			}
 			// Two cases where the name does exist, just not from here.
@@ -453,6 +467,11 @@ func (r *Resolver) expr(e Expr) {
 
 	case *Unary:
 		r.expr(x.X)
+
+	case *FuncLit:
+		// A literal is resolved like any other function body, so it can
+		// close over whatever is in scope where it was written.
+		r.resolveFn(x.Decl)
 
 	case *Try:
 		r.expr(x.X)
@@ -556,7 +575,17 @@ func (r *Resolver) call(x *Call) {
 
 	name, ok := DottedName(x.Callee)
 	if !ok {
-		r.errorAt(x, "this expression is not a function")
+		// Calling the result of an expression, such as a function
+		// literal applied straight away. The checker verifies it.
+		r.expr(x.Callee)
+		return
+	}
+
+	// A variable holding a function shadows anything declared with the
+	// same name, which is ordinary scoping. Arity is the checker's job
+	// here, since only it knows the signature.
+	if info := r.lookup(name); info != nil {
+		info.used = true
 		return
 	}
 

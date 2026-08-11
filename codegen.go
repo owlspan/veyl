@@ -932,6 +932,9 @@ func (c *Codegen) expr(e Expr) string {
 	case *Try:
 		return c.tryExpr(x)
 
+	case *FuncLit:
+		return c.funcLit(x)
+
 	case *Ident:
 		if bc, ok := builtinConsts[x.Name]; ok {
 			for _, i := range bc.imports {
@@ -1055,6 +1058,13 @@ func (c *Codegen) call(x *Call) string {
 		return c.methodCall(x, args)
 	}
 
+	// A call through a value: a variable holding a function, or a
+	// literal applied on the spot. Go spells both the same way, so the
+	// callee is just emitted and applied.
+	if x.ViaValue {
+		return fmt.Sprintf("%s(%s)", c.expr(x.Callee), strings.Join(args, ", "))
+	}
+
 	name, ok := DottedName(x.Callee)
 	if !ok {
 		return "nil" // the resolver already reported this
@@ -1086,6 +1096,40 @@ func (c *Codegen) show(t *Type, code string) string {
 	}
 	c.need(nil, []string{"show"})
 	return "__show(" + code + ")"
+}
+
+// funcLit emits an anonymous function. Go closures capture the same way
+// Quartz ones do, so the body needs no special handling — but the
+// enclosing function's return type has to be saved and restored, or a
+// `?` inside the literal would return from the wrong place.
+func (c *Codegen) funcLit(x *FuncLit) string {
+	f := x.Decl
+
+	params := make([]string, len(f.Params))
+	for i, p := range f.Params {
+		params[i] = p.Name + " " + p.T.Go()
+	}
+	ret := ""
+	if f.RetT != nil && f.RetT.Kind != KVoid {
+		ret = " " + f.RetT.Go()
+	}
+
+	// The body is built into a nested generator so its statements do not
+	// interleave with whatever expression this literal sits inside.
+	inner := &Codegen{
+		srcPath: c.srcPath,
+		target:  c.target,
+		tmp:     c.tmp + 1000,
+		imports: c.imports,
+		helpers: c.helpers,
+		indent:  1,
+	}
+	inner.curFnRet = f.RetT
+	inner.stmts(f.Body.Stmts)
+	c.Errors = append(c.Errors, inner.Errors...)
+
+	body := inner.body.String()
+	return fmt.Sprintf("func(%s)%s {\n%s}", strings.Join(params, ", "), ret, body)
 }
 
 // methodCall emits `receiver.name(args)`.

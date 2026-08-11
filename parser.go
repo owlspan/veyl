@@ -271,7 +271,23 @@ func (p *Parser) parseImpl() *ImplBlock {
 func (p *Parser) parseFn() *FnDecl {
 	kw := p.advance() // 'fn'
 	name := p.expect(IDENT, "a function name")
-	f := &FnDecl{pos: at(kw), Name: name.Lex}
+	f := p.parseFnSignature(kw, name.Lex)
+	if f == nil {
+		return nil
+	}
+	f.Body = p.parseBlock()
+	p.endStmt()
+	return f
+}
+
+// parseFnSignature reads the parameters and return type, having already
+// consumed `fn` and, for a declaration, the name. A function literal
+// takes the same path with an empty name, so the two never drift.
+func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
+	if name == "" {
+		p.advance() // the 'fn' of a literal, which the caller only peeked
+	}
+	f := &FnDecl{pos: at(kw), Name: name}
 
 	p.expect(LPAREN, "'('")
 	p.skipNewlines()
@@ -311,9 +327,6 @@ func (p *Parser) parseFn() *FnDecl {
 	if p.match(ARROW) {
 		f.Ret = p.parseTypeRef()
 	}
-
-	f.Body = p.parseBlock()
-	p.endStmt()
 	return f
 }
 
@@ -325,6 +338,25 @@ func (p *Parser) parseFn() *FnDecl {
 func (p *Parser) parseTypeRef() string {
 	var base string
 	switch {
+	case p.check(FN):
+		// fn(int, str) -> bool
+		p.advance()
+		p.expect(LPAREN, "'(' after fn in a type")
+		params := []string{}
+		if !p.check(RPAREN) {
+			for {
+				params = append(params, p.parseTypeRef())
+				if !p.match(COMMA) {
+					break
+				}
+			}
+		}
+		p.expect(RPAREN, "')'")
+		base = "fn(" + strings.Join(params, ", ") + ")"
+		if p.match(ARROW) {
+			base += " -> " + p.parseTypeRef()
+		}
+
 	case p.match(QUESTION):
 		base = "?" + p.parseTypeRef()
 
@@ -774,6 +806,15 @@ func (p *Parser) parsePrimary() Expr {
 
 	case LBRACE:
 		return p.parseMapLit()
+
+	case FN:
+		// An anonymous function used as a value.
+		f := p.parseFnSignature(t, "")
+		if f == nil {
+			return &StrLit{pos: at(t), Val: ""}
+		}
+		f.Body = p.parseBlock()
+		return &FuncLit{pos: at(t), Decl: f}
 	}
 
 	p.errorAt(t, "expected an expression, found %s", describe(t))

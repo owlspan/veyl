@@ -678,6 +678,9 @@ func (c *Checker) expr(e Expr) *Type {
 	case *Try:
 		return c.try(x)
 
+	case *FuncLit:
+		return c.funcLit(x)
+
 	case *Widen:
 		// Inserted by this pass; already checked when it was created.
 		return x.T
@@ -724,6 +727,10 @@ func (c *Checker) expr(e Expr) *Type {
 		}
 		if bc, ok := builtinConsts[x.Name]; ok {
 			return bc.typ
+		}
+		// A declared function used as a value.
+		if f, ok := c.funcs[x.Name]; ok {
+			return signatureOf(f)
 		}
 		return Unknown // the resolver reported the undefined name
 
@@ -839,6 +846,75 @@ func (c *Checker) structLit(x *StructLit) *Type {
 	// Point{} and Config{debug: true} both reasonable to write.
 	_ = d
 	x.T = StructOf(x.Name)
+	return x.T
+}
+
+// callValue checks a call made through a value rather than a declared
+// name, and returns what it produces.
+func (c *Checker) callValue(x *Call, fnType *Type, what string) *Type {
+	if fnType.IsUnknown() {
+		return Unknown
+	}
+	if !fnType.IsFunc() {
+		c.errorAt(x, "%s is %s, which cannot be called", what, fnType)
+		return Unknown
+	}
+	if len(x.Args) != len(fnType.Params) {
+		c.errorAt(x, "%s expects %s, got %d",
+			what, arityText(len(fnType.Params), len(fnType.Params)), len(x.Args))
+	}
+	for i := 0; i < len(x.Args) && i < len(fnType.Params); i++ {
+		want := fnType.Params[i]
+		if c.coerce(&x.Args[i], want, x.ArgT[i]) {
+			continue
+		}
+		c.errorAt(x.Args[i], "%s expects %s for argument %d, got %s",
+			what, want, i+1, x.ArgT[i])
+	}
+	return fnType.Elem
+}
+
+// signatureOf builds the function type of a declaration, so it can be
+// handed around as a value.
+func signatureOf(f *FnDecl) *Type {
+	params := make([]*Type, 0, len(f.Params))
+	for _, p := range f.Params {
+		params = append(params, p.T)
+	}
+	return FuncOf(params, f.RetT)
+}
+
+// funcLit checks an anonymous function and returns its type. The body
+// is checked in its own scope, stacked on whatever is visible where the
+// literal was written, so it can close over locals.
+func (c *Checker) funcLit(x *FuncLit) *Type {
+	f := x.Decl
+	for i := range f.Params {
+		prm := &f.Params[i]
+		prm.T = c.resolveAnnotation(prm.Type, prm)
+		if prm.T == nil {
+			prm.T = Unknown
+		}
+	}
+	if f.Ret == "" {
+		f.RetT = Void
+	} else {
+		f.RetT = c.resolveAnnotation(f.Ret, f)
+	}
+
+	prev := c.curFn
+	c.curFn = f
+	c.push()
+	for _, prm := range f.Params {
+		c.define(prm.Name, prm.T)
+	}
+	for _, s := range f.Body.Stmts {
+		c.stmt(s)
+	}
+	c.pop()
+	c.curFn = prev
+
+	x.T = signatureOf(f)
 	return x.T
 }
 
@@ -1278,7 +1354,18 @@ func (c *Checker) call(x *Call) *Type {
 
 	name, ok := DottedName(x.Callee)
 	if !ok {
-		return Unknown
+		// Calling whatever an expression evaluates to.
+		x.T = c.callValue(x, c.expr(x.Callee), "this")
+		x.ViaValue = true
+		return x.T
+	}
+
+	// A variable holding a function shadows a declaration of the same
+	// name, which is ordinary scoping.
+	if t := c.lookup(name); t != nil {
+		x.ViaValue = true
+		x.T = c.callValue(x, t, name)
+		return x.T
 	}
 
 	if b, isBuiltin := builtins[name]; isBuiltin {
@@ -1405,7 +1492,14 @@ func rootIdent(e Expr) (string, bool) {
 func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Type {
 	m, ok := c.methods[recv.Name][fld.Name]
 	if !ok {
-		if _, isField := c.fieldType(recv.Name, fld.Name); isField {
+		if ft, isField := c.fieldType(recv.Name, fld.Name); isField {
+			// A field holding a function is callable, it is just not a
+			// method — no receiver is passed.
+			if ft.IsFunc() {
+				x.Method = false
+				x.ViaValue = true
+				return c.callValue(x, ft, recv.Name+"."+fld.Name)
+			}
 			c.errorAt(x, "%s.%s is a field, not a method", recv.Name, fld.Name)
 			return Unknown
 		}

@@ -222,6 +222,70 @@ func __must[T any](r __Res[T]) T {
 }`,
 		imports: []string{"cmp", "slices"},
 	},
+	// The higher-order list operations. These only became possible once
+	// functions were values; before that there was nothing to pass.
+	"listHigherOrder": {
+		code: `func __map[T any, U any](xs []T, f func(T) U) []U {
+	out := make([]U, len(xs))
+	for i, v := range xs {
+		out[i] = f(v)
+	}
+	return out
+}
+
+func __filter[T any](xs []T, keep func(T) bool) []T {
+	out := []T{}
+	for _, v := range xs {
+		if keep(v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func __reduce[T any, U any](xs []T, start U, step func(U, T) U) U {
+	acc := start
+	for _, v := range xs {
+		acc = step(acc, v)
+	}
+	return acc
+}
+
+// A copy is sorted rather than the original, matching sort() and
+// reverse() — a read never changes what it was given.
+func __sortBy[T any](xs []T, less func(T, T) bool) []T {
+	out := make([]T, len(xs))
+	copy(out, xs)
+	sort.SliceStable(out, func(i, j int) bool { return less(out[i], out[j]) })
+	return out
+}
+
+func __any[T any](xs []T, test func(T) bool) bool {
+	for _, v := range xs {
+		if test(v) {
+			return true
+		}
+	}
+	return false
+}
+
+func __all[T any](xs []T, test func(T) bool) bool {
+	for _, v := range xs {
+		if !test(v) {
+			return false
+		}
+	}
+	return true
+}
+
+func __each[T any](xs []T, do func(T)) {
+	for _, v := range xs {
+		do(v)
+	}
+}`,
+		imports: []string{"sort"},
+	},
+
 	"mapFind": {
 		code: `func __find[K comparable, V any](m map[K]V, k K) *V {
 	v, ok := m[k]
@@ -357,6 +421,42 @@ func wantResult(c *Checker, x *Call, args []*Type, fn string) *Type {
 		return Unknown
 	}
 	return args[0].Elem
+}
+
+// wantCallback checks that an argument is a function taking exactly
+// the given parameter types, and returns what it produces.
+func wantCallback(c *Checker, x *Call, i int, args []*Type, fn string, params []*Type) *Type {
+	if i >= len(args) || args[i].IsUnknown() {
+		return Unknown
+	}
+	got := args[i]
+	if !got.IsFunc() {
+		c.errorAt(x.Args[i], "%s expects a function here, got %s", fn, got)
+		return Unknown
+	}
+	if len(got.Params) != len(params) {
+		c.errorAt(x.Args[i], "%s expects a function taking %s, got one taking %d",
+			fn, arityText(len(params), len(params)), len(got.Params))
+		return Unknown
+	}
+	for j, want := range params {
+		if want.IsUnknown() || want.Accepts(got.Params[j]) {
+			continue
+		}
+		c.errorAt(x.Args[i], "%s passes %s to its function, but it takes %s",
+			fn, want, got.Params[j])
+		return Unknown
+	}
+	return got.Elem
+}
+
+// wantPredicate is wantCallback for a function that has to answer
+// yes or no.
+func wantPredicate(c *Checker, x *Call, i int, args []*Type, fn string, params []*Type) {
+	ret := wantCallback(c, x, i, args, fn, params)
+	if !ret.IsUnknown() && ret.Kind != KBool {
+		c.errorAt(x.Args[i], "%s needs a function returning bool, got one returning %s", fn, ret)
+	}
 }
 
 // wantAssignable reports an error unless the argument is something that
@@ -572,6 +672,109 @@ func buildCollectionBuiltins() {
 			},
 			helpers: []string{"listJoin"},
 			emit:    func(a []string) string { return "__join(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		// ---- higher-order ----
+
+		"map": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "map")
+				ret := wantCallback(c, x, 1, args, "map", []*Type{elem})
+				if elem.IsUnknown() || ret.IsUnknown() {
+					return Unknown
+				}
+				if ret.Kind == KVoid {
+					c.errorAt(x.Args[1], "map needs a function that returns something — use each(...) to just do work")
+					return Unknown
+				}
+				return ListOf(ret)
+			},
+			helpers: []string{"listHigherOrder"},
+			emit:    func(a []string) string { return "__map(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		"filter": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "filter")
+				wantPredicate(c, x, 1, args, "filter", []*Type{elem})
+				if elem.IsUnknown() {
+					return Unknown
+				}
+				return ListOf(elem)
+			},
+			helpers: []string{"listHigherOrder"},
+			emit:    func(a []string) string { return "__filter(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		"reduce": {
+			minArgs: 3, maxArgs: 3,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "reduce")
+				if len(args) < 3 || elem.IsUnknown() {
+					return Unknown
+				}
+				acc := args[1]
+				ret := wantCallback(c, x, 2, args, "reduce", []*Type{acc, elem})
+				if !ret.IsUnknown() && !acc.Equal(ret) {
+					c.errorAt(x.Args[2], "reduce starts with %s, so its function must return %s, not %s",
+						acc, acc, ret)
+					return Unknown
+				}
+				return acc
+			},
+			helpers: []string{"listHigherOrder"},
+			emit: func(a []string) string {
+				return "__reduce(" + a[0] + ", " + a[1] + ", " + a[2] + ")"
+			},
+		},
+
+		"sortBy": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "sortBy")
+				wantPredicate(c, x, 1, args, "sortBy", []*Type{elem, elem})
+				if elem.IsUnknown() {
+					return Unknown
+				}
+				return ListOf(elem)
+			},
+			helpers: []string{"listHigherOrder"},
+			emit:    func(a []string) string { return "__sortBy(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		"any": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "any")
+				wantPredicate(c, x, 1, args, "any", []*Type{elem})
+				return Bool
+			},
+			helpers: []string{"listHigherOrder"},
+			emit:    func(a []string) string { return "__any(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		"all": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "all")
+				wantPredicate(c, x, 1, args, "all", []*Type{elem})
+				return Bool
+			},
+			helpers: []string{"listHigherOrder"},
+			emit:    func(a []string) string { return "__all(" + a[0] + ", " + a[1] + ")" },
+		},
+
+		"each": {
+			minArgs: 2, maxArgs: 2,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				elem := wantList(c, x, 0, args, "each")
+				wantCallback(c, x, 1, args, "each", []*Type{elem})
+				return Void
+			},
+			helpers: []string{"listHigherOrder"},
+			emit:    func(a []string) string { return "__each(" + a[0] + ", " + a[1] + ")" },
 		},
 
 		// ---- results ----

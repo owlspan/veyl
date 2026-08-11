@@ -1,0 +1,93 @@
+// Functions are values.
+
+fn double(n: int) -> int {
+    return n * 2
+}
+
+fn describe(n: int) -> str {
+    return "<{n}>"
+}
+
+// A declared function can be handed around.
+let f = double
+print("through a variable {f(21)}")
+
+// Anonymous functions, with a written type on the binding.
+let triple: fn (int) -> int = fn (n: int) -> int {
+    return n * 3
+}
+print("literal {triple(5)}")
+
+// Inferred, without the annotation.
+let shout = fn (s: str) -> str {
+    return upper(s) + "!"
+}
+print("inferred {shout("hey")}")
+
+// Taking one as a parameter is what makes callbacks possible.
+fn applyTwice(g: fn (int) -> int, start: int) -> int {
+    return g(g(start))
+}
+print("applyTwice {applyTwice(double, 3)} {applyTwice(triple, 2)}")
+
+// Returning one.
+fn adder(by: int) -> fn (int) -> int {
+    return fn (n: int) -> int {
+        return n + by
+    }
+}
+let add10 = adder(10)
+print("closure {add10(5)} {adder(100)(1)}")
+
+// Closing over a local, and mutating through the closure.
+let seen = 0
+let tally = fn (n: int) {
+    seen += n
+}
+tally(3)
+tally(4)
+print("captured {seen}")
+
+// A function with no return value.
+let announce: fn (str) = fn (s: str) {
+    print("  announcing {s}")
+}
+announce("this")
+
+// Applied on the spot.
+print("immediate {fn(a: int, b: int) -> int { return a * b }(6, 7)}")
+
+// In collections.
+let steps: [] fn (int) -> int = [double, triple, add10]
+let n = 1
+for stage in steps {
+    n = stage(n)
+}
+print("pipeline {n}")
+
+let named: {str: fn (int) -> str} = {"desc": describe}
+print("from a map {named["desc"](9)}")
+
+// In a struct field.
+struct Rule {
+    label: str
+    test: fn (int) -> bool
+}
+
+let rules: []Rule = [
+    Rule{label: "even", test: fn (n: int) -> bool { return n % 2 == 0 }},
+    Rule{label: "big", test: fn (n: int) -> bool { return n > 100 }}
+]
+for rule in rules {
+    print("  {rule.label} of 42: {rule.test(42)}")
+}
+
+// A function that can fail, held as a value.
+fn parse(text: str) -> int! {
+    if !isInt(text) {
+        return fail("{text} is not a number")
+    }
+    return toInt(text)
+}
+let p: fn (str) -> int! = parse
+print("via value {valueOr(p("12"), -1)} {valueOr(p("x"), -1)}")

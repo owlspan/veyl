@@ -18,6 +18,7 @@ const (
 	KList
 	KMap
 	KStruct
+	KFunc
 	KNullable
 
 	// KResult is `T!` — either a T, or a reason it is missing.
@@ -43,10 +44,24 @@ const (
 // so nesting like [][]int or {str: []int} needs no special cases.
 type Type struct {
 	Kind TypeKind
-	Elem *Type  // list element, or map value
+	Elem *Type  // list element, map value, or a function's return type
 	Key  *Type  // map key
 	Name string // struct name
+
+	// Params is a function type's parameter list. Elem carries its
+	// return type, or Void.
+	Params []*Type
 }
+
+// FuncOf builds a function type. A nil return means it produces nothing.
+func FuncOf(params []*Type, ret *Type) *Type {
+	if ret == nil {
+		ret = Void
+	}
+	return &Type{Kind: KFunc, Params: params, Elem: ret}
+}
+
+func (t *Type) IsFunc() bool { return t != nil && t.Kind == KFunc }
 
 // StructOf names a struct type. Two struct types are the same exactly
 // when their names are, so this carries no field list — the declaration
@@ -137,6 +152,16 @@ func (t *Type) String() string {
 		return "{" + t.Key.String() + ": " + t.Elem.String() + "}"
 	case KStruct:
 		return t.Name
+	case KFunc:
+		parts := make([]string, len(t.Params))
+		for i, p := range t.Params {
+			parts[i] = p.String()
+		}
+		sig := "fn(" + strings.Join(parts, ", ") + ")"
+		if t.Elem != nil && t.Elem.Kind != KVoid {
+			sig += " -> " + t.Elem.String()
+		}
+		return sig
 	case KNullable:
 		return "?" + t.Elem.String()
 	case KResult:
@@ -169,6 +194,16 @@ func (t *Type) Equal(u *Type) bool {
 	case KStruct:
 		return t.Name == u.Name
 	case KNullable, KResult:
+		return t.Elem.Equal(u.Elem)
+	case KFunc:
+		if len(t.Params) != len(u.Params) {
+			return false
+		}
+		for i := range t.Params {
+			if !t.Params[i].Equal(u.Params[i]) {
+				return false
+			}
+		}
 		return t.Elem.Equal(u.Elem)
 	}
 	return true
@@ -244,6 +279,16 @@ func (t *Type) Go() string {
 		return "map[" + t.Key.Go() + "]" + t.Elem.Go()
 	case KStruct:
 		return t.Name
+	case KFunc:
+		parts := make([]string, len(t.Params))
+		for i, p := range t.Params {
+			parts[i] = p.Go()
+		}
+		sig := "func(" + strings.Join(parts, ", ") + ")"
+		if t.Elem != nil && t.Elem.Kind != KVoid {
+			sig += " " + t.Elem.Go()
+		}
+		return sig
 	case KNullable:
 		// A pointer, uniformly. Some inner types have their own nil in
 		// Go, but using one representation everywhere means narrowing
@@ -275,7 +320,7 @@ func (t *Type) Zero() string {
 		return t.Go() + "{}"
 	case KStruct:
 		return t.Name + "{}"
-	case KNullable:
+	case KNullable, KFunc:
 		return "nil"
 	case KResult:
 		return t.Go() + "{}"
@@ -307,8 +352,41 @@ func ParseType(s string) *Type {
 		return Bool
 	}
 
-	// `T!` binds loosest, so it is peeled first: `?int!` is a result
-	// carrying a nullable int.
+	// A function type is recognised before the `!` suffix, because the
+	// `!` in `fn(str) -> int!` belongs to the return type. Peeling it
+	// first would produce a result carrying a function, which is not
+	// what anyone writes that to mean.
+	if strings.HasPrefix(s, "fn(") {
+		close := matchingParen(s, 2)
+		if close < 0 {
+			return nil
+		}
+		var params []*Type
+		if inner := strings.TrimSpace(s[3:close]); inner != "" {
+			for _, part := range splitTopLevel(inner, ',') {
+				p := ParseType(part)
+				if p == nil {
+					return nil
+				}
+				params = append(params, p)
+			}
+		}
+		rest := strings.TrimSpace(s[close+1:])
+		if rest == "" {
+			return FuncOf(params, Void)
+		}
+		if !strings.HasPrefix(rest, "->") {
+			return nil
+		}
+		ret := ParseType(rest[2:])
+		if ret == nil {
+			return nil
+		}
+		return FuncOf(params, ret)
+	}
+
+	// `T!` binds loosest of the rest, so it is peeled next: `?int!` is a
+	// result carrying a nullable int.
 	if strings.HasSuffix(s, "!") {
 		inner := ParseType(s[:len(s)-1])
 		if inner == nil {
@@ -370,6 +448,44 @@ func ParseType(s string) *Type {
 		return StructOf(s)
 	}
 	return nil
+}
+
+// matchingParen finds the `)` closing the `(` at index open.
+func matchingParen(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// splitTopLevel splits on sep, ignoring separators nested inside
+// brackets — so fn({str: int}, []int) has two parameters, not three.
+func splitTopLevel(s string, sep byte) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case sep:
+			if depth == 0 {
+				parts = append(parts, strings.TrimSpace(s[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, strings.TrimSpace(s[start:]))
 }
 
 func isTypeName(s string) bool {

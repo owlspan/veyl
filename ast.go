@@ -89,6 +89,20 @@ type Ident struct {
 // NilLit is the bare `nil`.
 type NilLit struct{ pos }
 
+// FuncLit is an anonymous function used as a value:
+//
+//	fn(x: int) -> int { return x * 2 }
+//
+// It shares FnDecl so that resolve, check and codegen can treat a
+// literal and a declaration the same way.
+type FuncLit struct {
+	pos
+	Decl *FnDecl
+	T    *Type // resolved by the checker
+}
+
+func (*FuncLit) exprNode() {}
+
 // Try is the postfix `?`: unwrap a T! here, or return its failure from
 // the enclosing function. It replaces Go's four-line err check with one
 // character, which is the whole reason the error type exists.
@@ -141,6 +155,11 @@ type Call struct {
 	// Only builtins that ask for it ever see this; it is how a decoder
 	// learns what to decode into without Quartz having type arguments.
 	Want *Type
+
+	// ViaValue is set when the callee is a variable holding a function
+	// rather than a declared name. Codegen needs it so a local called
+	// `print` is not mistaken for the builtin.
+	ViaValue bool
 
 	// Method is set by the checker when the callee turned out to be a
 	// method on a struct rather than a function or a library path.
