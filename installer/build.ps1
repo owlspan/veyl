@@ -32,7 +32,31 @@ try {
     if (-not (Test-Path $goRoot)) { throw "GOROOT does not exist: $goRoot" }
     Write-Host "==> staging Go toolchain from $goRoot" -ForegroundColor Cyan
 
-    if (Test-Path $goDest) { Remove-Item -Recurse -Force $goDest }
+    # Deleting the previous staging tree fails intermittently, and the
+    # error blames "another process" without naming one. Nothing of ours
+    # is running: it is the virus scanner, which opens every file in a
+    # freshly written 177 MB tree and holds each handle briefly. Retrying
+    # is the standard answer on Windows, because there is nothing to wait
+    # on and no way to ask it to let go.
+    if (Test-Path $goDest) {
+        $removed = $false
+        foreach ($attempt in 1..6) {
+            try {
+                Remove-Item -Recurse -Force $goDest -ErrorAction Stop
+                $removed = $true
+                break
+            } catch {
+                if ($attempt -eq 1) {
+                    Write-Host "    staging tree is locked, waiting for the scanner" -ForegroundColor Yellow
+                }
+                Start-Sleep -Seconds ($attempt * 2)
+            }
+        }
+        if (-not $removed) {
+            throw "could not clear $goDest after several attempts. " +
+                  "Close anything browsing it, or exclude dist\ from your virus scanner."
+        }
+    }
     New-Item -ItemType Directory -Force $goDest | Out-Null
 
     # robocopy exit codes 0-7 mean success; 8 and above are real errors.
