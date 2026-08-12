@@ -34,8 +34,8 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\icons\veyl.ico
 UninstallDisplayIcon={app}\{#AppExeName}
-AppSupportURL=https://github.com/slightlyaboveaverageAIslop/veyl
-AppUpdatesURL=https://github.com/slightlyaboveaverageAIslop/veyl/releases
+AppSupportURL=https://github.com/owlspan/quartz
+AppUpdatesURL=https://github.com/owlspan/quartz/releases
 ; Per-user by default, so no administrator prompt for the common case.
 ; This has to be stated: PrivilegesRequired defaults to "admin", so
 ; without the line below the comment above would simply be untrue, and
