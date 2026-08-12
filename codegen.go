@@ -490,12 +490,24 @@ func (c *Codegen) tryExpr(x *Try) string {
 	failType := "any"
 	if c.curFnRet != nil && c.curFnRet.IsResult() {
 		failType = c.curFnRet.Elem.Go()
+		// A function returning void! fails with __Res[__Unit], not
+		// __Res[] — Go has no void to instantiate the generic with.
+		if c.curFnRet.Elem.Kind == KVoid {
+			failType = "__Unit"
+		}
 	}
 
 	c.pending = append(c.pending,
 		fmt.Sprintf("%s := %s", tmp, inner),
 		fmt.Sprintf("if %s.e != \"\" { return __fail[%s](%s.e) }", tmp, failType, tmp),
 	)
+
+	// `write(p, t)?` on a void! has nothing to hand back. Reading
+	// tmp.v would leave an unused value of an empty struct type, which
+	// Go rejects; the unit constant is the same thing and is usable.
+	if x.T != nil && x.T.Kind == KVoid {
+		return "__unit"
+	}
 	return tmp + ".v"
 }
 
@@ -617,6 +629,12 @@ func (c *Codegen) stmt(s Stmt) {
 		// stays readable.
 		if t := staticType(st.X); t != nil && t.Kind != KVoid {
 			c.w("_ = %s", code)
+			return
+		}
+		// `write(p, t)?` on a void! compiles entirely to the hoisted
+		// check above; there is no statement left to emit, and the unit
+		// constant on its own is not one Go accepts.
+		if code == "__unit" {
 			return
 		}
 		c.w("%s", code)

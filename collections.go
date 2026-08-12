@@ -52,7 +52,14 @@ var collectionHelperDefs = map[string]helperDef{
 	// The result type. A failure carries a reason rather than just a
 	// flag, because "it failed" on its own is never enough to act on.
 	"result": {
-		code: `type __Res[T any] struct {
+		code: `// __Unit is the payload of a ` + "`void!`" + `: an action that can fail
+// but has nothing to return. Go has no void type, and an empty struct
+// occupies no memory, so this costs nothing.
+type __Unit struct{}
+
+var __unit = __Unit{}
+
+type __Res[T any] struct {
 	v T
 	e string
 }
@@ -792,6 +799,18 @@ func buildCollectionBuiltins() {
 
 		// fail produces a failure of whatever result type the context
 		// wants, the way nil produces a nullable of whatever is wanted.
+		// The counterpart to fail() for an action that produces no
+		// value: `return ok()` says it worked. Only meaningful in a
+		// function returning void!, and the checker says so otherwise.
+		"ok": {
+			minArgs: 0, maxArgs: 0,
+			check: func(c *Checker, x *Call, args []*Type) *Type {
+				return ResultOf(Void)
+			},
+			helpers: []string{"try"},
+			emit:    func(a []string) string { return "__ok(__unit)" },
+		},
+
 		"fail": {
 			minArgs: 1, maxArgs: 1,
 			wantsTarget: true,

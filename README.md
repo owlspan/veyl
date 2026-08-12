@@ -225,7 +225,8 @@ print(Vec{x: 3.0, y: 4.0}.length())     // 5
 
 ### Handling failure
 
-Anything that can fail returns `T!`. `?` unwraps it or hands the
+Anything that can fail returns `T!`, or `void!` when there is no value
+to hand back — writing a file either worked or has a reason it did not. `?` unwraps it or hands the
 failure up, which is Go's four-line error check in one character.
 
 ```qz

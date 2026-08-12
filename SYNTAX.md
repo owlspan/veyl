@@ -1308,6 +1308,53 @@ gap, and the last thing left to tidy here.
 
 ---
 
+### `void!` — an action that can fail but returns nothing
+
+Most fallible things hand back a value, so `T!` covers them. Writing a
+file does not: it either worked, or it did not. That is `void!`.
+
+```qz
+fn save(path: str, text: str) -> void! {
+    os.file.write(path, text)?
+    os.file.append(path, "!")?
+    return ok()
+}
+```
+
+`ok()` is the counterpart to `fail("...")`: it says the action
+succeeded. `?`, `isOk`, `errorOf` and `must` all work as they do on any
+other result.
+
+Used as a plain statement, nothing changes — the result is simply
+ignored:
+
+```qz
+os.file.write("notes.txt", "hello")
+```
+
+That is deliberate. Reaching for the reason should be easy, not
+mandatory.
+
+**Why this exists.** These operations used to return a plain `bool`, so
+"permission denied", "no such directory" and "the disk is full" were
+all just `false`. There was no way to say "this failed and here is why"
+for something with no value to carry. Now there is:
+
+```qz
+let r = os.file.write("/nowhere/a.txt", "x")
+if !isOk(r) {
+    print(errorOf(r))   // open /nowhere/a.txt: no such file or directory
+}
+```
+
+The operations that return `void!`: `os.file.write`, `os.file.append`,
+`os.file.delete`, `os.file.rename`, `os.dir.make`, `os.dir.delete`,
+`os.dir.change`, `os.env.set`.
+
+`os.file.exists`, `os.dir.is` and `os.env.has` are still `bool`, because
+asking a question is not the same as performing an action — there is
+nothing for them to fail at.
+
 ### `os` — files, directories, paths, processes
 
 | Function | Returns | Description |

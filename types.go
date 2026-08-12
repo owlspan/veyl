@@ -165,6 +165,9 @@ func (t *Type) String() string {
 	case KNullable:
 		return "?" + t.Elem.String()
 	case KResult:
+		if t.Elem != nil && t.Elem.Kind == KVoid {
+			return "void!"
+		}
 		return t.Elem.String() + "!"
 	case KNilLit:
 		return "nil"
@@ -295,6 +298,12 @@ func (t *Type) Go() string {
 		// and wrapping have exactly one shape to handle.
 		return "*" + t.Elem.Go()
 	case KResult:
+		// An action that can fail but produces no value: `void!`. Go
+		// has no void to instantiate __Res with, so an empty struct
+		// stands in. It costs nothing at runtime.
+		if t.Elem != nil && t.Elem.Kind == KVoid {
+			return "__Res[__Unit]"
+		}
 		return "__Res[" + t.Elem.Go() + "]"
 	}
 	return "any"
@@ -383,6 +392,13 @@ func ParseType(s string) *Type {
 			return nil
 		}
 		return FuncOf(params, ret)
+	}
+
+	// `void!` is an action that either worked or explains why not. It
+	// is only meaningful under `!` — a bare `void` is not a type
+	// anybody can hold, so it is not accepted on its own.
+	if s == "void!" {
+		return ResultOf(Void)
 	}
 
 	// `T!` binds loosest of the rest, so it is peeled next: `?int!` is a

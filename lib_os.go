@@ -81,22 +81,38 @@ var osHelperDefs = map[string]helperDef{
 		imports: []string{"os"},
 	},
 	"writeFile": {
-		code: `func __writeFile(path string, text string) bool {
-	return os.WriteFile(path, []byte(text), 0o644) == nil
+		code: `func __writeFile(path string, text string) __Res[__Unit] {
+	return __try(os.WriteFile(path, []byte(text), 0o644))
 }`,
 		imports: []string{"os"},
+		deps:    []string{"try"},
 	},
 	"appendFile": {
-		code: `func __appendFile(path string, text string) bool {
+		code: `func __appendFile(path string, text string) __Res[__Unit] {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return false
+		return __fail[__Unit](err.Error())
 	}
 	defer f.Close()
 	_, err = f.WriteString(text)
-	return err == nil
+	return __try(err)
 }`,
 		imports: []string{"os"},
+		deps:    []string{"try"},
+	},
+
+	// __try turns Go's error convention into Quartz's. Every fallible
+	// action that produces no value goes through it, so the reason a
+	// write failed -- permission denied, no such directory, disk full --
+	// reaches the program instead of collapsing into false.
+	"try": {
+		code: `func __try(err error) __Res[__Unit] {
+	if err != nil {
+		return __fail[__Unit](err.Error())
+	}
+	return __ok(__unit)
+}`,
+		deps: []string{"result"},
 	},
 	"readLines": {
 		code: `func __readLines(path string) __Res[[]string] {
@@ -229,8 +245,8 @@ func buildOsBuiltins() {
 		"os.file.read":   fn("__readFile", []*Type{Str}, ResultOf(Str), "readFile"),
 		"os.file.readOr": fn("__readFileOr", []*Type{Str, Str}, Str, "readFileOr"),
 		"os.file.lines":  fn("__readLines", []*Type{Str}, ResultOf(ListOf(Str)), "readLines"),
-		"os.file.write":  fn("__writeFile", []*Type{Str, Str}, Bool, "writeFile"),
-		"os.file.append": fn("__appendFile", []*Type{Str, Str}, Bool, "appendFile"),
+		"os.file.write":  fn("__writeFile", []*Type{Str, Str}, ResultOf(Void), "writeFile"),
+		"os.file.append": fn("__appendFile", []*Type{Str, Str}, ResultOf(Void), "appendFile"),
 		"os.file.size":   fn("__fileSize", []*Type{Str}, ResultOf(Int), "fileSize"),
 		"os.file.exists": {
 			emit: func(a []string) string {
@@ -240,14 +256,14 @@ func buildOsBuiltins() {
 			imports: []string{"os"},
 		},
 		"os.file.delete": {
-			emit:   func(a []string) string { return "(os.Remove(" + a[0] + ") == nil)" },
-			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
-			imports: []string{"os"},
+			emit:   func(a []string) string { return "__try(os.Remove(" + a[0] + "))" },
+			params: []*Type{Str}, ret: ResultOf(Void), minArgs: 1, maxArgs: 1,
+			imports: []string{"os"}, helpers: []string{"try"},
 		},
 		"os.file.rename": {
-			emit:   func(a []string) string { return "(os.Rename(" + a[0] + ", " + a[1] + ") == nil)" },
-			params: []*Type{Str, Str}, ret: Bool, minArgs: 2, maxArgs: 2,
-			imports: []string{"os"},
+			emit:   func(a []string) string { return "__try(os.Rename(" + a[0] + ", " + a[1] + "))" },
+			params: []*Type{Str, Str}, ret: ResultOf(Void), minArgs: 2, maxArgs: 2,
+			imports: []string{"os"}, helpers: []string{"try"},
 		},
 
 		// ---- directories ----
@@ -255,14 +271,14 @@ func buildOsBuiltins() {
 		"os.dir.list": fn("__listDir", []*Type{Str}, ResultOf(ListOf(Str)), "listDir"),
 		"os.dir.is":   fn("__isDir", []*Type{Str}, Bool, "isDir"),
 		"os.dir.make": {
-			emit:   func(a []string) string { return "(os.MkdirAll(" + a[0] + ", 0o755) == nil)" },
-			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
-			imports: []string{"os"},
+			emit:   func(a []string) string { return "__try(os.MkdirAll(" + a[0] + ", 0o755))" },
+			params: []*Type{Str}, ret: ResultOf(Void), minArgs: 1, maxArgs: 1,
+			imports: []string{"os"}, helpers: []string{"try"},
 		},
 		"os.dir.delete": {
-			emit:   func(a []string) string { return "(os.RemoveAll(" + a[0] + ") == nil)" },
-			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
-			imports: []string{"os"},
+			emit:   func(a []string) string { return "__try(os.RemoveAll(" + a[0] + "))" },
+			params: []*Type{Str}, ret: ResultOf(Void), minArgs: 1, maxArgs: 1,
+			imports: []string{"os"}, helpers: []string{"try"},
 		},
 		"os.dir.current": {
 			emit:    func(a []string) string { return "func() string { d, _ := os.Getwd(); return d }()" },
@@ -270,9 +286,9 @@ func buildOsBuiltins() {
 			imports: []string{"os"},
 		},
 		"os.dir.change": {
-			emit:   func(a []string) string { return "(os.Chdir(" + a[0] + ") == nil)" },
-			params: []*Type{Str}, ret: Bool, minArgs: 1, maxArgs: 1,
-			imports: []string{"os"},
+			emit:   func(a []string) string { return "__try(os.Chdir(" + a[0] + "))" },
+			params: []*Type{Str}, ret: ResultOf(Void), minArgs: 1, maxArgs: 1,
+			imports: []string{"os"}, helpers: []string{"try"},
 		},
 		"os.dir.temp": {
 			emit:    func(a []string) string { return "os.TempDir()" },
@@ -315,9 +331,9 @@ func buildOsBuiltins() {
 			imports: []string{"os"},
 		},
 		"os.env.set": {
-			emit:   func(a []string) string { return "(os.Setenv(" + a[0] + ", " + a[1] + ") == nil)" },
-			params: []*Type{Str, Str}, ret: Bool, minArgs: 2, maxArgs: 2,
-			imports: []string{"os"},
+			emit:   func(a []string) string { return "__try(os.Setenv(" + a[0] + ", " + a[1] + "))" },
+			params: []*Type{Str, Str}, ret: ResultOf(Void), minArgs: 2, maxArgs: 2,
+			imports: []string{"os"}, helpers: []string{"try"},
 		},
 		"os.env.has": {
 			emit: func(a []string) string {
