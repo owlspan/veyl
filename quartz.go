@@ -334,11 +334,37 @@ type loader struct {
 	stack  []string        // in-progress, for cycle detection
 	errors []string
 	pkgs   *packageResolver
+	curPkg string // namespace of the file currently being loaded
+}
+
+// stampPkg records which namespace a loaded file's declarations belong
+// to. Nothing is renamed here: the resolver keys them by "pkg.name" and
+// keeps bare names working inside the package itself, which it can do
+// correctly because it is the part that understands scopes.
+func stampPkg(p *Program, pkg string) {
+	if pkg == "" {
+		return
+	}
+	for _, d := range p.Structs {
+		d.Pkg = pkg
+	}
+	for _, f := range p.Funcs {
+		f.Pkg = pkg
+	}
+	for _, g := range p.Globals {
+		g.Pkg = pkg
+	}
 }
 
 func (l *loader) resolve(prog *Program, from string) {
 	for _, imp := range prog.Imports {
 		var target string
+
+		// A package's declarations are namespaced under the name it was
+		// imported as. Files it pulls in relatively belong to the same
+		// package, so the namespace is inherited down the chain rather
+		// than reset at each hop.
+		pkg := l.curPkg
 
 		// A path names a file; a bare word names a package. The two
 		// cannot be confused, because a file import has always had to
@@ -370,6 +396,7 @@ func (l *loader) resolve(prog *Program, from string) {
 				continue
 			}
 			target = entry
+			pkg = imp.Path
 		}
 		if l.onStack(target) {
 			l.errorAt(imp, "import cycle: %s imports itself, directly or indirectly",
@@ -386,8 +413,13 @@ func (l *loader) resolve(prog *Program, from string) {
 			continue
 		}
 
+		stampPkg(sub, pkg)
+
 		l.stack = append(l.stack, target)
+		prevPkg := l.curPkg
+		l.curPkg = pkg
 		l.resolve(sub, target)
+		l.curPkg = prevPkg
 		l.stack = l.stack[:len(l.stack)-1]
 
 		prog.Structs = append(prog.Structs, sub.Structs...)

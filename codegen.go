@@ -298,11 +298,13 @@ func init() {
 type Codegen struct {
 	body     strings.Builder
 	indent   int
-	srcPath  string   // absolute path, used in //line directives
-	target   string   // GOOS the program is being built for
-	tmp      int      // counter for generated temporary names
-	pending  []string // statements hoisted out of the expression being built
-	curFnRet *Type    // return type of the function being emitted, for `?`
+	srcPath  string          // absolute path, used in //line directives
+	target   string          // GOOS the program is being built for
+	funcs    map[string]bool // qualified names of user functions
+	curPkg   string          // namespace of the code being emitted
+	tmp      int             // counter for generated temporary names
+	pending  []string        // statements hoisted out of the expression being built
+	curFnRet *Type           // return type of the function being emitted, for `?`
 	imports  map[string]bool
 	helpers  map[string]bool
 	Errors   []string
@@ -349,6 +351,15 @@ func (c *Codegen) addHelper(name string) {
 
 // Generate produces a complete Go program from a resolved Quartz AST.
 func (c *Codegen) Generate(p *Program) string {
+	// Which user functions exist, by qualified name, so a bare call
+	// inside a package can be told from one in the program body.
+	c.funcs = map[string]bool{}
+	for _, f := range p.Funcs {
+		if f.Recv == "" {
+			c.funcs[qual(f.Pkg, f.Name)] = true
+		}
+	}
+
 	for _, d := range p.Structs {
 		c.structDecl(d)
 	}
@@ -541,13 +552,16 @@ func (c *Codegen) fnDecl(f *FnDecl) {
 	}
 
 	c.line(f)
-	c.raw("func %s%s(%s)%s {", recv, f.Name, strings.Join(goParams, ", "), ret)
+	c.raw("func %s%s(%s)%s {", recv, goIdent(qual(f.Pkg, f.Name)), strings.Join(goParams, ", "), ret)
+	prevPkg := c.curPkg
+	c.curPkg = f.Pkg
 	prevRet := c.curFnRet
 	c.curFnRet = f.RetT
 	c.indent = 1
 	c.stmts(f.Body.Stmts)
 	c.indent = 0
 	c.curFnRet = prevRet
+	c.curPkg = prevPkg
 	c.raw("}")
 	c.raw("")
 }
@@ -1136,8 +1150,15 @@ func (c *Codegen) call(x *Call) string {
 		}
 		return b.emit(args)
 	}
-	// User-defined function; the resolver verified it exists.
-	return fmt.Sprintf("%s(%s)", name, strings.Join(args, ", "))
+	// User-defined function; the resolver verified it exists. A bare
+	// name inside a package refers to that package's own function, and
+	// a dotted one already carries its namespace.
+	if _, ok := c.funcs[name]; !ok {
+		if q := qual(c.curPkg, name); c.funcs[q] {
+			name = q
+		}
+	}
+	return fmt.Sprintf("%s(%s)", goIdent(name), strings.Join(args, ", "))
 }
 
 // show wraps a generated expression in the Quartz-formatting helper when
@@ -1306,4 +1327,12 @@ func (c *Codegen) interp(x *Interp) string {
 	}
 	return fmt.Sprintf("fmt.Sprintf(%s, %s)",
 		strconv.Quote(format.String()), strings.Join(args, ", "))
+}
+
+// goIdent turns a namespaced Quartz name into a legal Go identifier.
+// "greet.hello" cannot be emitted literally — Go would read it as a
+// package selector — so the separator becomes a double underscore,
+// which no Quartz identifier can contain.
+func goIdent(name string) string {
+	return strings.ReplaceAll(name, ".", "__")
 }

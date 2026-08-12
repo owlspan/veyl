@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // The package manager.
@@ -454,4 +455,26 @@ func (r *packageResolver) resolve(name string) (string, error) {
 	}
 	r.cache[name] = entry
 	return entry, nil
+}
+
+// badImportName explains why a name cannot be used as a namespace, or
+// returns "" when it can. Import names are written in source as
+// `name.thing`, so they have to lex as a single identifier — which
+// repository names frequently do not.
+func badImportName(name string) string {
+	if name == "" {
+		return "it is empty"
+	}
+	if r := rune(name[0]); !unicode.IsLetter(r) && r != '_' {
+		return "it must start with a letter or underscore"
+	}
+	for _, r := range name {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return fmt.Sprintf("%q is not allowed in a name", string(r))
+		}
+	}
+	if _, reserved := keywords[name]; reserved {
+		return "it is a keyword"
+	}
+	return ""
 }

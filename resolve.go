@@ -24,7 +24,9 @@ type Resolver struct {
 	methods  map[string]map[string]*FnDecl // struct name -> method name -> decl
 	scopes   []map[string]*varInfo
 	curFn    *FnDecl
-	curFile  string // the file whose code is being walked, for pub checks
+	curFile  string          // the file whose code is being walked, for pub checks
+	curPkg   string          // namespace of the code being walked, "" for the program
+	pkgNames map[string]bool // namespaces introduced by imports
 	mainFile string
 	locals   map[string]bool // names the program body declares with `let`
 	inGlobal bool            // walking a global's initialiser
@@ -51,10 +53,11 @@ func (r *Resolver) visible(declFile string, pub bool) bool {
 
 func NewResolver(file string) *Resolver {
 	return &Resolver{
-		file:    file,
-		funcs:   map[string]*FnDecl{},
-		structs: map[string]*StructDecl{},
-		methods: map[string]map[string]*FnDecl{},
+		file:     file,
+		funcs:    map[string]*FnDecl{},
+		structs:  map[string]*StructDecl{},
+		methods:  map[string]map[string]*FnDecl{},
+		pkgNames: map[string]bool{},
 	}
 }
 
@@ -115,6 +118,24 @@ func (r *Resolver) Resolve(p *Program) {
 
 	// Names the program body declares. A global cannot use one, and
 	// saying why beats "undefined variable".
+	// Which namespaces exist, so an unknown dotted path can say whether
+	// the package or only the member is wrong.
+	for _, f := range p.Funcs {
+		if f.Pkg != "" {
+			r.pkgNames[f.Pkg] = true
+		}
+	}
+	for _, d := range p.Structs {
+		if d.Pkg != "" {
+			r.pkgNames[d.Pkg] = true
+		}
+	}
+	for _, g := range p.Globals {
+		if g.Pkg != "" {
+			r.pkgNames[g.Pkg] = true
+		}
+	}
+
 	r.locals = map[string]bool{}
 	for _, s := range p.Main {
 		if l, ok := s.(*LetStmt); ok {
@@ -129,8 +150,9 @@ func (r *Resolver) Resolve(p *Program) {
 	r.push()
 	for _, g := range p.Globals {
 		r.curFile = g.File
+		r.curPkg = g.Pkg
 		r.expr(g.Value)
-		r.declare(g.Name, &varInfo{isConst: true, decl: g, used: true}, g)
+		r.declare(qual(g.Pkg, g.Name), &varInfo{isConst: true, decl: g, used: true}, g)
 	}
 	r.inGlobal = false
 	r.curFile = r.mainFile
@@ -151,7 +173,7 @@ func (r *Resolver) Resolve(p *Program) {
 			}
 			seen[f.Name] = true
 		}
-		r.structs[d.Name] = d
+		r.structs[qual(d.Pkg, d.Name)] = d
 	}
 
 	// Pass 1: collect every signature first, so functions can call each
@@ -165,25 +187,27 @@ func (r *Resolver) Resolve(p *Program) {
 			r.errorAt(f, "%q is a builtin and cannot be redefined", f.Name)
 			continue
 		}
-		if _, isStruct := r.structs[f.Name]; isStruct {
+		if _, isStruct := r.structs[qual(f.Pkg, f.Name)]; isStruct {
 			r.errorAt(f, "%q is already a struct, so it cannot also be a function", f.Name)
 			continue
 		}
-		if prev, dup := r.funcs[f.Name]; dup {
+		if prev, dup := r.funcs[qual(f.Pkg, f.Name)]; dup {
 			line, _ := prev.Pos()
 			r.errorAt(f, "function %q is already defined on line %d (in %s)",
 				f.Name, line, filepath.Base(prev.File))
 			continue
 		}
-		r.funcs[f.Name] = f
+		r.funcs[qual(f.Pkg, f.Name)] = f
 	}
 
 	// Pass 2: walk each body, remembering which file it came from so a
 	// reference to something private to another file can be caught.
 	for _, f := range p.Funcs {
 		r.curFile = f.File
+		r.curPkg = f.Pkg
 		r.resolveFn(f)
 	}
+	r.curPkg = ""
 
 	// Pass 3: top-level statements become main().
 	r.curFn = nil
@@ -527,8 +551,22 @@ func (r *Resolver) expr(e Expr) {
 			return
 		}
 		if name, ok := DottedName(x); ok {
+			// A const exported by a package: greet.MAX.
+			if info := r.lookup(name); info != nil {
+				info.used = true
+				return
+			}
 			if _, isBuiltin := builtins[name]; isBuiltin {
 				r.errorAt(x, "%s is a function; did you mean %s(...)?", name, name)
+				return
+			}
+			if f, ok := r.funcs[name]; ok && f.Pub {
+				r.errorAt(x, "%s is a function; did you mean %s(...)?", name, name)
+				return
+			}
+			if root := strings.SplitN(name, ".", 2)[0]; r.pkgNames[root] {
+				r.errorAt(x, "package %q has no public %q", root,
+					strings.TrimPrefix(name, root+"."))
 				return
 			}
 			r.errorAt(x, "there is no value called %s%s", name, nearestNamespaceHint(name))
@@ -594,14 +632,40 @@ func (r *Resolver) call(x *Call) {
 		return
 	}
 
-	// A dotted name that is not a builtin is a mistake in a library path,
-	// so say which part is wrong rather than "undefined function".
+	// A dotted name is either a library path or a call into an imported
+	// package. Packages are checked first: `greet.hello` is stored under
+	// exactly that key, so this is a plain lookup.
 	if _, dotted := x.Callee.(*Field); dotted {
+		if f, ok := r.funcs[name]; ok {
+			if !f.Pub {
+				r.errorAt(x, "%q is not public in package %q — mark it 'pub fn %s'",
+					name, f.Pkg, f.Name)
+				return
+			}
+			r.checkArity(x, name, len(x.Args), len(f.Params), len(f.Params))
+			return
+		}
+		if root := strings.SplitN(name, ".", 2)[0]; r.pkgNames[root] {
+			r.errorAt(x, "package %q has no public %q", root,
+				strings.TrimPrefix(name, root+"."))
+			return
+		}
 		r.errorAt(x, "there is no builtin called %s%s", name, nearestNamespaceHint(name))
 		return
 	}
 
-	f, isUser := r.funcs[name]
+	// A bare name inside a package means that package's own function.
+	// Looking there first is what lets a library call its own helpers
+	// without qualifying them, and what stops it reaching into the
+	// program that imported it.
+	key := qual(r.curPkg, name)
+	f, isUser := r.funcs[key]
+	if !isUser && r.curPkg != "" {
+		// Not the package's own, so it can only be a builtin, which was
+		// already ruled out above.
+		r.errorAt(x, "undefined function %q in package %q", name, r.curPkg)
+		return
+	}
 	if !isUser {
 		r.errorAt(x, "undefined function %q", name)
 		return

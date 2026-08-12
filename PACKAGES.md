@@ -27,21 +27,22 @@ quartz init myapp
 quartz add github.com/someone/quartz-strutil@v1.0.0
 ```
 
-```qz
-import "quartz-strutil"
-
-print(titleCase("hello world"))
-```
-
-The import name defaults to the repository name. When that reads badly,
-rename it:
-
-```
-quartz add github.com/someone/quartz-strutil@v1.0.0 as strutil
-```
+Everything a package exports is reached through the name you imported
+it as:
 
 ```qz
 import "strutil"
+
+print(strutil.titleCase("hello world"))
+```
+
+The import name defaults to the repository name. A repository is often
+called something like `quartz-strutil`, which cannot be a name in code —
+`quartz-strutil.titleCase` reads as a subtraction. `quartz add` says so
+and tells you to pick one:
+
+```
+quartz add github.com/someone/quartz-strutil@v1.0.0 as strutil
 ```
 
 **A bare name is a package; a name ending in `.qz` is a file.** That is
@@ -214,13 +215,13 @@ only your `pub` declarations reach them.
 
 ### What to name things
 
-Imported declarations are merged into one program, so **your public
-names share a namespace with every other package the user imports.**
-A `pub fn get()` is close to hostile. Prefix names that are not clearly
-yours: `httpGet`, `csvParse`, `strTitleCase`.
+Everything you export is reached through your package's name, so
+`strutil.get()` reads fine even though `get()` alone would not. Name
+things for how they read **after** the dot, and do not prefix them with
+the package name: `strutil.strTitleCase()` is a stutter.
 
-This is a real limitation and it is being worked on — see
-[Known limitations](#known-limitations).
+Two packages exporting the same name is fine and always has been safe —
+the namespace keeps them apart.
 
 ### Depending on other packages
 
@@ -272,7 +273,8 @@ file will catch you, loudly, in your users' builds.
 - `quartz.json` has `name`, `version`, `main`, `description`
 - The `version` matches the tag you are about to push
 - Every intended export is `pub`, and nothing else is
-- Public names are prefixed enough not to collide
+- The repository name works as an identifier, or your README shows the
+  `as` form people should use
 - A `README.md` showing the three lines someone needs to get started
 - It compiles from a clean checkout: `quartz run` something that uses it
 
@@ -329,8 +331,19 @@ directory could overwrite anything you can write.
 **Resolution.** `import "name"` looks up `name` in the nearest
 `quartz.json` at or above the file doing the importing, resolves it to
 a source, fetches it if the cache lacks it, reads that package's own
-manifest, and loads its `main` file. Its `pub` declarations are then
-merged into your program exactly as a local `import "file.qz"` would be.
+manifest, and loads its `main` file.
+
+**Namespacing.** A package's declarations are recorded under
+`name.thing` rather than merged into your program. That is what lets two
+packages export the same `hello` without colliding. Inside the package a
+bare name still means that package's own declaration, so a library calls
+its own helpers without qualifying them — and cannot reach into the
+program that imported it. The compiler emits `greet.hello` as
+`greet__hello` in the generated Go, since Go would otherwise read the
+dot as a package selector.
+
+A relative `import "helpers.qz"` is **not** namespaced. Files in the
+same project merge, which is what you want for code you wrote yourself.
 
 ---
 
@@ -360,19 +373,6 @@ depend on it, the same as anywhere else.
 ---
 
 ## Known limitations
-
-**One flat namespace.** Imported declarations merge into your program,
-so two packages exporting the same name collide:
-
-```
-error: app.qz:1:5: function "hello" is already defined on line 1 (in greet.qz)
-```
-
-The error is clear and names the file, but there is currently no way to
-disambiguate other than not using one of the packages. Namespaced
-imports — `strutil.titleCase()` — are the intended fix and the next
-significant change to this system. Until then, prefix your public
-names.
 
 **Only GitHub.** `gitlab.com` and the rest are rejected with a clear
 message rather than half-working. Adding another host is a small change

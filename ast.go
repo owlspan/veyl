@@ -281,6 +281,7 @@ type StructDecl struct {
 	Fields []StructField
 	Pub    bool
 	File   string
+	Pkg    string // see FnDecl.Pkg
 }
 
 // ImplBlock is `impl User { fn ... }`. Its methods are hoisted into the
@@ -314,6 +315,12 @@ type FnDecl struct {
 
 	Pub  bool
 	File string
+
+	// Pkg is the namespace this declaration was imported under, or ""
+	// for the program's own code. A package's declarations are stored
+	// under "pkg.name" so two packages exporting the same name cannot
+	// collide, and are reachable from outside only through that path.
+	Pkg string
 }
 
 // ---- statements ----
@@ -340,6 +347,7 @@ type LetStmt struct {
 	Global bool
 	Pub    bool
 	File   string
+	Pkg    string // see FnDecl.Pkg; only meaningful on a global
 }
 
 // AssignStmt covers `x = v`, `x += v`, and `xs[i] = v`. Target is an

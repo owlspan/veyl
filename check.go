@@ -64,6 +64,16 @@ func (c *Checker) fieldNames(structName string) string {
 	return strings.Join(names, ", ")
 }
 
+// pkg is the namespace of the code being checked. A bare call inside a
+// package means that package's own function, so lookups qualify with
+// this before giving up.
+func (c *Checker) pkg() string {
+	if c.curFn != nil {
+		return c.curFn.Pkg
+	}
+	return ""
+}
+
 func (c *Checker) errorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
 	c.Errors = append(c.Errors,
@@ -308,7 +318,7 @@ func (c *Checker) Check(p *Program) {
 			f.RetT = c.resolveAnnotation(f.Ret, f)
 		}
 		if f.Recv == "" {
-			c.funcs[f.Name] = f
+			c.funcs[qual(f.Pkg, f.Name)] = f
 		}
 	}
 
@@ -1382,6 +1392,9 @@ func (c *Checker) call(x *Call) *Type {
 
 	f, isUser := c.funcs[name]
 	if !isUser {
+		f, isUser = c.funcs[qual(c.pkg(), name)]
+	}
+	if !isUser {
 		return Unknown // the resolver reported it
 	}
 	// Arity is the resolver's job; only check the arguments we have.
@@ -1448,7 +1461,11 @@ func (c *Checker) paramHints(x *Call) []*Type {
 		}
 		return hints
 	}
-	if f, isUser := c.funcs[name]; isUser {
+	f, isUser := c.funcs[name]
+	if !isUser {
+		f, isUser = c.funcs[qual(c.pkg(), name)]
+	}
+	if isUser {
 		out := make([]*Type, len(f.Params))
 		for i, p := range f.Params {
 			out[i] = p.T

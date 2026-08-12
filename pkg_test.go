@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -197,5 +198,134 @@ func TestFindProjectRoot(t *testing.T) {
 	// Nothing above a directory with no manifest anywhere in its parents.
 	if got := findProjectRoot(t.TempDir()); got != "" {
 		t.Errorf("expected no project root, got %q", got)
+	}
+}
+
+// writeProject lays out a project with two packages that both export a
+// function called hello. Before imports were namespaced this was simply
+// impossible: the declarations merged into one program and collided.
+func writeProject(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+
+	pkg := func(name, body string) {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		manifest := `{"name":"` + name + `","version":"1.0.0","main":"` + name + `.qz"}`
+		if err := os.WriteFile(filepath.Join(dir, manifestName), []byte(manifest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+".qz"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// shout calls hello without qualifying it, which has to keep working:
+	// a library must be able to use its own helpers.
+	pkg("greet", `pub fn hello(name: str) -> str {
+    return "hello, {name}"
+}
+
+pub fn shout(name: str) -> str {
+    return upper(hello(name))
+}
+
+fn secret() -> str {
+    return "shh"
+}
+`)
+	pkg("loud", `pub fn hello(name: str) -> str {
+    return "HI {name}"
+}
+`)
+
+	app := filepath.Join(root, "app")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{
+  "name": "app",
+  "version": "0.1.0",
+  "dependencies": { "greet": "../greet", "loud": "../loud" }
+}`
+	if err := os.WriteFile(filepath.Join(app, manifestName), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return app
+}
+
+func runQuartz(t *testing.T, quartz, dir, src string) (string, error) {
+	t.Helper()
+	path := filepath.Join(dir, "main.qz")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(quartz, "run", path)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.ReplaceAll(string(out), "\r\n", "\n"), err
+}
+
+func TestPackagesAreNamespaced(t *testing.T) {
+	quartz := buildCompiler(t)
+	app := writeProject(t)
+
+	// The whole point: two packages exporting the same name, both usable.
+	out, err := runQuartz(t, quartz, app, `import "greet"
+import "loud"
+
+print(greet.hello("a"))
+print(loud.hello("b"))
+print(greet.shout("c"))
+`)
+	if err != nil {
+		t.Fatalf("running failed: %v\n%s", err, out)
+	}
+	if want := "hello, a\nHI b\nHELLO, C\n"; out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+}
+
+func TestPackageNamesDoNotLeak(t *testing.T) {
+	quartz := buildCompiler(t)
+	app := writeProject(t)
+
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			// An imported name is reachable only through its namespace.
+			"bare name",
+			"import \"greet\"\nprint(hello(\"x\"))\n",
+			`undefined function "hello"`,
+		},
+		{
+			// Naming the package correctly but the member wrongly should
+			// blame the member, not claim the library does not exist.
+			"unknown member",
+			"import \"greet\"\nprint(greet.helo(\"x\"))\n",
+			`package "greet" has no public "helo"`,
+		},
+		{
+			// Something that exists but was never exported gets the
+			// actionable message rather than "no such thing".
+			"private member",
+			"import \"greet\"\nprint(greet.secret())\n",
+			`is not public in package "greet"`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := runQuartz(t, quartz, app, c.src)
+			if err == nil {
+				t.Fatalf("expected a compile error, got success:\n%s", out)
+			}
+			if !strings.Contains(out, c.want) {
+				t.Errorf("error was %q,\nwant it to mention %q", out, c.want)
+			}
+		})
 	}
 }

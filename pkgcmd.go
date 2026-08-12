@@ -111,6 +111,14 @@ func cmdAdd(args []string) error {
 		return fmt.Errorf("%q is a builtin library, so a package cannot take that name.\n"+
 			"Choose another with: quartz add %s as <name>", name, spec)
 	}
+	// The import name is written in source as a namespace, so it has to
+	// be spellable. Repositories are routinely called things like
+	// quartz-strutil, and `quartz-strutil.titleCase` reads as a
+	// subtraction — better to refuse now than to emit that later.
+	if why := badImportName(name); why != "" {
+		return fmt.Errorf("%q cannot be used as an import name: %s.\n"+
+			"Pick one with: quartz add %s as <name>", name, why, spec)
+	}
 
 	fmt.Printf("adding %s as %q\n", s, name)
 	dir, err := fetch(s, false)
