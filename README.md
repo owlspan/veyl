@@ -31,7 +31,8 @@ $ quartz run primes.qz
 **Status:** v0.15. The language is feature-complete for everyday work:
 a full type checker, lists and maps, structs with methods, nullable
 types, an error type, modules, and libraries for files, HTTP,
-networking, JSON and time. Tooling is in place too — a formatter,
+networking, JSON, time, randomness, statistics and terminal output,
+plus a package manager. Tooling is in place too — a formatter,
 warnings, a VS Code extension, and a Windows installer that brings its
 own Go toolchain. See [Roadmap](#roadmap).
 
@@ -54,6 +55,7 @@ own Go toolchain. See [Roadmap](#roadmap).
 **New here? [Learn Quartz in 20 minutes](TUTORIAL.md).**
 
 Full language reference: **[SYNTAX.md](SYNTAX.md)**
+Using and writing packages: **[PACKAGES.md](PACKAGES.md)**
 Compiler internals: **[ARCHITECTURE.md](ARCHITECTURE.md)**
 
 ---
@@ -65,9 +67,11 @@ Three things at once, which most languages make you pick two of:
 - **Native performance.** No interpreter, no VM, no runtime to install.
 - **Low ceremony.** No semicolons, no header files, no boilerplate
   `main`, no manual memory management.
-- **Batteries included.** Math, strings, input, and native Windows GUI
-  calls are all builtins. No imports, no package manager, no `pip
-  install`.
+- **Batteries included.** Math, strings, input, files, HTTP, JSON,
+  randomness, statistics, colour, and native Windows GUI calls are all
+  builtins — no imports and nothing to install before you can use them.
+  A package manager exists for everything else, but you should be able
+  to write a useful program without touching it.
 
 A Quartz program that opens a native window is one `.exe` with no DLLs
 to ship and no C compiler involved anywhere.
@@ -155,6 +159,10 @@ go test -run TestQuartz -update .
 | `quartz emit f.qz`       | print the generated Go                         |
 | `quartz tokens f.qz`     | print the token stream                         |
 | `quartz doctor`          | check the install and report which Go it found |
+| `quartz init [name]`     | start a project here                           |
+| `quartz add <source>`    | add a dependency and fetch it                  |
+| `quartz install`         | fetch everything the manifest lists            |
+| `quartz packages`        | list dependencies                              |
 | `quartz builtins`        | list every builtin, for editor tooling         |
 | `quartz version`         | print the version                              |
 | `quartz f.qz`            | same as `run`                                  |

@@ -1266,8 +1266,9 @@ let page = http.get("https://example.com")
 print(time.stamp())
 ```
 
-There is still no `import` — the names are always available, and the
-dots are there to group them, not to load anything.
+These need no `import` — the names are always available, and the dots
+group them rather than loading anything. `import` is for your own files
+and for packages other people wrote; see [PACKAGES.md](PACKAGES.md).
 
 If you get a path wrong the compiler suggests the near misses:
 
@@ -1631,6 +1632,103 @@ allocate and free. Manual memory needs the C backend and does not exist.
 | `mem.collections()` | `int` | how many times the collector has run |
 | `mem.collect()` | — | run the collector now |
 | `mem.goroutines()` | `int` | concurrent tasks in flight |
+
+### `rand` — randomness
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `rand.int(lo, hi)` | `int` | between `lo` and `hi`, both included |
+| `rand.float()` | `float` | between 0 and 1 |
+| `rand.bool()` | `bool` | a coin flip |
+| `rand.hex(n)` | `str` | `n` random hex digits |
+| `rand.uuid()` | `str` | a version 4 UUID |
+| `rand.pick(list)` | `T` | one element |
+| `rand.shuffle(list)` | `[]T` | a reordered copy |
+| `rand.sample(list, n)` | `[]T` | `n` elements, no repeats |
+| `rand.seed(n)` | — | fix the sequence |
+
+Programs differ from run to run without seeding. `rand.seed` is for
+when you want the same sequence every time — a test, or a puzzle with a
+daily number.
+
+```qz
+rand.seed(7)
+print(rand.int(1, 100))       // 87, every time
+print(rand.pick(["a", "b"]))
+```
+
+`rand.shuffle` returns a **new** list and leaves the original alone,
+because assignment in Quartz copies and a function that quietly
+reordered its argument would not fit that. `rand.pick` on an empty list
+gives the zero value; `rand.int(9, 2)`, where the range is backwards,
+gives `9` rather than failing.
+
+### `stats` — summarising numbers
+
+Every one of these takes `[]int` or `[]float` and returns `float`.
+
+| Function | Description |
+| --- | --- |
+| `stats.mean(xs)` | the average |
+| `stats.median(xs)` | the middle value, or the middle pair averaged |
+| `stats.var(xs)` | the **sample** variance, dividing by n−1 |
+| `stats.stdev(xs)` | the square root of that |
+| `stats.percentile(xs, p)` | interpolated, `p` from 0 to 100 |
+
+```qz
+let scores = [2, 4, 4, 4, 5, 5, 7, 9]
+print(stats.mean(scores))            // 5
+print(stats.median(scores))          // 4.5
+print(stats.percentile(scores, 90))  // 7.6
+```
+
+`stats.var` is the sample variance, dividing by n−1 rather than n. That
+is what you want when your numbers are measurements rather than an
+entire population, which is the usual case and the one people get
+wrong. An empty list gives 0, and so does a single value, which has no
+spread to measure.
+
+### `term` — colour and the console
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `term.red(s)` and `green` `yellow` `blue` `magenta` `cyan` `grey` | `str` | coloured |
+| `term.bold(s)` and `dim` `underline` `invert` | `str` | styled |
+| `term.bar(done, total, width)` | `str` | a progress bar |
+| `term.clear()` | — | clear the screen |
+| `term.colour()` | `bool` | whether colour will actually show |
+
+```qz
+print(term.green("passed") + " " + term.grey("0.4s"))
+print(term.bar(7, 10, 20))           // [##############------]
+```
+
+**Colour turns itself off when it would be noise.** If output is being
+piped into a file or another program, or `NO_COLOR` is set, the styling
+functions return the text unchanged rather than filling the file with
+escape sequences. `term.colour()` tells you which is happening, so a
+program can pick a different layout rather than relying on colour that
+is not there.
+
+On Windows the console has to be switched into virtual-terminal mode or
+the escape codes appear literally as `←[31m`. Quartz does that
+automatically at startup for any program using `term`.
+
+### `log` — timestamped output
+
+| Function | Description |
+| --- | --- |
+| `log.info(msg)` | an ordinary line |
+| `log.warn(msg)` | something worth noticing |
+| `log.error(msg)` | something wrong |
+
+```qz
+log.info("started")     // 14:22:07 info  started
+```
+
+These write to **standard error**, not standard output, so logging does
+not contaminate output being piped somewhere. `print` is still the way
+to produce a program's actual results.
 
 ---
 

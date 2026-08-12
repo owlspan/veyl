@@ -1,0 +1,48 @@
+// rand, stats, term and log.
+//
+// Randomness is seeded so the output is fixed. Colour is stripped
+// because the test harness captures a pipe rather than a console,
+// which is exactly the behaviour being relied on here.
+
+rand.seed(7)
+print(rand.int(1, 100))
+print(rand.int(1, 100))
+print(rand.hex(4))
+print(len(rand.uuid()))
+
+// A shuffle returns a new list; the original is untouched, because
+// assignment in Quartz copies.
+let xs = [1, 2, 3, 4, 5]
+let mixed = rand.shuffle(xs)
+print(len(mixed))
+print(xs)
+print(len(rand.sample(xs, 3)))
+
+// Bounds that cannot produce a range give the low value rather than
+// panicking.
+print(rand.int(5, 5))
+print(rand.int(9, 2))
+
+let scores = [2, 4, 4, 4, 5, 5, 7, 9]
+print(stats.mean(scores))
+print(stats.median(scores))
+print(stats.var(scores))
+print(stats.percentile(scores, 0))
+print(stats.percentile(scores, 50))
+print(stats.percentile(scores, 100))
+
+// Floats work through the same functions.
+print(stats.mean([1.5, 2.5, 3.5]))
+// An even-length list averages the middle pair.
+print(stats.median([1, 2, 3, 4]))
+// One value has no spread to measure.
+print(stats.var([5]))
+
+// Piped output means no escape codes, so these come back bare.
+print(term.red("red"))
+print(term.bold("bold"))
+print(term.colour())
+print(term.bar(0, 10, 10))
+print(term.bar(5, 10, 10))
+print(term.bar(10, 10, 10))
+print(term.bar(99, 10, 10))

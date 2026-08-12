@@ -98,6 +98,22 @@ type helperDef struct {
 	code    string
 	imports []string
 	deps    []string
+
+	// winCode replaces code when building for Windows, and winImports
+	// replaces imports along with it. A generated program is a single
+	// file, so it cannot use build tags: a helper needing a syscall
+	// that exists on one platform only has to be swapped out here.
+	// Leaving winCode empty means the portable body is used everywhere.
+	winCode    string
+	winImports []string
+}
+
+// forTarget picks the platform-specific body, when there is one.
+func (d helperDef) forTarget(goos string) (string, []string) {
+	if goos == "windows" && d.winCode != "" {
+		return d.winCode, d.winImports
+	}
+	return d.code, d.imports
 }
 
 var helperDefs = map[string]helperDef{
@@ -273,6 +289,7 @@ func init() {
 	registerTask()
 	registerRe()
 	registerData()
+	registerExtra()
 	registerWindowsRuntime()
 }
 
@@ -321,7 +338,8 @@ func (c *Codegen) addHelper(name string) {
 	}
 	c.helpers[name] = true
 	def := helperDefs[name]
-	for _, i := range def.imports {
+	_, imports := def.forTarget(c.target)
+	for _, i := range imports {
 		c.imports[i] = true
 	}
 	for _, d := range def.deps {
@@ -400,7 +418,8 @@ func (c *Codegen) helperBlock() string {
 
 	var b strings.Builder
 	for _, n := range names {
-		b.WriteString(helperDefs[n].code)
+		code, _ := helperDefs[n].forTarget(c.target)
+		b.WriteString(code)
 		b.WriteString("\n\n")
 	}
 	return b.String()
