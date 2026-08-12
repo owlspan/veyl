@@ -22,7 +22,7 @@ learning project, on **Windows 10**, using VS Code. They do not have
 Linux or a VM. They know Git basics only (`add`, `commit`, `log`,
 `status`, `checkout`, `--amend`).
 
-**Current version: v0.15.** Working, committed, and tagged.
+**Current version: v0.16.** Working, committed, and tagged.
 
 ---
 

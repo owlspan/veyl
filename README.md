@@ -28,7 +28,7 @@ $ quartz run primes.qz
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
-**Status:** v0.15. The language is feature-complete for everyday work:
+**Status:** v0.16. The language is feature-complete for everyday work:
 a full type checker, lists and maps, structs with methods, nullable
 types, an error type, modules, and libraries for files, HTTP,
 networking, JSON, time, randomness, statistics and terminal output,
@@ -489,9 +489,12 @@ More detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 | v0.8    | nullable types `?T`                                 |
 | v0.9    | error type `T!` with `?` propagation                |
 | v0.9.1  | the whole library reports failure through `T!`      |
-| **v0.10**| **modules, `pub`, global constants**              |
-| v1.0    | a formatter, warnings, an installer, a VS Code grammar |
-| later   | C backend, `unsafe`, manual memory                  |
+| v0.10   | modules, `pub`, global constants                    |
+| v1.0    | a formatter, warnings, a VS Code grammar            |
+| v0.15   | a Windows installer bundling its own Go toolchain   |
+| **v0.16**| **a package manager, `rand`/`stats`/`term`/`log`** |
+| unreleased | namespaced imports, Quartz tracebacks, `url`/`zip`/`args`/`bits` |
+| next    | a `bytes` type, generics, then the C backend        |
 
 **The type checker was the bottleneck for everything below it**, and it
 is now in place. Lists, maps, structs, JSON and modules all need the
@@ -499,28 +502,28 @@ compiler to know the type of an expression, and it does: `check.go`
 walks the tree between resolve and codegen and returns a type for every
 node.
 
-What is left before 1.0 is polish rather than language design: a
-`quartz fmt`, warnings for unused variables and unreachable code, and
-the packaging that makes it installable. SQLite is still open, and
-still carries the dependency trade-off called out in the roadmap.
+The next structural pieces are a real `bytes` type — which files,
+sockets, crypto and any future FFI all want — and generics, without
+which containers like `Set` and `Queue` cannot be written in Quartz
+itself. After those, the C backend, which is what buys back manual
+memory and pointers.
 
 ---
 
 ## Known limitations
 
-Honest list of what v0.10 does not do.
+Honest list of what v0.16 does not do.
 
 - **Integer division truncates.** `7 / 2` is `3`. This is now a stated
   language rule rather than a leaked backend detail, but it still
   surprises people. Use `divf(7, 2)` for `3.5`.
-- **An action that fails cannot say why.** `os.file.write` returns a
-  plain `bool`, because there is no unit type to put inside a `T!`.
-  Everything that returns a *value* carries its reason properly.
 - **A missing map key is silent.** `m["absent"]` gives the zero value.
   `has()` and `find()` tell the difference; the bare index was left
   alone rather than putting a nil check on every read.
-- **Imports are flat.** Everything `pub` in an imported file lands in
-  one namespace, so two files exporting the same name collide.
+- **No generics.** `Set`, `Queue` and friends cannot be written in
+  Quartz itself yet, which is why they are not in the library.
+- **No `bytes` type.** Binary data is carried as `str`, which works but
+  is not honest about what it holds.
 - **No global *variables*.** A top-level `const` is global, but a
   top-level `let` belongs to the program body.
 - **No databases.** SQLite needs a Go dependency, which would break the

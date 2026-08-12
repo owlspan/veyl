@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.14** — the language as currently implemented.
+**Version 0.16** — the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
