@@ -15,6 +15,12 @@ const (
 	KFloat
 	KStr
 	KBool
+
+	// KBytes is raw binary: what comes off a socket, out of a file, or
+	// into a hash. Carrying it in a str works until the data is not
+	// valid UTF-8, at which point the conversion silently corrupts it.
+	KBytes
+
 	KList
 	KMap
 	KStruct
@@ -78,6 +84,7 @@ var (
 	Float   = &Type{Kind: KFloat}
 	Str     = &Type{Kind: KStr}
 	Bool    = &Type{Kind: KBool}
+	Bytes   = &Type{Kind: KBytes}
 	Numeric = &Type{Kind: KNumeric}
 	Any     = &Type{Kind: KAny}
 )
@@ -126,7 +133,8 @@ func (t *Type) NeedsShow() bool {
 	if t == nil {
 		return false
 	}
-	return t.IsCollection() || t.Kind == KStruct || t.Kind == KNullable
+	return t.IsCollection() || t.Kind == KStruct || t.Kind == KNullable ||
+		t.Kind == KBytes
 }
 
 // String prints a type in Quartz's vocabulary. The whole point of the
@@ -146,6 +154,8 @@ func (t *Type) String() string {
 		return "str"
 	case KBool:
 		return "bool"
+	case KBytes:
+		return "bytes"
 	case KList:
 		return "[]" + t.Elem.String()
 	case KMap:
@@ -276,6 +286,8 @@ func (t *Type) Go() string {
 		return "string"
 	case KBool:
 		return "bool"
+	case KBytes:
+		return "[]byte"
 	case KList:
 		return "[]" + t.Elem.Go()
 	case KMap:
@@ -325,6 +337,8 @@ func (t *Type) Zero() string {
 		return `""`
 	case KBool:
 		return "false"
+	case KBytes:
+		return "[]byte{}"
 	case KList, KMap:
 		return t.Go() + "{}"
 	case KStruct:
@@ -359,6 +373,8 @@ func ParseType(s string) *Type {
 		return Str
 	case "bool":
 		return Bool
+	case "bytes":
+		return Bytes
 	}
 
 	// A function type is recognised before the `!` suffix, because the

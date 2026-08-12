@@ -197,8 +197,9 @@ declaration. Assigning to a `const` is a compile error.
 
 ### Types
 
-`int`, `float`, `str`, `bool`, `[]T` lists, `{K: V}` maps, `?T` for a
-value that might be missing, and `T!` for one that might have failed.
+`int`, `float`, `str`, `bool`, `bytes` for raw binary, `[]T` lists,
+`{K: V}` maps, `?T` for a value that might be missing, and `T!` for one
+that might have failed.
 No implicit conversion — use `str()`, `int()`, `float()`.
 
 ```qz
@@ -496,7 +497,8 @@ More detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 | v0.15   | a Windows installer bundling its own Go toolchain   |
 | **v0.16**| **a package manager, `rand`/`stats`/`term`/`log`** |
 | unreleased | namespaced imports, Quartz tracebacks, `url`/`zip`/`args`/`bits` |
-| next    | a `bytes` type, generics, then the C backend        |
+| unreleased | a `bytes` type, an interactive console, `void!`   |
+| next    | generics, then the C backend                        |
 
 **The type checker was the bottleneck for everything below it**, and it
 is now in place. Lists, maps, structs, JSON and modules all need the
@@ -524,8 +526,6 @@ Honest list of what v0.16 does not do.
   alone rather than putting a nil check on every read.
 - **No generics.** `Set`, `Queue` and friends cannot be written in
   Quartz itself yet, which is why they are not in the library.
-- **No `bytes` type.** Binary data is carried as `str`, which works but
-  is not honest about what it holds.
 - **No global *variables*.** A top-level `const` is global, but a
   top-level `let` belongs to the program body.
 - **No databases.** SQLite needs a Go dependency, which would break the

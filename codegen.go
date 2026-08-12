@@ -291,6 +291,7 @@ func init() {
 	registerData()
 	registerExtra()
 	registerMore()
+	registerBytes()
 	registerWindowsRuntime()
 }
 
@@ -858,6 +859,11 @@ func needsDeepEqual(t *Type) bool {
 	}
 	switch t.Kind {
 	case KList, KMap, KStruct:
+		return true
+	case KBytes:
+		// A Go slice is not comparable with ==, so this is not an
+		// opinion about semantics the way the nullable case is: the
+		// generated code would not compile otherwise.
 		return true
 	case KNullable, KResult:
 		// Always, regardless of what is inside. A nullable is a pointer,

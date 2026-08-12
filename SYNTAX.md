@@ -1680,6 +1680,66 @@ allocate and free. Manual memory needs the C backend and does not exist.
 | `mem.collect()` | — | run the collector now |
 | `mem.goroutines()` | `int` | concurrent tasks in flight |
 
+### `bytes` — raw binary
+
+`bytes` is a real type, alongside `int`, `str` and the rest. It holds
+binary: what comes off a socket, out of a file, or into a hash.
+
+```qz
+let b: bytes = bytes.of("hello")
+print(len(b))        // 5
+print(b[0])          // 104
+print(bytes.hex(b))  // 68656c6c6f
+print(b)             // bytes(68656c6c6f)
+```
+
+`len` and indexing work as they do on a list. **Indexing gives an `int`
+from 0 to 255** — there is no separate `byte` type, because a language
+that already has `int` has somewhere to put a small number, and a
+second numeric type would infect every arithmetic rule to buy nothing.
+`==` compares contents, not identity.
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `bytes.of(s)` | `bytes` | encode text |
+| `bytes.str(b)` | `str` | decode back to text |
+| `bytes.list(b)` / `bytes.ofList(ns)` | `[]int` / `bytes!` | as numbers |
+| `bytes.hex(b)` / `bytes.fromHex(s)` | `str` / `bytes!` | hexadecimal |
+| `bytes.base64(b)` / `bytes.fromBase64(s)` | `str` / `bytes!` | base64 |
+| `bytes.slice(b, a, z)` | `bytes` | a copy of part of it |
+| `bytes.concat(a, b, ...)` | `bytes` | join |
+| `bytes.find(hay, needle)` | `int` | position, or −1 |
+| `bytes.fill(n, value)` | `bytes!` | `n` copies of one byte |
+| `bytes.getInt(b, off, size)` | `int!` | read a number |
+| `bytes.putInt(n, size)` | `bytes!` | write one |
+| `bytes.getIntBE` / `bytes.putIntBE` | | big-endian versions |
+| `bytes.read(path)` / `bytes.write(path, b)` | `bytes!` / `void!` | files |
+| `bytes.hash(b, algorithm)` | `str!` | md5, sha1, sha256, sha512 |
+
+Integers are little-endian by default, which is what x86 and ARM both
+use; the `BE` variants exist because network protocols went the other
+way. Sizes are 1, 2, 4 or 8 bytes, and anything else is an error rather
+than a guess.
+
+`bytes.slice` clamps instead of failing — reading past the end of a
+buffer is ordinary when parsing, and a truncated result is more useful
+than a crash. `bytes.concat` and `bytes.slice` both copy, so a later
+write cannot reach backwards into something you already handed away.
+
+**Why a separate type.** Binary used to live in a `str`, and the
+conversion is in fact lossless. What breaks is everything that assumes
+text. On four bytes that are not valid UTF-8:
+
+| Operation | Result |
+| --- | --- |
+| `len`, `trim` | unchanged |
+| `upper` | corrupted |
+| `json.encode` | every invalid byte becomes `�` |
+
+The data survives right up until something touches it, and then it is
+quietly wrong. A separate type makes that impossible rather than merely
+unlikely.
+
 ### `rand` — randomness
 
 | Function | Returns | Description |

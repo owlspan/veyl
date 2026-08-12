@@ -346,6 +346,11 @@ func __showV(rv reflect.Value) string {
 	}
 	switch rv.Kind() {
 	case reflect.Slice, reflect.Array:
+		// Binary data reads as hex. Printing it as a list of numbers is
+		// technically the same information and useless to look at.
+		if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() == reflect.Uint8 {
+			return fmt.Sprintf("bytes(%x)", rv.Bytes())
+		}
 		parts := make([]string, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
 			parts[i] = __showInner(rv.Index(i))
@@ -1097,9 +1102,9 @@ func overloadForCollections() {
 		check: func(c *Checker, x *Call, args []*Type) *Type {
 			if len(args) == 1 && !args[0].IsUnknown() {
 				switch args[0].Kind {
-				case KStr, KList, KMap:
+				case KStr, KList, KMap, KBytes:
 				default:
-					c.errorAt(x.Args[0], "len expects a str, list or map, got %s", args[0])
+					c.errorAt(x.Args[0], "len expects a str, list, map or bytes, got %s", args[0])
 				}
 			}
 			return Int

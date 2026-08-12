@@ -1103,6 +1103,16 @@ func (c *Checker) index(x *Index) *Type {
 	case collT.Kind == KStr:
 		c.errorAt(x, "cannot index a str — use charAt(s, i) or substr(s, a, b)")
 		return Unknown
+
+	case collT.Kind == KBytes:
+		if !idxT.IsUnknown() && idxT.Kind != KInt {
+			c.errorAt(x.Idx, "a bytes index must be int, got %s", idxT)
+		}
+		// One byte, as a number from 0 to 255. There is no separate
+		// byte type: a language with int already has somewhere to put
+		// a small number, and a second one would infect every
+		// arithmetic rule for nothing.
+		return Int
 	}
 
 	c.errorAt(x, "cannot index %s", collT)
