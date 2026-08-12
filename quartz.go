@@ -27,6 +27,13 @@ usage:
   quartz version             print the version
   quartz help                print this
 
+packages:
+  quartz init [name]         start a project here
+  quartz add <source>        add a dependency and fetch it
+  quartz remove <name>       drop a dependency
+  quartz install             fetch everything the manifest lists
+  quartz packages            list what is installed
+
   quartz <file.qz>           same as 'run'
 
 Anything after the .qz file is passed to the program, not to Quartz.
@@ -66,6 +73,25 @@ func main() {
 		return
 	case "-v", "--version", "version":
 		fmt.Printf("quartz %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+		return
+	case "init", "add", "remove", "install", "packages":
+		var err error
+		switch args[0] {
+		case "init":
+			err = cmdInit(args[1:])
+		case "add":
+			err = cmdAdd(args[1:])
+		case "remove":
+			err = cmdRemove(args[1:])
+		case "install":
+			err = cmdInstall()
+		case "packages":
+			err = cmdPackages()
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	case "doctor":
 		// Exists so that "it doesn't work on my machine" can be
@@ -307,22 +333,43 @@ type loader struct {
 	seen   map[string]bool // absolute paths already loaded
 	stack  []string        // in-progress, for cycle detection
 	errors []string
+	pkgs   *packageResolver
 }
 
 func (l *loader) resolve(prog *Program, from string) {
 	for _, imp := range prog.Imports {
-		target := imp.Path
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(from), target)
-		}
-		target, err := filepath.Abs(target)
-		if err != nil {
-			l.errorAt(imp, "cannot resolve %q: %v", imp.Path, err)
-			continue
-		}
-		if !strings.HasSuffix(target, ".qz") {
+		var target string
+
+		// A path names a file; a bare word names a package. The two
+		// cannot be confused, because a file import has always had to
+		// end in .qz and a package name never may.
+		if strings.HasSuffix(imp.Path, ".qz") {
+			target = imp.Path
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(from), target)
+			}
+			abs, err := filepath.Abs(target)
+			if err != nil {
+				l.errorAt(imp, "cannot resolve %q: %v", imp.Path, err)
+				continue
+			}
+			target = abs
+		} else if looksLikePath(imp.Path) {
+			// Something with a dot, a slash or a drive letter was meant
+			// to be a file. Reading it as a package name would answer a
+			// question nobody asked ("no package called notes.txt").
 			l.errorAt(imp, "an import must name a .qz file, got %q", imp.Path)
 			continue
+		} else {
+			if l.pkgs == nil {
+				l.pkgs = newPackageResolver(from)
+			}
+			entry, err := l.pkgs.resolve(imp.Path)
+			if err != nil {
+				l.errorAt(imp, "%v", err)
+				continue
+			}
+			target = entry
 		}
 		if l.onStack(target) {
 			l.errorAt(imp, "import cycle: %s imports itself, directly or indirectly",
