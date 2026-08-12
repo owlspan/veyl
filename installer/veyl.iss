@@ -151,10 +151,24 @@ Name: "{group}\Check the installation"; Filename: "{cmd}"; \
 Name: "{group}\Uninstall Veyl"; Filename: "{uninstallexe}"
 
 [Registry]
-; PATH entry. Per-user or machine-wide, matching how setup was run.
-Root: HKA; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
+; PATH entry. The two hives keep it in completely different places, and
+; HKA cannot paper over that.
+;
+; The per-user PATH is HKCU\Environment. The machine-wide one is NOT
+; HKLM\Environment -- no such key exists -- it lives under Session
+; Manager. Using HKA meant an administrator install tried to create
+; HKLM\Environment and setup stopped with
+;
+;     RegCreateKeyEx failed; code 87. The parameter is incorrect.
+;
+; which names the Windows API call and not the mistake.
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
     ValueData: "{olddata};{app}"; Tasks: addtopath; \
-    Check: NeedsPathEntry(ExpandConstant('{app}'))
+    Check: not IsAdminInstallMode and NeedsPathEntry(ExpandConstant('{app}'))
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+    ValueType: expandsz; ValueName: "Path"; \
+    ValueData: "{olddata};{app}"; Tasks: addtopath; \
+    Check: IsAdminInstallMode and NeedsPathEntry(ExpandConstant('{app}'))
 
 ; .vy file association and the right-click verb.
 Root: HKA; Subkey: "Software\Classes\.vy"; ValueType: string; ValueName: ""; \
@@ -249,13 +263,32 @@ Type: dirifempty; Name: "{app}"
 Type: filesandordirs; Name: "{%USERPROFILE}\.vscode\extensions\veyl-lang"
 
 [Code]
+{ Where PATH lives depends on how setup was run. Both the check and the
+  removal have to agree with the [Registry] section about this, or the
+  installer edits one and the uninstaller looks at the other. }
+function PathHive: Integer;
+begin
+  if IsAdminInstallMode then
+    Result := HKEY_LOCAL_MACHINE
+  else
+    Result := HKEY_CURRENT_USER;
+end;
+
+function PathKey: string;
+begin
+  if IsAdminInstallMode then
+    Result := 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+  else
+    Result := 'Environment';
+end;
+
 { Only append to PATH if it is not already there, so repeated installs
   do not grow the variable without bound. }
 function NeedsPathEntry(Dir: string): Boolean;
 var
   Existing: string;
 begin
-  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', Existing) then
+  if not RegQueryStringValue(PathHive, PathKey, 'Path', Existing) then
   begin
     Result := True;
     exit;
@@ -274,7 +307,7 @@ var
   Existing, Rebuilt, Segment: string;
   P: Integer;
 begin
-  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', Existing) then
+  if not RegQueryStringValue(PathHive, PathKey, 'Path', Existing) then
     exit;
 
   Rebuilt := '';
@@ -292,9 +325,9 @@ begin
   until Existing = '';
 
   if Rebuilt = '' then
-    RegDeleteValue(HKEY_CURRENT_USER, 'Environment', 'Path')
+    RegDeleteValue(PathHive, PathKey, 'Path')
   else
-    RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', Rebuilt);
+    RegWriteExpandStringValue(PathHive, PathKey, 'Path', Rebuilt);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
