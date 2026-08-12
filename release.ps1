@@ -92,7 +92,16 @@ try {
     $snap = Join-Path $repo 'Working version'
     if (Test-Path $snap) { Remove-Item -Recurse -Force $snap }
     New-Item -ItemType Directory -Force $snap | Out-Null
-    & git archive HEAD | & tar -x -C $snap
+    # Via a file, not a pipe. A PowerShell pipeline carries objects and
+    # re-encodes text, so piping a tar stream through one corrupts it —
+    # tar reports "Failed to open '\\.\tape0'", which is it falling back
+    # to a default device because it never saw an archive at all.
+    $tarball = Join-Path $env:TEMP "quartz-snapshot-$Version.tar"
+    & git archive -o $tarball HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
+    & tar -x -f $tarball -C $snap
+    if ($LASTEXITCODE -ne 0) { throw 'unpacking the snapshot failed' }
+    Remove-Item $tarball -Force
     Push-Location $snap
     try {
         & go build -o quartz.exe .

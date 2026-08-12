@@ -206,6 +206,19 @@ commits. Edit text files with the editor tooling, or use
 `[System.IO.File]::ReadAllText` / `WriteAllText`, which default to
 UTF-8 and round-trip cleanly.
 
+**A PowerShell pipeline is not a byte stream.** It carries objects and
+re-encodes text, so piping binary between two native programs corrupts
+it:
+
+```powershell
+git archive HEAD | tar -x -C dest    # produces garbage
+```
+
+`tar` reports `Failed to open '\.	ape0'`, which is it falling back to a
+default tape device because it never received an archive at all. Go via
+a file instead: `git archive -o x.tar HEAD` then `tar -x -f x.tar`.
+This broke release.ps1 on its first real run.
+
 **PowerShell 5.1 mangles double quotes passed to a native exe.** A
 commit message containing `"` gets split into extra arguments, and
 `git commit -m` fails with a confusing `pathspec ... did not match`.
