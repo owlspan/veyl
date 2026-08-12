@@ -3,17 +3,39 @@
   "name": "Veyl",
   "scopeName": "source.veyl",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#strings" },
-    { "include": "#declarations" },
-    { "include": "#keywords" },
-    { "include": "#types" },
-    { "include": "#constants" },
-    { "include": "#numbers" },
-    { "include": "#libraries" },
-    { "include": "#builtins" },
-    { "include": "#calls" },
-    { "include": "#operators" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#libraries"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#calls"
+    },
+    {
+      "include": "#operators"
+    }
   ],
   "repository": {
     "comments": {
@@ -27,11 +49,14 @@
           "name": "comment.block.veyl",
           "begin": "/\\*",
           "end": "\\*/",
-          "patterns": [{ "include": "#comments" }]
+          "patterns": [
+            {
+              "include": "#comments"
+            }
+          ]
         }
       ]
     },
-
     "strings": {
       "name": "string.quoted.double.veyl",
       "begin": "\"",
@@ -49,43 +74,78 @@
           "name": "meta.embedded.veyl",
           "begin": "\\{",
           "end": "\\}",
-          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.veyl" } },
-          "endCaptures": { "0": { "name": "punctuation.section.embedded.end.veyl" } },
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.embedded.begin.veyl"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.embedded.end.veyl"
+            }
+          },
           "patterns": [
-            { "include": "#strings" },
-            { "include": "#keywords" },
-            { "include": "#constants" },
-            { "include": "#numbers" },
-            { "include": "#libraries" },
-            { "include": "#builtins" },
-            { "include": "#calls" },
-            { "include": "#operators" }
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#constants"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#libraries"
+            },
+            {
+              "include": "#builtins"
+            },
+            {
+              "include": "#calls"
+            },
+            {
+              "include": "#operators"
+            }
           ]
         }
       ]
     },
-
     "declarations": {
       "patterns": [
         {
           "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.function.veyl" },
-            "2": { "name": "entity.name.function.veyl" }
+            "1": {
+              "name": "keyword.declaration.function.veyl"
+            },
+            "2": {
+              "name": "entity.name.function.veyl"
+            }
           }
         },
         {
           "match": "\\b(struct|impl)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.struct.veyl" },
-            "2": { "name": "entity.name.type.veyl" }
+            "1": {
+              "name": "keyword.declaration.struct.veyl"
+            },
+            "2": {
+              "name": "entity.name.type.veyl"
+            }
           }
         },
         {
           "match": "\\b(let|const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.variable.veyl" },
-            "2": { "name": "variable.other.veyl" }
+            "1": {
+              "name": "keyword.declaration.variable.veyl"
+            },
+            "2": {
+              "name": "variable.other.veyl"
+            }
           }
         },
         {
@@ -94,7 +154,6 @@
         }
       ]
     },
-
     "keywords": {
       "patterns": [
         {
@@ -120,7 +179,6 @@
         }
       ]
     },
-
     "types": {
       "patterns": [
         {
@@ -128,9 +186,16 @@
           "match": "\\b(int|float|str|bool)\\b"
         },
         {
-          "comment": "A capitalised name after a colon, arrow or in a literal is a struct type.",
-          "name": "entity.name.type.veyl",
-          "match": "(?<=:|->|\\[\\]|\\?)\\s*([A-Z][A-Za-z0-9_]*)"
+          "comment": "A capitalised name after a colon, arrow, [] or ? is a struct type. Written with captures rather than a lookbehind: Oniguruma rejects a lookbehind whose alternatives differ in length, and one regex it refuses stops the entire grammar from loading.",
+          "match": "(:|->|\\[\\]|\\?)(\\s*)([A-Z][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.type.veyl"
+            },
+            "3": {
+              "name": "entity.name.type.veyl"
+            }
+          }
         },
         {
           "comment": "The ! and ? that make a type fallible or nullable.",
@@ -139,12 +204,10 @@
         }
       ]
     },
-
     "constants": {
       "name": "constant.language.veyl",
       "match": "\\b(E|INF|NAN|PI)\\b"
     },
-
     "numbers": {
       "patterns": [
         {
@@ -157,27 +220,31 @@
         }
       ]
     },
-
     "libraries": {
       "comment": "Dotted library paths: os.file.read, http.get, json.decode.",
       "match": "\\b(http|json|mem|net|os|time)\\b((?:\\.[A-Za-z_][A-Za-z0-9_]*)+)",
       "captures": {
-        "1": { "name": "support.class.library.veyl" },
-        "2": { "name": "support.function.library.veyl" }
+        "1": {
+          "name": "support.class.library.veyl"
+        },
+        "2": {
+          "name": "support.function.library.veyl"
+        }
       }
     },
-
     "builtins": {
       "name": "support.function.builtin.veyl",
       "match": "\\b(abs|acos|asin|atan2|atan|beep|cbrt|ceil|charAt|chars|clamp|clear|contains|cos|count|divf|endsWith|errorOf|exit|exp|fail|failed|find|first|float|floor|has|hideConsole|hypot|indexOf|input|insert|int|isFloat|isInt|isNan|isOk|isWin11|join|keys|last|len|lines|log10|log2|log|lower|max|messageBox|min|mod|must|openWindow|padLeft|padRight|pause|pop|pow|print|push|randomInt|random|remove|removeAt|repeat|replace|reverse|round|setTitle|sign|sin|sleep|slice|sort|split|sqrt|startsWith|str|substr|sum|tan|toFloat|toInt|trim|trunc|upper|valueOr|values|winBuild|write)\\b(?=\\s*\\()"
     },
-
     "calls": {
       "comment": "Anything else called like a function.",
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
-      "captures": { "1": { "name": "entity.name.function.call.veyl" } }
+      "captures": {
+        "1": {
+          "name": "entity.name.function.call.veyl"
+        }
+      }
     },
-
     "operators": {
       "patterns": [
         {
