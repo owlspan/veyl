@@ -1,543 +1,300 @@
-# ROADMAP.md
+# Veyl roadmap
 
-Working practices, current state, and the full backlog for Veyl.
+Where Veyl actually is, measured against what a serious language needs.
+Checked against the source rather than remembered, so a tick means the
+thing exists and has tests, not that it is planned.
 
-Read `CLAUDE.md` first for architecture and invariants. This file covers
-**how we work**, **where we are**, and **what to build next**.
-
----
-
-## Part 1 - How we use Git
-
-### The setup that exists
-
-The repo was created locally with `git init`. There is **no GitHub
-remote**. Everything lives on the user's machine at
-`C:\Users\john linux\Desktop\veyl`. Nothing has ever been pushed, which
-matters because it means history can be safely rewritten.
-
-Identity was configured globally:
-
-```bash
-git config --global user.name "John"
-git config --global user.email "..."
-```
-
-### The workflow actually in use
-
-Deliberately minimal. The user knows these commands and no others:
-
-```bash
-git status                    # what changed
-git add .                     # stage everything
-git commit -m "message"       # save a snapshot
-git log --oneline             # list snapshots
-git commit --amend --no-edit  # fold changes into the last commit
-git tag v0.3                  # name a version
-git tag -f v0.3               # move a tag after an amend
-git checkout .                # discard uncommitted changes (panic button)
-```
-
-**Commit rhythm:** one commit per working milestone, made immediately
-after verifying that the compiler builds and the examples run. Not at
-the end of a session, and not when something is half-finished.
-
-**`--amend` is used freely** because nothing is pushed. When the user
-rebuilds or copies in a corrected file after committing, the fix folds
-into the same commit rather than creating a "fix typo" commit. If a tag
-already points at the old commit, it must be moved with `git tag -f`.
-
-Once a remote exists, this changes: amend only commits that have not
-left the machine.
-
-### `.gitignore`
-
-Ignores build output and editor noise:
-
-```
-veyl
-veyl.exe
-qzc
-examples/*.exe
-examples/demo
-examples/interactive
-examples/hello
-.vscode/
-.idea/
-*.swp
-Thumbs.db
-desktop.ini
-```
-
-Compiled binaries are ~2 MB. Committing them on every build would bloat
-the repo fast. If `git status` ever lists `veyl.exe`, the ignore file
-is not being read - on Windows this is almost always because a browser
-download saved it as `gitignore.txt`. Windows hides known extensions, so
-it *looks* correct in Explorer. Check with `dir /a`.
-
-### The CRLF warning
-
-Git for Windows prints:
-
-```
-warning: in the working copy of '...', LF will be replaced by CRLF
-```
-
-This is normal and expected. Git stores Unix line endings internally and
-converts on checkout. It can be silenced with
-`git config --global core.autocrlf true`. It is not an error and needs
-no action.
-
-### Conventions for commit messages
-
-Short, imperative, describing the milestone:
-
-```
-v0.1: lexer, parser, codegen, hello world compiles to exe
-v0.2: functions, resolver, builtins, Windows GUI
-v0.3: for loops, break/continue, math and string stdlib
-v0.3.1: honest corner rounding, winBuild/isWin11, full docs
-```
-
-Version bumps are tagged. Intermediate work commits do not need a
-version prefix.
-
-### What to do at the start and end of a work session
-
-**Start:** `git status` to confirm a clean tree. If dirty, ask the user
-whether to commit or discard before making changes.
-
-**During:** commit after each feature that builds and passes the
-examples. Do not batch several features into one commit.
-
-**End:** ensure everything is committed and, if a version milestone was
-reached, tagged.
+**Current version: 0.17.**
 
 ---
 
-## Part 2 - Where we are
+## The honest summary
 
-**Version 0.4.** The compiler works, produces native executables, has a
-real standard library, and now type-checks.
+**Level 1, basic language: done.**
+**Level 2, real programming language: done except generics.**
+**Level 3, systems-capable: not started. Blocked on the C backend.**
+**Level 4, production tooling: about half.**
+**Level 5, C++ class: not started, and correctly so.**
 
-### Pipeline
-
-```
-.vy  ->  lexer  ->  parser  ->  resolver  ->  checker  ->  codegen  ->  Go  ->  .exe
-```
-
-Six stages, each gating the next. Errors accumulate within a stage,
-are sorted into source order, and are all reported at once.
-
-### What works
-
-| Area | Detail |
-|---|---|
-| Variables | `let`, `const`, inference, `: type` annotations, shadowing |
-| Types | `int`, `float`, `str`, `bool` |
-| Operators | full Pratt precedence, `+ - * / %`, comparisons, `&& \|\| !`, `+= -= *= /=` |
-| Strings | interpolation `"{expr}"`, nested literals, `{{` escapes |
-| Control flow | `if` / `else if` / `else`, `while`, `for i in a..b`, `..=`, `step`, `break`, `continue` |
-| Functions | typed params, return types, recursion, order-independent, return-path checking |
-| Stdlib | ~60 builtins: I/O, conversion, math, trig, random, strings |
-| Constants | `PI`, `E`, `INF`, `NAN` |
-| Windows | `setTitle`, `beep`, `messageBox`, `hideConsole`, `winBuild`, `isWin11`, `openWindow` |
-| Tooling | `run`, `build`, `emit`, `tokens`, cross-compilation via `VEYL_TARGET` |
-
-### What does not exist
-
-No lists, maps, or structs. No JSON, files, or databases. No modules.
-No globals. No error handling. No pointers or manual memory. GUI is
-Windows-only and windows are blank.
-
-### The gate is open
-
-**The type checker is done** (`types.go` + `check.go`). Every expression
-has a type, errors are reported in Veyl's vocabulary, and the results
-are written back onto the AST so codegen emits explicit Go types.
-
-`Type` was built as a struct with `Elem`/`Key` pointers rather than a
-flat enum, so nested types like `[][]int` and `{str: []int}` need no new
-machinery - v0.5 should mostly be parser and codegen work.
-
-Two decisions were made and are worth knowing before building on them:
-
-- **No implicit conversion between values**, as recommended. `a + b`
-  with an `int` and a `float` is an error.
-- **Integer literals are untyped**, following Go. `radius * 2` works
-  where radius is a float; `radius * someInt` does not. This was a
-  refinement of the recommendation, not a departure from it - without
-  it, ordinary arithmetic needs `float(...)` everywhere.
-
-A data-driven test suite also landed early (ROADMAP 10.1), because
-unattended work on the compiler is not safe without one.
+The single most important sentence about Veyl's position: **it is a
+garbage collected language that compiles through Go.** Everything in
+Level 3 follows from removing that, which is why the C backend is the
+one item that unblocks a whole tier rather than adding a feature.
 
 ---
 
-## Part 3 - The backlog
+## Level by level
 
-Ordered by dependency. Items within a milestone can mostly be done in
-any order; milestones should be done in sequence.
-
-Each item notes **files touched** and **done when**.
-
----
-
-### v0.4 - Type checker - **DONE**
-
-The gate. Nothing below this ships without it. All items below are
-implemented; kept here as a record of what was agreed and built.
-
-**4.1 Type representation**
-Add `check.go` with a `Type` value covering `int`, `float`, `str`,
-`bool`, `void`, and `unknown`. `unknown` is the error-suppression type:
-once an expression is `unknown`, downstream checks stay quiet so one
-mistake does not cascade into ten.
-*Files:* new `check.go`. *Done when:* the type enum exists and prints
-Veyl names (`str`, not `string`).
-
-**4.2 Expression typing**
-`func (c *Checker) expr(e Expr) Type` covering every expression node.
-Literals are obvious. `Ident` looks up the declared type. `Unary`
-requires numeric for `-` and `bool` for `!`.
-*Done when:* every expression node returns a type.
-
-**4.3 Binary operator rules**
-`+` on `int`, `float`, `str`. `- * / %` numeric only. Comparisons yield
-`bool`. `&&` / `||` require `bool` operands. Mismatched operands are an
-error naming both types.
-*Done when:* `"x" + 5` reports a Veyl error with a Veyl message,
-not a Go one.
-
-**4.4 Decide on numeric promotion**
-Is `1 + 2.5` legal? **Recommendation: no.** Require `float(1) + 2.5`.
-It matches the existing no-implicit-conversion rule and keeps codegen
-simple. Document the decision either way - this is a language design
-choice, so surface it to the user rather than deciding silently.
-
-**4.5 Statement checking**
-`if` / `while` conditions must be `bool`. `let` with an annotation must
-match its value. Assignment must match the declared type. `return` must
-match the function's return type.
-*Done when:* `if 5 { }` is an error.
-
-**4.6 Store inferred types on the AST**
-Add a `Type` field to `LetStmt` and `Param`. Codegen then emits
-`var x int = ...` instead of relying on Go inference.
-*Files:* `ast.go`, `check.go`, `codegen.go`.
-
-**4.7 Typed builtin signatures**
-`builtin` currently has only arity. Add parameter types and a return
-type. This lets calls be checked properly **and removes the
-`float64()`-wrapping hack** in `stdlib.go`. Some builtins are
-polymorphic (`min`, `max`, `str`, `print`) - allow a signature to mark
-a parameter as "any numeric" or "any".
-*Files:* `codegen.go`, `stdlib.go`, `runtime_win.go`, `check.go`.
-*Done when:* `sqrt("hello")` is a compile error.
-
-**4.8 Function call checking**
-Argument types against parameter types, with the position of the
-offending argument.
-
-**4.9 Fix integer division**
-With types known, `/` on two `int`s emits integer division and anything
-else emits float division. Then decide whether `divf` stays as an alias
-or is deprecated.
-*Done when:* the `7 / 2` trap is documented as resolved in `SYNTAX.md`.
-
-**4.10 Wire the checker into the driver**
-Between resolve and codegen. Errors gate codegen like every other stage.
-*Files:* `veyl.go`.
-
-**4.11 Update docs**
-`SYNTAX.md` gains a Types section describing the rules. The "no type
-checker" line leaves Known Limitations in both `SYNTAX.md` and
-`README.md`.
+| Level | State |
+| --- | --- |
+| 1. Basic language | complete |
+| 2. Real language | complete except generics |
+| 3. Systems-capable | not started |
+| 4. Production tooling | roughly half |
+| 5. C++ class | not started |
 
 ---
 
-### v0.5 - Collections
+## 1. Core language semantics
 
-**5.1 List type and literals**
-`[]int`, `[]str`, etc. Literal syntax `[1, 2, 3]`. Empty literal `[]`
-needs an annotation (`let xs: []int = []`) since it cannot be inferred -
-report a clear error saying exactly that.
-*Files:* `token.go` (already has brackets), `parser.go`, `ast.go`,
-`check.go`, `codegen.go`.
+**Have:** variables, constants, `int`, `float`, `str`, `bool`, `bytes`,
+nil semantics through `?T`, lists `[]T`, maps `{K: V}`, structs, a unit
+type through `void!`, explicit conversions (`int()`, `float()`,
+`str()`), equality by contents for lists, maps and structs, ordering on
+numbers and strings.
 
-**5.2 Indexing**
-`xs[0]` for read and `xs[0] = v` for write. Decide bounds behaviour:
-Go panics. **Recommendation:** emit a bounds-checked helper that reports
-a clean Veyl-level runtime message rather than a Go stack trace.
+**Missing:**
 
-**5.3 List builtins**
-`push`, `pop`, `len` (extend the existing one), `slice`, `contains`,
-`indexOf`, `reverse`, `sort`, `join`, `clear`, `first`, `last`.
+- **characters** - there is no `char`; a single character is a `str` of
+  length one, and `bytes` indexing gives an `int`
+- **enums** - the keyword is not even reserved
+- **unions / tagged unions**
+- **tuples** - a function returns one value, or a struct
+- **references and pointers** - needs the C backend
+- **type aliases**
+- **operator overloading**
 
-**5.4 `for x in list`**
-Extend `ForStmt` with a collection form alongside the range form.
-Emit `for _, x := range xs`.
-*Done when:* iterating a list works and the loop variable is typed.
-
-**5.5 Map type and literals**
-`{K: V}`, literal `{"a": 1}`. Keys limited to `str` and `int` initially.
-
-**5.6 Map operations**
-Index, assign, `has`, `delete`, `keys`, `values`, `len`. Decide what a
-missing key returns - this is where nullable types start to matter.
-
-**5.7 `for k, v in map`**
-Note Go's map iteration order is random. Either document that or emit
-sorted iteration for determinism. **Recommendation:** sort, because
-beginners find random ordering baffling.
-
-**5.8 `split` and `chars`**
-Now possible: `split(s, sep) -> []str`, `chars(s) -> []str`. Add
-`join(list, sep)` as the inverse.
-
-**5.9 Nested collections**
-`[][]int`, `{str: []int}`. Mostly falls out of the type representation
-if it was designed with nesting in mind - verify with tests.
+**Deliberately not planned:** truthiness. `if 5` is an error, and `if`
+requires a `bool`. That is a design decision, not a gap.
 
 ---
 
-### v0.6 - Structs
+## 2. Functions
 
-**6.1 Declaration**
-```qz
-struct User {
-    name: str
-    age:  int
-}
-```
-`struct` is already a reserved keyword.
+**Have:** first-class functions, closures, recursion, multiple
+parameters, anonymous functions, callable values, order-independent
+declaration, return-path checking.
 
-**6.2 Literals and field access**
-`User{name: "a", age: 1}`, then `u.name`. `DOT` already lexes; the
-parser needs a postfix field-access rule.
-
-**6.3 `impl` blocks and methods**
-```qz
-impl User {
-    fn greet(self) -> str { return "hi, {self.name}" }
-}
-```
-`impl` and `self` are already reserved.
-
-**6.4 Structs in collections**
-`[]User`, `{str: User}`.
-
-**6.5 Decide value vs reference semantics**
-Go structs are values; assignment copies. Either match that and document
-it, or emit pointers. **Recommendation:** values, matching Go, because
-it avoids introducing pointer semantics before there is a story for
-nullability.
+**Missing:** default arguments, variadic parameters for user functions
+(builtins like `print` are variadic; your own functions cannot be),
+function overloading, multiple return values, calling conventions.
 
 ---
 
-### v0.7 - Nullability and errors
+## 3. Type system
 
-**7.1 `?T` nullable types**
-Plain `T` can never be nil; `?T` can. This is the single biggest thing
-Veyl can offer over Go, whose nil-pointer panics are its worst wart.
+**Have:** static typing, type inference, a real type checker in
+`check.go` that types every expression and records it on the tree,
+nullable types with narrowing inside `if x != nil`, explicit casts, no
+implicit conversion, `match`.
 
-**7.2 Nil checks and narrowing**
-`if x != nil { ... }` should narrow `?T` to `T` inside the block.
+**Missing, in priority order:**
 
-**7.3 `T!` error type**
-A function returning `str!` returns either a value or an error.
-
-**7.4 `?` propagation operator**
-`let text = read(path)?` returns early on error. Replaces Go's
-four-line `if err != nil` dance with one character.
-
-**7.5 `match` for explicit handling**
-```qz
-match load("cfg") {
-    ok(text) => print(text)
-    err(e)   => print("failed: {e}")
-}
-```
-`match` is already reserved.
-
-**7.6 Revisit fallback-returning builtins**
-`toInt`, `charAt`, `substr` currently return fallbacks on failure. With
-`T!` available, decide which should return errors instead. This closes
-the design issue the user found in v0.2 with `toInt("")` returning `0`.
+1. **Generics.** The biggest single gap in the language. Without them
+   `Set`, `Queue` and `Stack` cannot be written in Veyl itself, which
+   is why they are absent from the standard library rather than merely
+   unwritten.
+2. **Traits or interfaces.** Structs compose but cannot share a
+   contract.
+3. **Algebraic data types** and exhaustive pattern matching. `match`
+   compares values; it cannot destructure.
+4. Constraints and bounds, `typeof`, compile-time type information,
+   recursive types.
 
 ---
 
-### v0.8 - Files, JSON, data
+## 4. Memory model
 
-**8.1 File I/O**
-`readFile`, `writeFile`, `appendFile`, `exists`, `deleteFile`,
-`listDir`, `makeDir`. All return `T!` once errors exist.
+**Nothing here exists, and the reason is structural.** Veyl compiles to
+Go and inherits Go's garbage collector. There is no ownership model, no
+`alloc`, no `free`, no pointers, no `sizeof`, no alignment control, no
+custom allocators, no pointer arithmetic.
 
-**8.2 Path helpers**
-`joinPath`, `basename`, `dirname`, `extname`, `absPath`.
+`own` and `unsafe` are reserved keywords that do nothing.
 
-**8.3 JSON**
-`parseJson(s)` and `toJson(v)`. Needs a dynamic value type or generics
-over structs - this is a real design decision. **Recommendation:** a
-`Json` union type that can be inspected, rather than reflection-based
-struct mapping, which is much harder without a full generic system.
-
-**8.4 CSV**
-`parseCsv`, `writeCsv`. Easy once lists exist.
-
-**8.5 Environment and process**
-`env(name)`, `args()`, `run(cmd)`, `cwd()`.
-
-**8.6 Time**
-`now()`, `timestamp()`, `formatTime`, `parseTime`, `elapsed`.
-
-**8.7 SQLite**
-`openDb`, `query`, `exec`, `close`. **Flag to the user first:** this
-requires a Go module dependency (`database/sql` plus a driver), which
-breaks the project's zero-dependency property. Options are to accept it,
-to vendor a pure-Go driver, or to shell out to the `sqlite3` binary. Do
-not just add a dependency silently.
+**This entire section is one prerequisite: the C backend.** Adding any
+of it to the Go backend would be pretending.
 
 ---
 
-### v0.9 - Modules
+## 5. Structs and object model
 
-**9.1 Multi-file programs**
-`import` currently does nothing. Make it load another `.vy` file.
+**Have:** struct definitions, nested structs, methods through `impl`,
+composition, visibility through `pub`, contents-based equality.
 
-**9.2 Visibility**
-`pub` marks a declaration as visible outside its file. Already reserved.
+**Missing:** constructors, destructors, static methods and fields,
+interfaces or traits, virtual dispatch, operator overloading.
 
-**9.3 Global constants**
-Currently top-level `let` belongs to the implicit `main` and functions
-cannot see it. Allow top-level `const` to be genuinely global.
-
-**9.4 Namespacing**
-`math.sqrt` vs bare `sqrt`. Decide whether the stdlib becomes modules or
-stays as builtins. **Recommendation:** keep builtins bare - "no imports
-needed" is a stated design goal - and use modules only for user code.
+**Not planned:** inheritance. Composition plus traits is the better
+model and the one to aim at.
 
 ---
 
-### v1.0 - Polish
+## 6. Control flow
 
-**10.1 Real test suite**
-The examples are currently the tests. Add `_test.go` files with table
-tests per stage, plus golden-file tests comparing `emit` output.
+**Have:** `if` / `else`, `while`, `for i in a..b` with `step`,
+`for x in list`, `for k, v in map`, `break`, `continue`, `return`,
+`match`.
 
-**10.2 Better parser errors**
-"expected `)` to close the call opened on line 4" instead of
-"expected `)`". Track opening-token positions.
-
-**10.3 Error recovery quality**
-Verify one syntax error does not produce a cascade of nonsense.
-
-**10.4 Warnings**
-Unused variables, unreachable code after `return`, unused functions.
-Distinct from errors; do not block compilation.
-
-**10.5 `--version`, `--help`**
-Plus a build-time version stamp.
-
-**10.6 `veyl fmt`**
-A canonical formatter. The AST already exists; this is a pretty-printer.
-
-**10.7 VS Code extension**
-A TextMate grammar is about an hour of work for syntax highlighting.
-Disproportionate morale value.
-
-**10.8 Installer** - **DONE**
-`installer\veyl.iss`, built by `installer\build.ps1`. PATH entry,
-`.vy` association with an icon and a right-click "Run with Veyl"
-verb, Start Menu shortcuts, components, and a clean uninstall. Verified
-by installing it silently to a temp directory, compiling a program with
-PATH stripped to `System32`, and uninstalling again.
-
-**10.9 Bundle the Go toolchain** - **DONE**
-Bundled, not documented-around. A trimmed GOROOT (177 MB on disk, 36 MB
-inside the installer once LZMA2 has had it) ships as an optional
-component and is found by position rather than PATH, so a developer's
-own Go is never shadowed. `findGo` in `toolchain.go` prefers
-`VEYL_GO`, then the bundled copy, then PATH. `veyl doctor` reports
-which one was chosen.
-
-Worth knowing: the first compile against a fresh bundled toolchain
-takes about 13 seconds because Go is building its standard library into
-an empty cache. Every compile after that is ~1.6 seconds. That is
-alarming exactly once, so it is written down here.
-
-**10.10 Website and tutorial**
-`README.md` is the seed. A "learn Veyl in 20 minutes" page matters
-more than reference docs for adoption.
+**Missing:** labeled loops and breaks, `defer` (reserved, does nothing),
+destructuring pattern matching.
 
 ---
 
-### Beyond 1.0
+## 7. Error handling
 
-**11.1 C backend**
-The prerequisite for everything low-level. Emit C instead of Go behind
-the same AST. Design the IR boundary so it is one module swapped, not a
+**The strongest area in the language, and genuinely first class.**
+
+**Have:** `T!` for a value or a reason it failed, `void!` for an action
+with nothing to return, `?` propagation, `must`, `valueOr`, `isOk`,
+`errorOf`, `fail`, `ok`, compile-time enforcement that a result cannot
+be used without being unwrapped, and Veyl-level stack traces on a crash
+naming your `.vy` lines rather than Go's.
+
+**Missing:** error metadata beyond a message, typed errors, catching a
+panic.
+
+---
+
+## 8. Modules and packages
+
+**Have:** `import`, `pub`, namespaced package imports so two packages
+can both export `hello`, private symbols, a package manager
+(`veyl init/add/remove/install/packages`), dependency resolution,
+version pinning, `veyl.lock` with a SHA-256 that notices a moved tag,
+circular imports detected and refused.
+
+**Missing:** module initialisation order, build configuration, a
+central registry (deliberately, see PACKAGES.md).
+
+---
+
+## 9. Compilation and execution
+
+**Have:** lexer, parser, AST, resolver, semantic analysis, type
+checker, code generation, native executable output, cross-compilation
+through `VEYL_TARGET`, error accumulation, parser error recovery, and
+diagnostics that name Veyl types and point at `.vy` lines.
+
+**Missing, and this is the part that matters for credibility:**
+
+- **an intermediate representation of its own.** Go source is
+  currently the IR. A real IR is what a second backend and any
+  optimiser would both need.
+- **an optimiser.** Go's optimiser does the work; Veyl contributes none.
+- object files, linking control, debug and release builds,
+  optimisation levels, debug symbols, incremental compilation.
+
+---
+
+## 10. Native interoperability
+
+**Nothing.** No FFI, no calling C, no C-compatible structs, no linking
+native libraries, no exporting Veyl functions.
+
+Blocked on the same thing as memory: the C backend.
+
+---
+
+## 11. Concurrency
+
+**Have:** structured concurrency through `task`, with `task.all`,
+`task.each`, `task.map` and `task.mapLimit`. Deliberately no raw
+goroutines are exposed.
+
+**Missing:** threads, mutexes, read/write locks, atomics, condition
+variables, thread-local storage, channels, async/await, memory-order
+semantics.
+
+The current design is a deliberate simplification, not an oversight.
+Whether to add the primitives is a design question, and it interacts
+with the C backend, where `task` does not map cleanly.
+
+---
+
+## 12. Standard library
+
+**Have:** strings and formatting, string parsing, lists, maps,
+iterating helpers (`map`, `filter`, `reduce`, `find`, `any`, `all`,
+`sort`, `sortBy`), math, random, statistics, files, directories, paths,
+environment variables, processes, time and date, networking, HTTP,
+JSON, CSV, hashing, regular expressions, compression through `zip`,
+raw binary through `bytes`, terminal colour, logging, command-line
+arguments, bit manipulation, and the Windows library.
+
+**Missing:** sets, queues, stacks, deques, priority queues, ordered
+maps, a real iterator abstraction (the helpers are eager, not lazy),
+signals.
+
+**Most of these are blocked on generics**, not on effort. A `Set`
+written for one element type would be a worse thing to have than none.
+
+---
+
+## 13. Compile-time capabilities
+
+**Have:** compile-time constants, and constant folding only where Go
+does it.
+
+**Missing:** compile-time evaluation, `static_assert`, conditional
+compilation, macros or any metaprogramming, compile-time code
+generation, reflection.
+
+This is Level 5 and correctly untouched.
+
+---
+
+## 14. Tooling
+
+**Have:** a formatter (`veyl fmt`, tested to never change what a
+program does), warnings for unused variables and unreachable code,
+syntax highlighting for four editors generated from the compiler's own
+tables, a package manager, an interactive console (`veyl console`),
+`veyl doctor`, a Windows installer bundling its own toolchain, and
+compiler diagnostics that are genuinely good.
+
+**Missing:** a language server (autocomplete, go-to-definition,
+in-editor errors), a linter beyond the two warnings, debugger
+integration, a documentation generator, **a test runner for Veyl code**,
+benchmarking, a profiler, a build system.
+
+**The language server is the highest-value item here.** Highlighting
+without autocomplete or in-editor errors is the difference people feel
+first.
+
+---
+
+## 15. Testing and correctness
+
+**Have:** a golden test suite where a case is two files and no Go code,
+compile-fail tests, runtime-error tests, unit tests for the lexer, the
+type parser and the package manager, a formatter test that proves
+formatting never changes behaviour, and regression tests written for
+every bug found.
+
+**Missing:** parser fuzzing, cross-platform tests actually *run* on
+Linux and macOS (they cross-compile and vet, which proves it type
+checks and nothing more), ABI and FFI tests, performance benchmarks.
+
+---
+
+## What to build next, in order
+
+**1. Generics.** Unblocks sets, queues, stacks, iterators and any
+serious library. The largest piece of type system work remaining.
+
+**2. A language server.** The biggest felt improvement per hour spent.
+
+**3. A test runner for Veyl code.** Right now the compiler is tested
+and programs written in Veyl are not.
+
+**4. The C backend.** Unblocks the whole of Level 3 at once: pointers,
+manual memory, `sizeof`, layout, FFI, ABI, real threads and atomics.
+Design the IR boundary so it is one module swapped rather than a
 rewrite.
 
-**11.2 Manual memory**
-`own T`, `defer`, `alloc`/`free`. Requires the C backend. `own`,
-`defer`, and `unsafe` are already reserved.
-
-**11.3 Pointers and `unsafe` blocks**
-
-**11.4 Generics**
-`fn first<T>(xs: []T) -> ?T`. Large. Do not start before v1.0.
-
-**11.5 Concurrency**
-Go's goroutines and channels map almost directly. Cheap on the Go
-backend, hard on the C backend - which is an argument for designing the
-API now.
-
-**11.6 GUI event handling**
-The current `openWindow` opens a real window that is blank and inert.
-Buttons, drawing, keyboard and mouse events need a callback design
-first, which is a genuine language-design question rather than more
-syscalls.
-
-**11.7 Cross-platform GUI**
-Linux and macOS equivalents. Note the user has neither and cannot test
-them.
-
-**11.8 More Win32**
-Clipboard, tray icons, notifications, registry, file dialogs, process
-control.
+**5. Everything in Level 5**, once 1 to 4 exist and not before.
 
 ---
 
-## Part 4 - Rules for whoever works on this next
+## The thing to be honest about
 
-**Verify before handing anything over.** Run all four:
+Veyl is a **real compiler** with a real type system, and it is **not a
+systems language**. It is garbage collected, it has no pointers, and it
+cannot call C. Those are not oversights; they follow from compiling
+through Go, which is a normal technique with real prior art and real
+costs.
 
-```bash
-gofmt -l .        # must print nothing
-go vet ./...      # must be clean
-go build -o veyl .
-./veyl run examples/logic.vy && ./veyl run examples/demo.vy
-```
-
-**`veyl emit <file>` is the debugger.** When behaviour is wrong, read
-the generated Go before theorising.
-
-**Do not add Go module dependencies** without raising it explicitly.
-Zero dependencies is a deliberate property.
-
-**Surface design decisions, do not make them silently.** Numeric
-promotion, map iteration order, struct value semantics, and the SQLite
-dependency are all real forks. Present the trade-off.
-
-**Do not claim something works if it was not verified.** GUI code cannot
-be run in a Linux container - cross-compiling proves it type-checks and
-nothing more. A previous session claimed rounded corners worked on a
-Windows 10 machine where they cannot; that was a real bug caused by
-ignoring a return value.
-
-**Update `SYNTAX.md` in the same commit as the feature.** Documentation
-written later is documentation not written.
-
-**Keep the Known Limitations list honest.** It is the most useful
-section in the docs and the first thing to go stale.
+Claiming otherwise is the one thing that would damage the project's
+credibility, and every gap above is written down precisely so that it
+does not have to be claimed.

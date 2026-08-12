@@ -6,7 +6,7 @@
   "publisher": "veyl",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.72.0"
   },
   "categories": [
     "Programming Languages"
@@ -22,7 +22,11 @@
         "extensions": [
           ".vy"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/veyl.png",
+          "dark": "./icons/veyl.png"
+        }
       }
     ],
     "grammars": [
@@ -40,5 +44,6 @@
         "files.insertFinalNewline": true
       }
     }
-  }
+  },
+  "icon": "icons/veyl.png"
 }
