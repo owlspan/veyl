@@ -143,7 +143,7 @@ func (r *Resolver) Resolve(p *Program) {
 		}
 	}
 
-	// Scope 0 holds the globals — top-level consts, from every file.
+	// Scope 0 holds the globals - top-level consts, from every file.
 	// Functions sit on top of it, which is what makes a global visible
 	// inside one where a top-level `let` is not.
 	r.inGlobal = true
@@ -396,7 +396,7 @@ func (r *Resolver) walkStmts(stmts []Stmt) {
 	warned := false
 	for i, s := range stmts {
 		if !warned && i > 0 && exits(stmts[i-1]) {
-			r.warnAt(s, "this can never run — %s above it always leaves", exitWord(stmts[i-1]))
+			r.warnAt(s, "this can never run - %s above it always leaves", exitWord(stmts[i-1]))
 			warned = true
 		}
 		r.stmt(s)
@@ -458,13 +458,13 @@ func (r *Resolver) expr(e Expr) {
 			// `let double = twice` hands the function around.
 			if f, isFn := r.funcs[x.Name]; isFn {
 				if !r.visible(f.File, f.Pub) {
-					r.errorAt(x, "%q is private to %s — mark it 'pub fn %s' to use it from another file",
+					r.errorAt(x, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
 						x.Name, filepath.Base(f.File), x.Name)
 				}
 				return
 			}
 			if _, isBuiltin := builtins[x.Name]; isBuiltin {
-				r.errorAt(x, "%q is a builtin and cannot be used as a value — "+
+				r.errorAt(x, "%q is a builtin and cannot be used as a value - "+
 					"wrap it in a function literal, as in: fn(s: str) { %s(s) }", x.Name, x.Name)
 				return
 			}
@@ -472,9 +472,9 @@ func (r *Resolver) expr(e Expr) {
 			if r.locals[x.Name] {
 				if r.inGlobal {
 					r.errorAt(x, "a top-level const is global, so it cannot use %q, "+
-						"which belongs to the program body — use 'let' instead of 'const' here", x.Name)
+						"which belongs to the program body - use 'let' instead of 'const' here", x.Name)
 				} else {
-					r.errorAt(x, "%q belongs to the program body and is not visible inside a function — "+
+					r.errorAt(x, "%q belongs to the program body and is not visible inside a function - "+
 						"pass it in as a parameter, or declare it with 'const' to make it global", x.Name)
 				}
 				return
@@ -483,7 +483,7 @@ func (r *Resolver) expr(e Expr) {
 			return
 		}
 		if g := info.decl; g != nil && g.Global && !r.visible(g.File, g.Pub) {
-			r.errorAt(x, "%q is private to %s — mark it 'pub const %s' to use it from another file",
+			r.errorAt(x, "%q is private to %s - mark it 'pub const %s' to use it from another file",
 				x.Name, filepath.Base(g.File), x.Name)
 			return
 		}
@@ -528,7 +528,7 @@ func (r *Resolver) expr(e Expr) {
 		case !known:
 			r.errorAt(x, "there is no struct called %q", x.Name)
 		case !r.visible(d.File, d.Pub):
-			r.errorAt(x, "struct %q is private to %s — mark it 'pub struct %s' to use it from another file",
+			r.errorAt(x, "struct %q is private to %s - mark it 'pub struct %s' to use it from another file",
 				x.Name, filepath.Base(d.File), x.Name)
 		}
 
@@ -572,7 +572,7 @@ func (r *Resolver) expr(e Expr) {
 			r.errorAt(x, "there is no value called %s%s", name, nearestNamespaceHint(name))
 			return
 		}
-		// Not a plain path — the base is some other expression, so this is
+		// Not a plain path - the base is some other expression, so this is
 		// field access on whatever it evaluates to.
 		r.expr(x.X)
 
@@ -586,7 +586,7 @@ func (r *Resolver) expr(e Expr) {
 
 // rootsAtVariable reports whether `a.b.c` is access on a value rather
 // than a library path. It is a library path only when the whole chain
-// is plain names and the outermost one is not in scope — so a local
+// is plain names and the outermost one is not in scope - so a local
 // called `os` shadows the library, and anything that is not a bare name
 // chain (a literal, a call, an index) is a value by definition.
 func (r *Resolver) rootsAtVariable(e Expr) bool {
@@ -638,7 +638,7 @@ func (r *Resolver) call(x *Call) {
 	if _, dotted := x.Callee.(*Field); dotted {
 		if f, ok := r.funcs[name]; ok {
 			if !f.Pub {
-				r.errorAt(x, "%q is not public in package %q — mark it 'pub fn %s'",
+				r.errorAt(x, "%q is not public in package %q - mark it 'pub fn %s'",
 					name, f.Pkg, f.Name)
 				return
 			}
@@ -671,7 +671,7 @@ func (r *Resolver) call(x *Call) {
 		return
 	}
 	if !r.visible(f.File, f.Pub) {
-		r.errorAt(x, "%q is private to %s — mark it 'pub fn %s' to use it from another file",
+		r.errorAt(x, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
 			name, filepath.Base(f.File), name)
 		return
 	}
@@ -688,7 +688,7 @@ func (r *Resolver) call(x *Call) {
 func nearestNamespaceHint(name string) string {
 	parts := strings.Split(name, ".")
 	if !namespaces[parts[0]] {
-		return fmt.Sprintf(" — %q is not a library (try one of: %s)", parts[0], namespaceList())
+		return fmt.Sprintf(" - %q is not a library (try one of: %s)", parts[0], namespaceList())
 	}
 
 	for depth := len(parts) - 1; depth >= 1; depth-- {
@@ -707,7 +707,7 @@ func nearestNamespaceHint(name string) string {
 		if len(near) > 6 {
 			near, suffix = near[:6], ", ..."
 		}
-		return " — did you mean one of: " + strings.Join(near, ", ") + suffix
+		return " - did you mean one of: " + strings.Join(near, ", ") + suffix
 	}
 	return ""
 }
@@ -747,7 +747,7 @@ func hasSelf(f *FnDecl) bool {
 // matter what statements four and five look like. Anything after is
 // unreachable, and walkStmts warns about that separately.
 //
-// Still conservative about what counts as "always returns" — an
+// Still conservative about what counts as "always returns" - an
 // if/else where both sides do, a match with an else where every arm
 // does, and nothing cleverer. A function whose only return is inside a
 // loop is rejected, because proving the loop runs is a different job.
@@ -775,7 +775,7 @@ func stmtReturns(s Stmt) bool {
 		}
 		return blockReturns(st.Then) && stmtReturns(st.Else)
 	case *MatchStmt:
-		// Only an `else` arm makes a match exhaustive — without one, a
+		// Only an `else` arm makes a match exhaustive - without one, a
 		// value matching nothing falls straight out of the bottom.
 		if st.Else == nil || !stmtReturns(st.Else) {
 			return false

@@ -2,7 +2,7 @@
 
 Unattended session, 11 August 2026. Read this first in the morning.
 
-Everything below is committed locally on `master`. Nothing was pushed —
+Everything below is committed locally on `master`. Nothing was pushed -
 there is still no remote. `git log --oneline` is the short version;
 `git reset --hard v0.3` puts everything back the way it was.
 
@@ -14,15 +14,15 @@ there is still no remote. `git log --oneline` is the short version;
 | --- | --- |
 | `v0.4` | Type checker, test suite, honest Windows version detection |
 | `v0.5` | Lists and maps |
-| — | Dotted library namespaces, and the `os` library |
-| — | `http`, `net`, `time` and `mem` libraries |
+| - | Dotted library namespaces, and the `os` library |
+| - | `http`, `net`, `time` and `mem` libraries |
 | `v0.6` | Structs, `impl` blocks and methods |
 | `v0.7` | JSON |
-| — | Bitwise operators and `match` |
+| - | Bitwise operators and `match` |
 | `v0.8` | Nullable types `?T`, with flow narrowing |
 
 The compiler is now six stages: lex, parse, resolve, **check**, codegen,
-Go. `go.mod` is still empty — no dependency was added.
+Go. `go.mod` is still empty - no dependency was added.
 
 Try it:
 
@@ -39,7 +39,7 @@ genuinely needs the C backend and cannot be faked on the Go one.
 ## Decisions I made without you
 
 These are real language design forks. Each was decided the way the docs
-recommended, or with a stated reason for departing. All are reversible —
+recommended, or with a stated reason for departing. All are reversible -
 say the word and I will flip any of them.
 
 **1. No implicit conversion between values.** `a + b` with an `int` and
@@ -54,9 +54,9 @@ integer literal adapts to a float, but a variable never does.
 
 ```qz
 let radius = 2.5
-let a = radius * 2        // fine — 2 is a literal
+let a = radius * 2        // fine - 2 is a literal
 let two = 2
-let b = radius * two      // error — two is an int variable
+let b = radius * two      // error - two is an int variable
 ```
 
 **3. Map iteration is sorted.** Go randomises it. A loop whose output
@@ -77,11 +77,11 @@ unless its name ends in `Or`; a call that only acts returns a `bool`.
 Visible in the name, and the first thing to convert at v0.7.
 
 **7. `os.file.read` is the documented spelling.** Your `os.read.file`
-works too — it is registered as an alias. Noun-first groups better as
+works too - it is registered as an alias. Noun-first groups better as
 the library grows, but both compile to the same call.
 
 **8. Struct methods can change the struct.** The roadmap recommended
-value semantics, and assignment does copy — `let b = a` gives two
+value semantics, and assignment does copy - `let b = a` gives two
 independent values. But methods take a pointer receiver, so `scale()`
 and `birthday()` work. Value semantics is about assignment; without
 this, no method could ever modify anything.
@@ -97,7 +97,7 @@ checker explain the fix when it sees the resulting bool.
 
 **12. `m[k]` still returns the zero value for a missing key.** Now that
 `?T` exists I could have made every map read return `?V`, which would be
-strictly safer — and would put a nil check on every single map access.
+strictly safer - and would put a nil check on every single map access.
 Instead `find(m, k)` returns `?V` for when the difference matters, and
 the bare index is unchanged. This is the one place I chose convenience
 over safety, so it is worth a second opinion.
@@ -109,7 +109,7 @@ the function. Predictable beats clever here, but that particular case is
 common enough that it may be worth adding.
 
 **11. `json.decode` reads its target from the annotation.**
-`let p: Point = json.decode(text)` — Quartz has no type arguments, so
+`let p: Point = json.decode(text)` - Quartz has no type arguments, so
 the binding is what tells the decoder what to build. Without an
 annotation it is a compile error that says so.
 
@@ -120,7 +120,7 @@ annotation it is a compile error that says so.
 **Floats print without a decimal point.** `print(2.0)` shows `2`,
 because that is what Go's `%v` does. Quartz now draws a hard line
 between `int` and `float`, so hiding the difference when printing is
-arguably wrong — but changing it is a design decision, not a bug fix,
+arguably wrong - but changing it is a design decision, not a bug fix,
 so I left it. Worth a ruling.
 
 **`quartz.exe` is committed as ignored.** `.gitignore` already covered
@@ -128,7 +128,7 @@ it. `tests/` is tracked; the built `examples/*.exe` are not.
 
 **GUI runtime behaviour is still unverified** beyond version detection.
 `winBuild()` returns 19045 on this machine and `isWin11()` correctly
-returns false, both confirmed against the real OS — so rounded corners
+returns false, both confirmed against the real OS - so rounded corners
 will now honestly report failure here rather than claiming success.
 But I did not open a window, because `openWindow` blocks until someone
 closes it and there was nobody to close it.

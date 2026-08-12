@@ -6,7 +6,7 @@ import "strings"
 //
 // It works on the token stream, not the AST, and that is a deliberate
 // choice. An AST-based printer would have to reconstruct every comment
-// from scratch, because the parser throws them away — and a formatter
+// from scratch, because the parser throws them away - and a formatter
 // that silently deletes comments is worse than no formatter at all.
 // Working from tokens means anything the formatter does not understand
 // passes through untouched.
@@ -19,7 +19,7 @@ import "strings"
 // right.
 
 // Format reformats Quartz source. It returns the source unchanged if
-// the input does not lex cleanly — reformatting a file with a broken
+// the input does not lex cleanly - reformatting a file with a broken
 // string literal in it is a good way to lose work.
 func Format(file, src string) (string, bool) {
 	lx := NewLexer(file, src)
@@ -97,7 +97,7 @@ func (f *formatter) findLiteralBraces() {
 					}
 				}
 			}
-			// An empty pair is a literal only where a value belongs —
+			// An empty pair is a literal only where a value belongs -
 			// Point{} and `= {}`, but not the body of `fn f() {}`.
 			empty := i == open+1
 			if empty {
@@ -207,7 +207,7 @@ func (f *formatter) write(text string, i int) {
 // previous one would lex as something else.
 //
 // The case that motivated it: `Person! = x` has no space before `!` and
-// none after, which produces `Person!=` — and `!=` is a single token.
+// none after, which produces `Person!=` - and `!=` is a single token.
 // The formatter would have silently changed the program. Rather than
 // enumerating the dangerous pairs, this re-lexes the join and checks
 // that the first token still ends where it should.
@@ -268,7 +268,7 @@ func (f *formatter) endLine() {
 // came before it on the same line.
 //
 // What comes *before* is checked first. An opening bracket never has a
-// space after it, whatever follows — getting that order wrong produces
+// space after it, whatever follows - getting that order wrong produces
 // `push( [1, 2], 3)`.
 func (f *formatter) needsSpace(i int) bool {
 	prev := f.prevMeaningful(i)
@@ -292,7 +292,7 @@ func (f *formatter) needsSpace(i int) bool {
 		return f.isPostfix(prev)
 	case RBRACKET:
 		// `[]int`, `[]fn()` and `[]?int` are each one type and hug.
-		// `xs[0] + 1` does not — but an empty pair of brackets can only
+		// `xs[0] + 1` does not - but an empty pair of brackets can only
 		// be a list type.
 		if prev > 0 && f.toks[prev-1].Kind == LBRACKET {
 			switch right {
@@ -317,7 +317,7 @@ func (f *formatter) needsSpace(i int) bool {
 	case RBRACE:
 		return !f.isLiteralClose(i)
 	case LBRACE:
-		// A struct literal hugs the name in front of it — Point{x: 1},
+		// A struct literal hugs the name in front of it - Point{x: 1},
 		// not Point {x: 1}. A bare map literal has no name to hug, so
 		// `let m = {"a": 1}` keeps its space after the `=`.
 		return !(f.literalBrace[i] && hugsLeft(left))

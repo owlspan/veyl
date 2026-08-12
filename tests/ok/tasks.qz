@@ -1,5 +1,5 @@
 // task.map is map(), run concurrently. Same arguments, same ordered
-// results — switching between them is a one-word edit.
+// results - switching between them is a one-word edit.
 
 let nums = [1, 2, 3, 4, 5, 6, 7, 8]
 

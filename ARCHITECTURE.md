@@ -9,12 +9,12 @@ next see [ROADMAP.md](ROADMAP.md).
 ## Contents
 
 1. [The shape of the thing](#the-shape-of-the-thing)
-2. [Stage 1 — lexer](#stage-1--lexer)
-3. [Stage 2 — parser](#stage-2--parser)
-4. [Stage 3 — resolver](#stage-3--resolver)
-5. [Stage 4 — checker](#stage-4--checker)
-6. [Stage 5 — codegen](#stage-5--codegen)
-7. [Stage 6 — the Go handoff](#stage-6--the-go-handoff)
+2. [Stage 1 - lexer](#stage-1--lexer)
+3. [Stage 2 - parser](#stage-2--parser)
+4. [Stage 3 - resolver](#stage-3--resolver)
+5. [Stage 4 - checker](#stage-4--checker)
+6. [Stage 5 - codegen](#stage-5--codegen)
+7. [Stage 6 - the Go handoff](#stage-6--the-go-handoff)
 8. [The builtin system](#the-builtin-system)
 9. [Invariants](#invariants)
 10. [Debugging](#debugging)
@@ -53,7 +53,7 @@ hello.exe
 ```
 
 Each stage **gates** the next. If a stage produces errors, the driver
-prints them and stops — the next stage never runs, so no stage has to
+prints them and stops - the next stage never runs, so no stage has to
 defend itself against nonsense from the one before it. That is what
 lets codegen be as simple as it is: by the time it runs, every name
 exists, every call has the right arity, and every expression has a type.
@@ -67,7 +67,7 @@ the intended seam.
 
 ---
 
-## Stage 1 — lexer
+## Stage 1 - lexer
 
 `lexer.go`. A hand-written scanner over a `string`, producing
 `[]Token`. No regexps, no generated tables.
@@ -86,7 +86,7 @@ region containing a comment can itself be commented out.
 nested-quote flag while scanning a string, so a `"` inside `{...}` does
 not end the literal. This is what makes `"{upper("hi")}"` work. The
 parser's brace matcher (`parseStringLit`) implements the same rule
-independently — **the two must stay in sync**, and a change to one
+independently - **the two must stay in sync**, and a change to one
 without the other produces baffling failures.
 
 Every token carries `Line` and `Col`, 1-based. Nothing downstream can
@@ -94,14 +94,14 @@ recover them if they are dropped.
 
 ---
 
-## Stage 2 — parser
+## Stage 2 - parser
 
 `parser.go`. Recursive descent for statements, Pratt (precedence
 climbing) for expressions, producing the node types in `ast.go`.
 
 `parseExpr(minPrec)` is the Pratt loop; `precOf` is the precedence
 table. Adding a binary operator means adding a `Kind`, a `precOf` entry,
-and a `goBinOp` case — nothing else.
+and a `goBinOp` case - nothing else.
 
 **Error recovery.** On a parse error the parser calls `synchronize()`,
 which skips forward to the next token that plausibly starts a statement.
@@ -114,7 +114,7 @@ pattern in any new statement loop.
 
 ---
 
-## Stage 3 — resolver
+## Stage 3 - resolver
 
 `resolve.go`. Walks the tree and answers the questions of *existence*,
 not of *type*:
@@ -140,14 +140,14 @@ annoying; false positives would generate invalid Go.
 
 ---
 
-## Stage 4 — checker
+## Stage 4 - checker
 
 `check.go`, with the type representation in `types.go`. Structurally
 parallel to the resolver, but each expression method *returns a type*
 rather than only validating.
 
 **`Type` is a struct, not an enum.** It has a `Kind` plus `Elem` and
-`Key` pointers, so `[][]int` and `{str: []int}` need no special cases —
+`Key` pointers, so `[][]int` and `{str: []int}` need no special cases -
 composition falls out of the representation. This was a deliberate
 choice made while only scalars existed, because retrofitting nesting
 onto an `int` enum later would have meant touching every use.
@@ -166,7 +166,7 @@ expression is built purely from integer literals. Such an expression may
 stand in for a float, exactly as Go's untyped constants do, so
 `radius * 2` works while `radius * someInt` is an error. This is the one
 concession to convenience in an otherwise strict system, and it costs
-codegen nothing — Go has the identical concept, so the emitted `2`
+codegen nothing - Go has the identical concept, so the emitted `2`
 simply becomes a float64 constant on the Go side.
 
 Error messages use Quartz's vocabulary. A user should never see
@@ -174,13 +174,13 @@ Error messages use Quartz's vocabulary. A user should never see
 how a type is spelled, and `Type.Go()` is the only place that knows the
 Go spelling.
 
-The checker writes its results back onto the AST — `LetStmt.T`,
-`Param.T`, `FnDecl.RetT`, `Binary.T` — so codegen can emit explicit Go
+The checker writes its results back onto the AST - `LetStmt.T`,
+`Param.T`, `FnDecl.RetT`, `Binary.T` - so codegen can emit explicit Go
 types instead of leaning on Go's inference.
 
 ---
 
-## Stage 5 — codegen
+## Stage 5 - codegen
 
 `codegen.go`. Walks the typed AST and appends to a `strings.Builder`.
 
@@ -208,7 +208,7 @@ inference from quietly reaching a different conclusion.
 
 ---
 
-## Stage 6 — the Go handoff
+## Stage 6 - the Go handoff
 
 `quartz.go`. Writes `main.go` and a minimal `go.mod` into a temp
 directory, runs `go build`, and moves the binary next to the source.
@@ -229,11 +229,11 @@ string, with a fallback path for Windows absolute paths, whose leading
 There is no import system, so the builtin table *is* the standard
 library. A builtin is a `builtin` struct (`codegen.go`) carrying:
 
-- `emit` — given already-generated argument expressions, return Go source
-- `imports`, `helpers` — pulled in only when the builtin is used
-- `minArgs`, `maxArgs` — arity, checked by the **resolver**
-- `osOnly` — restrict to one GOOS; `""` is portable
-- `params`, `rest`, `ret`, `retOf` — the type signature, checked by the
+- `emit` - given already-generated argument expressions, return Go source
+- `imports`, `helpers` - pulled in only when the builtin is used
+- `minArgs`, `maxArgs` - arity, checked by the **resolver**
+- `osOnly` - restrict to one GOOS; `""` is portable
+- `params`, `rest`, `ret`, `retOf` - the type signature, checked by the
   **checker**
 
 Three tables merge into one map in `init()`:
@@ -277,7 +277,7 @@ Three things there will bite:
 Rounded corners (`DWMWA_WINDOW_CORNER_PREFERENCE`, attribute 33) require
 build 22000+. `__roundCorners` checks the build and **returns whether it
 actually worked**; `openWindow` returns that value. Never report success
-that was not verified — a previous version claimed rounded corners on a
+that was not verified - a previous version claimed rounded corners on a
 Windows 10 machine where they are impossible, and that shipped.
 
 ---
@@ -303,7 +303,7 @@ Breaking any of these produces failures that are hard to trace back.
 ## Debugging
 
 `quartz emit <file>` prints the generated Go. When behaviour is wrong,
-read it before theorising — it is faster than reasoning about what
+read it before theorising - it is faster than reasoning about what
 codegen should have done.
 
 `quartz tokens <file>` prints the token stream, for when the problem is
@@ -339,7 +339,7 @@ tests/err/NAME.qz  + tests/err/NAME.expected    expected compiler errors
 ```
 
 Cases in `tests/ok` must compile, run, and match their output. Cases in
-`tests/err` must **fail to compile** and match their error text — which
+`tests/err` must **fail to compile** and match their error text - which
 means the wording and ordering of error messages is itself under test,
 deliberately, because error quality is a feature here.
 

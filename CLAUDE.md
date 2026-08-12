@@ -74,7 +74,7 @@ driver reports them and stops.
 | Codegen | `codegen.go` | `*Program` | Go source string |
 | Build | `quartz.go` | Go source | `.exe` |
 
-### Key invariants — do not break these
+### Key invariants - do not break these
 
 **Every token and AST node carries line and column.** `Token` has
 `Line`/`Col`; every AST node embeds `pos`. Error messages and `//line`
@@ -105,19 +105,19 @@ precedence can never silently disagree. Ugly output, zero bugs. Keep it.
 
 Every feature threads through all five stages. Follow this order.
 
-1. **`token.go`** — add any new `Kind` constants. The `kindNames` array
+1. **`token.go`** - add any new `Kind` constants. The `kindNames` array
    must stay in the exact same order as the const block, or `Kind.String()`
    returns the wrong name. Add keywords to the `keywords` map.
-2. **`lexer.go`** — recognise the new syntax. Multi-character operators
+2. **`lexer.go`** - recognise the new syntax. Multi-character operators
    must be matched longest-first.
-3. **`ast.go`** — define the node. Embed `pos`. Add the marker method
+3. **`ast.go`** - define the node. Embed `pos`. Add the marker method
    (`func (*X) stmtNode() {}` or `exprNode()`).
-4. **`parser.go`** — parse it. Add to `parseStmt`'s switch, and to the
+4. **`parser.go`** - parse it. Add to `parseStmt`'s switch, and to the
    `synchronize()` recovery set if it starts a statement.
-5. **`resolve.go`** — validate it. Declare/lookup names, check context.
-6. **`codegen.go`** — emit Go for it. Call `c.line(st)` first.
-7. **`SYNTAX.md`** — document it, including the limitations.
-8. **`examples/`** — add or extend a program that exercises it.
+5. **`resolve.go`** - validate it. Declare/lookup names, check context.
+6. **`codegen.go`** - emit Go for it. Call `c.line(st)` first.
+7. **`SYNTAX.md`** - document it, including the limitations.
+8. **`examples/`** - add or extend a program that exercises it.
 
 ---
 
@@ -140,9 +140,9 @@ type builtin struct {
 
 Three tables merge into one map at `init()` in `codegen.go`:
 
-- core builtins — defined inline in `codegen.go`
-- `stdlibBuiltins` — `stdlib.go`, registered by `registerStdlib()`
-- `winBuiltins` — `runtime_win.go`, by `registerWindowsRuntime()`
+- core builtins - defined inline in `codegen.go`
+- `stdlibBuiltins` - `stdlib.go`, registered by `registerStdlib()`
+- `winBuiltins` - `runtime_win.go`, by `registerWindowsRuntime()`
 
 **Imports and helpers are pulled in on demand.** A program using only
 `print` emits `import "fmt"` and nothing else. `helperDefs` maps a
@@ -179,7 +179,7 @@ goroutine and the window silently stops responding.
 **Rounded corners are Windows 11 only.** `DWMWA_WINDOW_CORNER_PREFERENCE`
 (attribute 33) needs build 22000+. `__roundCorners` checks `__winBuild()`
 and returns a bool; `openWindow` returns it. **Never claim rounding
-worked without checking** — this was a real bug that shipped.
+worked without checking** - this was a real bug that shipped.
 
 **Number vs range lexing.** `number()` only consumes a fractional part
 if a digit follows the dot. That is what lets `1..10` lex as
@@ -256,7 +256,7 @@ cd /tmp/vw && GOOS=windows go vet ./...
 ```
 
 `quartz emit <file>` prints the generated Go. It is the single most
-useful debugging tool here — when behaviour is wrong, read the output.
+useful debugging tool here - when behaviour is wrong, read the output.
 
 **One known vet exception.** `go vet` on the compiler is clean and must
 stay that way. The *generated* program is too, with one exception: a
@@ -302,10 +302,10 @@ certain way.
 - Raw backtick strings; interpolation `"{expr}"` with nesting
 - `if` / `while` / `for i in a..b` with `step`, `break`, `continue`
 - Multi-file programs via `import` and `pub`
-- Structured concurrency through `task` — no raw goroutines exposed
+- Structured concurrency through `task` - no raw goroutines exposed
 - Cross-compilation via `QUARTZ_TARGET`
 
-**The library** — all failures reported as `T!`, never a panic:
+**The library** - all failures reported as `T!`, never a panic:
 `os`, `http`, `net`, `json`, `time`, `mem`, `task`, `re`, `hash`,
 `csv`, plus `win` for the Windows-only parts.
 
@@ -316,8 +316,8 @@ VS Code extension in `editors/vscode`, and a verified Windows installer.
 **Not implemented**
 
 - Generics
-- Databases — SQLite needs a Go dependency; flag the trade-off first
-- Manual memory, pointers, `unsafe` — all need the C backend
+- Databases - SQLite needs a Go dependency; flag the trade-off first
+- Manual memory, pointers, `unsafe` - all need the C backend
 - GUI event handling; `openWindow` opens a real but inert window
 - Any GUI outside Windows
 
@@ -332,7 +332,7 @@ has to exist. `findGo` in `toolchain.go` looks in three places, in this
 order:
 
 1. `$QUARTZ_GO`, to force a specific one
-2. `go\bin\go.exe` next to `quartz.exe` — the installer's private copy
+2. `go\bin\go.exe` next to `quartz.exe` - the installer's private copy
 3. `PATH`
 
 The bundled copy beats `PATH` on purpose, so an installed Quartz keeps
@@ -386,11 +386,11 @@ low-level: `own T`, `defer`, `alloc`/`free`, pointers, and `unsafe`.
 
 Design the IR boundary so it is one module swapped and not a rewrite.
 Keep the Go backend as the default; put C behind `QUARTZ_TARGET=c`.
-Concurrency is the hard part — `task` maps almost directly onto
+Concurrency is the hard part - `task` maps almost directly onto
 goroutines and not at all onto C, which is an argument for pinning the
 API down before the backend exists rather than after.
 
 The honest framing for the user: compiling through Go is a normal
-technique, not a fake language — but it does cost a garbage collector,
+technique, not a fake language - but it does cost a garbage collector,
 a runtime, a ~2 MB floor on binary size, and any hope of manual memory.
 The C backend is what buys those back.

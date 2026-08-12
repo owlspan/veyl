@@ -4,11 +4,11 @@ error: bits.qz:5:14: '^' works on ints, got str and int
 error: bits.qz:6:9: '<<' works on ints, got float and int
 error: bits.qz:7:7: '~' needs an int, got float
 error: bits.qz:8:7: '~' needs an int, got str
-error: bits.qz:12:13: '&' works on ints, got int and bool — comparison binds tighter than '&', so you probably want parentheses
+error: bits.qz:12:13: '&' works on ints, got int and bool - comparison binds tighter than '&', so you probably want parentheses
 error: bits.qz:16:1: &= needs an int, but "g" is float
 error: bits.qz:17:1: <<= needs an int, but "g" is float
 error: bits.qz:19:1: |= needs an int, got float
-error: bits.qz:23:7: cannot match on []int — match compares values, so it needs an int, float, str or bool
+error: bits.qz:23:7: cannot match on []int - match compares values, so it needs an int, float, str or bool
 error: bits.qz:29:5: this match is on int, but this arm compares against str
 error: bits.qz:36:5: this value is already handled by an earlier arm
 quartz: 13 error(s)

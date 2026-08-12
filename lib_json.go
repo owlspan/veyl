@@ -22,8 +22,8 @@ package main
 
 var jsonHelperDefs = map[string]helperDef{
 	"jsonEncode": {
-		// Encoding a Quartz value cannot actually fail — every type the
-		// language has is representable — so this stays plain rather than
+		// Encoding a Quartz value cannot actually fail - every type the
+		// language has is representable - so this stays plain rather than
 		// making every caller unwrap a result that is always ok.
 		code: `func __jsonEncode(v any, indent bool) string {
 	var b []byte
@@ -59,7 +59,7 @@ func __jsonDecodeOr[T any](s string, fallback T) T {
 	return v
 }
 
-// A parse error should quote the offending text, but not all of it —
+// A parse error should quote the offending text, but not all of it -
 // a 40kB response in an error message helps nobody.
 func __jsonSnippet(s string) string {
 	if len(s) > 60 {
@@ -223,7 +223,7 @@ func buildJsonBuiltins() {
 				// `let p: Point! = json.decode(t)` names Point as the shape
 				// to build and Point! as what the call produces.
 				if x.Want == nil || x.Want.IsUnknown() || !x.Want.IsResult() {
-					c.errorAt(x, "json.decode needs to know what to decode into, and it can fail — "+
+					c.errorAt(x, "json.decode needs to know what to decode into, and it can fail - "+
 						"annotate the variable, as in: let p: Point! = json.decode(text)")
 					return Unknown
 				}

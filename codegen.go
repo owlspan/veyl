@@ -29,13 +29,13 @@ type builtin struct {
 	rest *Type
 	// ret is the return type. Void means the builtin produces no value.
 	ret *Type
-	// retOf overrides ret for the few polymorphic builtins — min and max
+	// retOf overrides ret for the few polymorphic builtins - min and max
 	// return whatever type they were given.
 	retOf func(args []*Type) *Type
 
 	// wantsTarget asks the checker to record the expected result type on
 	// the call, for builtins whose return type comes from the context
-	// rather than their arguments — a decoder, essentially.
+	// rather than their arguments - a decoder, essentially.
 	wantsTarget bool
 
 	// check replaces the params/rest/ret machinery entirely for builtins
@@ -50,7 +50,7 @@ type builtin struct {
 	// hintFor supplies the expected type of argument i, given the call
 	// and the types of the arguments before it. Builtins with a custom
 	// check have no fixed params for the checker to read, so without
-	// this an empty literal passed to one — valueOr(load(), []) — has
+	// this an empty literal passed to one - valueOr(load(), []) - has
 	// nothing to infer from. It also carries an annotation inwards
 	// through a wrapper: in `let p: Point! = must(json.decode(t))` the
 	// decoder learns what to build from must's own expected type.
@@ -93,7 +93,7 @@ var builtins map[string]builtin
 
 // runtime helpers, injected into the generated program on demand.
 // Top-level Go declarations are order-independent, so emission order
-// doesn't matter — but dependencies must be listed so they come along.
+// doesn't matter - but dependencies must be listed so they come along.
 type helperDef struct {
 	code    string
 	imports []string
@@ -461,7 +461,7 @@ func (c *Codegen) w(format string, args ...any) {
 
 // flushGlobalPending discards anything an initialiser tried to hoist.
 // Only `?` hoists, and the resolver already rejects it outside a
-// function — there is nothing at package level to return from. This
+// function - there is nothing at package level to return from. This
 // just makes sure a slip cannot leak into the next declaration.
 func (c *Codegen) flushGlobalPending() { c.pending = nil }
 
@@ -492,7 +492,7 @@ func (c *Codegen) tryExpr(x *Try) string {
 	if c.curFnRet != nil && c.curFnRet.IsResult() {
 		failType = c.curFnRet.Elem.Go()
 		// A function returning void! fails with __Res[__Unit], not
-		// __Res[] — Go has no void to instantiate the generic with.
+		// __Res[] - Go has no void to instantiate the generic with.
 		if c.curFnRet.Elem.Kind == KVoid {
 			failType = "__Unit"
 		}
@@ -531,8 +531,8 @@ func (c *Codegen) line(n Node) {
 // Quartz field names are lower case, which in Go means unexported, and
 // unexported fields are invisible to encoding/json and unreadable
 // through reflect.Interface(). Prefixing a capital X fixes both. The
-// mapping is injective — the original name is preserved exactly after
-// the prefix — so `x` and `X` stay distinct fields.
+// mapping is injective - the original name is preserved exactly after
+// the prefix - so `x` and `X` stay distinct fields.
 //
 // The json tag carries the name the user actually wrote, so encoding
 // round-trips through the spelling they expect.
@@ -550,8 +550,8 @@ func (c *Codegen) structDecl(d *StructDecl) {
 
 func (c *Codegen) fnDecl(f *FnDecl) {
 	// A method takes a pointer receiver so it can change the struct it is
-	// called on. Assignment still copies — `let b = a` gives two
-	// independent values — so this only affects methods, and it is what
+	// called on. Assignment still copies - `let b = a` gives two
+	// independent values - so this only affects methods, and it is what
 	// makes an ordinary bump()/add() method possible at all.
 	recv := ""
 	params := f.Params
@@ -624,7 +624,7 @@ func (c *Codegen) stmt(s Stmt) {
 		c.line(st)
 		code := c.expr(st.X)
 		// Go accepts only a call as a bare statement, but plenty of
-		// builtins compile to something else — `(os.Remove(p) == nil)`,
+		// builtins compile to something else - `(os.Remove(p) == nil)`,
 		// or a func literal. Discarding the result makes any of them a
 		// legal statement. Void calls are left alone so the common case
 		// stays readable.
@@ -851,7 +851,7 @@ func (c *Codegen) stmts(list []Stmt) {
 // needsDeepEqual reports whether == on this type has to compare
 // contents rather than let Go do it. Go cannot compare slices or maps
 // at all, and compares a struct field by field only if every field is
-// itself comparable — which stops being true the moment one holds a
+// itself comparable - which stops being true the moment one holds a
 // list.
 func needsDeepEqual(t *Type) bool {
 	if t == nil {
@@ -901,7 +901,7 @@ func (c *Codegen) lvalue(e Expr) string {
 	return c.expr(e)
 }
 
-// mutate emits a call that needs a pointer to `target` — push, pop and
+// mutate emits a call that needs a pointer to `target` - push, pop and
 // friends, which replace a slice header rather than its contents.
 //
 // A variable or a list element is addressable, so `&xs` works directly.
@@ -1193,7 +1193,7 @@ func (c *Codegen) call(x *Call) string {
 
 // show wraps a generated expression in the Quartz-formatting helper when
 // its type needs it. Scalars print correctly with %v already, so only
-// collections pay for the helper — a program with no lists never pulls
+// collections pay for the helper - a program with no lists never pulls
 // reflect into its binary.
 func (c *Codegen) show(t *Type, code string) string {
 	if t == nil || !t.NeedsShow() {
@@ -1204,7 +1204,7 @@ func (c *Codegen) show(t *Type, code string) string {
 }
 
 // funcLit emits an anonymous function. Go closures capture the same way
-// Quartz ones do, so the body needs no special handling — but the
+// Quartz ones do, so the body needs no special handling - but the
 // enclosing function's return type has to be saved and restored, or a
 // `?` inside the literal would return from the wrong place.
 func (c *Codegen) funcLit(x *FuncLit) string {
@@ -1249,7 +1249,7 @@ func (c *Codegen) methodCall(x *Call, args []string) string {
 	joined := strings.Join(args, ", ")
 
 	// A map element cannot be addressed at all, so it is copied out,
-	// operated on, and written back — the same dance push() does.
+	// operated on, and written back - the same dance push() does.
 	if base, viaMap := mapElementBase(fld.X); viaMap {
 		return c.mutate(base, x.T, func(ref string) string {
 			return fmt.Sprintf("(%s)%s.%s(%s)", ref, suffixAfter(fld.X, base), fld.Name, joined)
@@ -1260,7 +1260,7 @@ func (c *Codegen) methodCall(x *Call, args []string) string {
 		return fmt.Sprintf("%s.%s(%s)", c.addressOf(fld.X), fld.Name, joined)
 	}
 
-	// Anything else is a temporary — the result of a call, or a literal.
+	// Anything else is a temporary - the result of a call, or a literal.
 	// There is nothing to mutate, so binding a copy loses nothing.
 	c.tmp++
 	tmp := fmt.Sprintf("__recv%d", c.tmp)
@@ -1324,7 +1324,7 @@ func mapElementBase(e Expr) (Expr, bool) {
 }
 
 // suffixAfter renders the field path between a base expression and the
-// receiver — the ".origin" in byName["a"].origin.method().
+// receiver - the ".origin" in byName["a"].origin.method().
 func suffixAfter(e Expr, base Expr) string {
 	if e == base {
 		return ""
@@ -1360,8 +1360,8 @@ func (c *Codegen) interp(x *Interp) string {
 }
 
 // goIdent turns a namespaced Quartz name into a legal Go identifier.
-// "greet.hello" cannot be emitted literally — Go would read it as a
-// package selector — so the separator becomes a double underscore,
+// "greet.hello" cannot be emitted literally - Go would read it as a
+// package selector - so the separator becomes a double underscore,
 // which no Quartz identifier can contain.
 func goIdent(name string) string {
 	return strings.ReplaceAll(name, ".", "__")

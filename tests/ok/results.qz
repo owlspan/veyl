@@ -1,4 +1,4 @@
-// A function that can fail returns T! — a value, or a reason.
+// A function that can fail returns T! - a value, or a reason.
 fn parsePort(text: str) -> int! {
     if !isInt(text) {
         return fail("{text} is not a number")

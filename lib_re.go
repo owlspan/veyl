@@ -52,7 +52,7 @@ func __reFindAll(pattern string, text string) []string {
 }
 
 // The first match's capture groups, without the whole match at index
-// zero — that is what the user asked for separately with find().
+// zero - that is what the user asked for separately with find().
 func __reGroups(pattern string, text string) []string {
 	m := __re(pattern).FindStringSubmatch(text)
 	if len(m) < 2 {

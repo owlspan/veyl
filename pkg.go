@@ -422,7 +422,7 @@ func (r *packageResolver) resolve(name string) (string, error) {
 	}
 	if r.root == "" {
 		return "", fmt.Errorf(
-			"%q is not a file, so it is read as a package — but there is no %s here.\n"+
+			"%q is not a file, so it is read as a package - but there is no %s here.\n"+
 				"Run 'quartz init' to start a project, then 'quartz add <package>'",
 			name, manifestName)
 	}
@@ -459,7 +459,7 @@ func (r *packageResolver) resolve(name string) (string, error) {
 
 // badImportName explains why a name cannot be used as a namespace, or
 // returns "" when it can. Import names are written in source as
-// `name.thing`, so they have to lex as a single identifier — which
+// `name.thing`, so they have to lex as a single identifier - which
 // repository names frequently do not.
 func badImportName(name string) string {
 	if name == "" {

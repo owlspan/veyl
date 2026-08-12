@@ -37,14 +37,14 @@ start with `source.quartz`.
 
 **Does:** highlighting, comment toggling, bracket matching and
 auto-closing, 4-space indentation, and it strips trailing whitespace and
-adds a final newline on save — matching what `quartz fmt` produces, so
+adds a final newline on save - matching what `quartz fmt` produces, so
 saving and formatting do not fight each other.
 
 **Does not:** completion, go-to-definition, inline errors, or running
 the formatter on save. Those need a language server, which does not
 exist. Run `quartz fmt file.qz` by hand.
 
-Reserved-but-unimplemented words — `defer`, `own`, `unsafe` — are
+Reserved-but-unimplemented words - `defer`, `own`, `unsafe` - are
 highlighted as errors on purpose. The compiler will refuse them, and
 finding that out from the editor beats finding out from a build.
 

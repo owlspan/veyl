@@ -5,8 +5,8 @@ import "strings"
 // The bytes library.
 //
 // Before this, binary data was carried in a `str`. The conversion
-// itself is lossless — a Go string is a byte sequence and is not
-// required to be valid UTF-8 — so the danger is subtler than it looks,
+// itself is lossless - a Go string is a byte sequence and is not
+// required to be valid UTF-8 - so the danger is subtler than it looks,
 // and worth writing down because the obvious explanation is wrong.
 //
 // What breaks is every operation that assumes text. Measured on four

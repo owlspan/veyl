@@ -93,7 +93,7 @@ try {
     if (Test-Path $snap) { Remove-Item -Recurse -Force $snap }
     New-Item -ItemType Directory -Force $snap | Out-Null
     # Via a file, not a pipe. A PowerShell pipeline carries objects and
-    # re-encodes text, so piping a tar stream through one corrupts it —
+    # re-encodes text, so piping a tar stream through one corrupts it -
     # tar reports "Failed to open '\\.\tape0'", which is it falling back
     # to a default device because it never saw an archive at all.
     $tarball = Join-Path $env:TEMP "quartz-snapshot-$Version.tar"
@@ -112,7 +112,7 @@ try {
     # RESTORE.md is not tracked, so it does not survive git archive and
     # has to be written fresh each time.
     @"
-# Working version — a known-good snapshot
+# Working version - a known-good snapshot
 
 Taken from $tag, commit $(& git rev-parse --short HEAD).
 

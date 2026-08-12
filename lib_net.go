@@ -2,7 +2,7 @@ package main
 
 // The http and net libraries.
 //
-// Both are built on Go's standard library, so they add no dependency —
+// Both are built on Go's standard library, so they add no dependency -
 // `net/http` and `net` ship with the toolchain. Everything here obeys
 // the same failure convention as the os library: a call that returns a
 // value is fatal on failure unless its name ends in Or, and a call that
@@ -48,7 +48,7 @@ func __httpDo(method string, url string, contentType string, body string, header
 
 	"httpGet": {
 		// A 4xx or 5xx is a failure with a reason, not a silent empty
-		// body — the status is the most useful thing to say.
+		// body - the status is the most useful thing to say.
 		code: `func __httpGet(url string, headers map[string]string) __Res[string] {
 	body, status, err := __httpDo("GET", url, "", "", headers)
 	if err != nil {

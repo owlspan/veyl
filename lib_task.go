@@ -5,7 +5,7 @@ package main
 // Quartz deliberately does not expose goroutines and channels. It has
 // no mutexes, no atomics and no way to talk about ownership, so raw
 // shared-memory concurrency would be the one place in the language
-// where the compiler stops helping — every other sharp edge here is
+// where the compiler stops helping - every other sharp edge here is
 // either checked (nil, bounds, types) or removed (map iteration order).
 //
 // What it exposes instead is structured: work is handed out, results
@@ -22,7 +22,7 @@ package main
 var taskHelperDefs = map[string]helperDef{
 	"parMap": {
 		// Each worker writes to its own index, so the results need no
-		// lock and come back in the order they went in — which is what
+		// lock and come back in the order they went in - which is what
 		// makes this a drop-in replacement for map().
 		code: `func __parMap[T any, U any](xs []T, f func(T) U, limit int) []U {
 	out := make([]U, len(xs))
@@ -89,7 +89,7 @@ func buildTaskBuiltins() {
 					return Unknown
 				}
 				if ret.Kind == KVoid {
-					c.errorAt(x.Args[1], "task.map needs a function that returns something — "+
+					c.errorAt(x.Args[1], "task.map needs a function that returns something - "+
 						"use task.each(...) to just do work")
 					return Unknown
 				}
@@ -100,7 +100,7 @@ func buildTaskBuiltins() {
 		},
 
 		// The same, with a cap on how many run at once. Worth having for
-		// work that is rate-limited rather than CPU-bound — twenty
+		// work that is rate-limited rather than CPU-bound - twenty
 		// concurrent HTTP requests is friendly, two thousand is not.
 		"task.mapLimit": {
 			minArgs: 3, maxArgs: 3,

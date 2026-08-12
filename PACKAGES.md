@@ -37,7 +37,7 @@ print(strutil.titleCase("hello world"))
 ```
 
 The import name defaults to the repository name. A repository is often
-called something like `quartz-strutil`, which cannot be a name in code —
+called something like `quartz-strutil`, which cannot be a name in code -
 `quartz-strutil.titleCase` reads as a subtraction. `quartz add` says so
 and tells you to pick one:
 
@@ -64,7 +64,7 @@ The commands:
 | `quartz install` | fetch everything the manifest lists |
 | `quartz packages` | list dependencies and whether they are installed |
 
-You rarely need `quartz install` yourself — a missing package is fetched
+You rarely need `quartz install` yourself - a missing package is fetched
 on demand when you compile. It exists for setting up a freshly cloned
 project, and for checking every dependency against the lock file at
 once.
@@ -154,7 +154,7 @@ build the same program.
 ## Writing a package
 
 A package is a directory with a `quartz.json` and at least one `.qz`
-file. There is nothing else to it — no build step, no registration, no
+file. There is nothing else to it - no build step, no registration, no
 account.
 
 ```
@@ -220,7 +220,7 @@ Everything you export is reached through your package's name, so
 things for how they read **after** the dot, and do not prefix them with
 the package name: `strutil.strTitleCase()` is a stutter.
 
-Two packages exporting the same name is fine and always has been safe —
+Two packages exporting the same name is fine and always has been safe -
 the namespace keeps them apart.
 
 ### Depending on other packages
@@ -256,9 +256,9 @@ quartz add github.com/you/quartz-strutil@v1.0.0
 
 Use `vMAJOR.MINOR.PATCH`, and keep the `v`.
 
-- **patch** — a fix, no API change
-- **minor** — new `pub` things, nothing existing broken
-- **major** — you removed or changed something `pub`
+- **patch** - a fix, no API change
+- **minor** - new `pub` things, nothing existing broken
+- **major** - you removed or changed something `pub`
 
 Since there is no version resolver, a major bump is simply a different
 package as far as anyone's manifest is concerned. They upgrade when
@@ -298,7 +298,7 @@ Now edits to the library show up in the next compile with no fetching,
 no cache, and no version. This is the right way to develop a library
 and the program using it at the same time.
 
-Local dependencies are deliberately **not** written to `quartz.lock` —
+Local dependencies are deliberately **not** written to `quartz.lock` -
 there is nothing stable to record. Swap the path for a real source
 before you publish.
 
@@ -337,7 +337,7 @@ manifest, and loads its `main` file.
 `name.thing` rather than merged into your program. That is what lets two
 packages export the same `hello` without colliding. Inside the package a
 bare name still means that package's own declaration, so a library calls
-its own helpers without qualifying them — and cannot reach into the
+its own helpers without qualifying them - and cannot reach into the
 program that imported it. The compiler emits `greet.hello` as
 `greet__hello` in the generated Go, since Go would otherwise read the
 dot as a package selector.
@@ -352,7 +352,7 @@ same project merge, which is what you want for code you wrote yourself.
 **No central registry.** A registry is a service somebody has to run
 forever, and it is the wrong thing for a language at this stage to
 depend on. The cost: no search, no discovery, no `quartz search json`.
-You find packages the way you find Go modules — someone tells you.
+You find packages the way you find Go modules - someone tells you.
 
 **Tarballs over HTTPS, not git.** Costs nothing in dependencies and
 nobody needs git. The cost: no commit-hash pinning, only tags and
@@ -365,7 +365,7 @@ it is the point: a resolver quietly picking a version nobody tested is
 a worse failure than one you have to fix by hand.
 
 **Trust on first use.** The first `quartz add` records whatever it
-downloads. Nothing verifies that the author is who they claim to be —
+downloads. Nothing verifies that the author is who they claim to be -
 there are no signatures. What the hash protects is *change*: code that
 shifts under a version you already locked. Read a package before you
 depend on it, the same as anywhere else.

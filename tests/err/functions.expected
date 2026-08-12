@@ -6,7 +6,7 @@ error: functions.qz:16:9: g expects int for argument 1, got str
 error: functions.qz:20:17: map expects a function here, got int
 error: functions.qz:21:17: map passes int to its function, but it takes str
 error: functions.qz:22:17: map expects a function taking 1 argument, got one taking 2
-error: functions.qz:23:17: map needs a function that returns something — use each(...) to just do work
+error: functions.qz:23:17: map needs a function that returns something - use each(...) to just do work
 error: functions.qz:24:20: filter needs a function returning bool, got one returning int
 error: functions.qz:25:20: sortBy expects a function taking 2 arguments, got one taking 1
 error: functions.qz:26:24: reduce passes str to its function, but it takes int

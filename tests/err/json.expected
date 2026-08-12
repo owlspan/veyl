@@ -1,6 +1,6 @@
-error: json.qz:7:20: json.decode needs to know what to decode into, and it can fail — annotate the variable, as in: let p: Point! = json.decode(text)
-error: json.qz:11:27: json.decode needs to know what to decode into, and it can fail — annotate the variable, as in: let p: Point! = json.decode(text)
-error: json.qz:12:8: Point has no field called "z" — it has: x, y
+error: json.qz:7:20: json.decode needs to know what to decode into, and it can fail - annotate the variable, as in: let p: Point! = json.decode(text)
+error: json.qz:11:27: json.decode needs to know what to decode into, and it can fail - annotate the variable, as in: let p: Point! = json.decode(text)
+error: json.qz:12:8: Point has no field called "z" - it has: x, y
 error: json.qz:15:16: json.get expects str for argument 1, got int
 error: json.qz:15:19: json.get expects str for argument 2, got int
 error: json.qz:16:21: json.decodeOr expects str here, got int

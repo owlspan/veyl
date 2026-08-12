@@ -1,6 +1,6 @@
 # Quartz Language Reference
 
-**Version 0.16** — the language as currently implemented.
+**Version 0.16** - the language as currently implemented.
 
 Quartz compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -39,7 +39,7 @@ quartz run hello.qz
 ```
 
 Source files use the `.qz` extension. There is no required `main`
-function — statements at the top level of a file run in order.
+function - statements at the top level of a file run in order.
 
 ---
 
@@ -67,7 +67,7 @@ let a = 1
 let b = 2
 ```
 
-Blocks use braces, not indentation. Indentation is style only — the
+Blocks use braces, not indentation. Indentation is style only - the
 compiler ignores it.
 
 ```qz
@@ -76,7 +76,7 @@ if a < b {
 }
 ```
 
-Inside brackets — `(...)` in a call or a grouped expression — line
+Inside brackets - `(...)` in a call or a grouped expression - line
 breaks are ignored, so long argument lists can wrap:
 
 ```qz
@@ -158,13 +158,13 @@ let ratio = 1_234.5
 ```
 
 Quartz does not convert between types automatically. Mixing them is an
-error — use `str()`, `int()`, or `float()` to convert explicitly.
+error - use `str()`, `int()`, or `float()` to convert explicitly.
 
 ```qz
 let n = 5
 print("count: " + n)        // error: cannot add str and int
 print("count: " + str(n))   // fine
-print("count: {n}")         // better — interpolation handles it
+print("count: {n}")         // better - interpolation handles it
 ```
 
 ### The rules
@@ -176,11 +176,11 @@ generating any code. The rules are short:
 | --- | --- |
 | `+` | two numbers of the same type, or two `str` |
 | `- * /` | two numbers of the same type |
-| `%` | two `int` — use `mod()` for floats |
+| `%` | two `int` - use `mod()` for floats |
 | `< <= > >=` | two numbers of the same type, or two `str` |
 | `== !=` | two values of the same type; lists, maps and structs compare by contents |
 | `&& \|\| !` | `bool` only |
-| `if` / `while` | the condition must be `bool` — `if 5` is an error |
+| `if` / `while` | the condition must be `bool` - `if 5` is an error |
 | `let x: T = v` | `v` must be a `T` |
 | `x = v` | `v` must match the type `x` was declared with |
 | `return v` | `v` must match the function's return type |
@@ -206,7 +206,7 @@ and keeps ordinary arithmetic readable:
 ```qz
 let radius = 2.5
 let area = PI * radius * radius   // fine
-let wide  = radius * 2            // fine — 2 becomes 2.0
+let wide  = radius * 2            // fine - 2 becomes 2.0
 let ratio: float = 1              // fine
 ```
 
@@ -222,7 +222,7 @@ let ok   = radius * float(two)    // fine
 ### Division
 
 `/` between two `int` values is integer division, so `7 / 2` is `3`.
-That is now a stated rule rather than a leaked backend detail — the
+That is now a stated rule rather than a leaked backend detail - the
 compiler knows both operands are `int` and emits integer division
 deliberately.
 
@@ -259,7 +259,7 @@ The compiler says exactly that if you forget:
 let xs: []int = []          // fine
 let m: {str: int} = {}      // fine
 let oops = []               // error: cannot tell what kind of list
-                            //        this is — annotate it
+                            //        this is - annotate it
 ```
 
 Printing uses Quartz's own notation, so a printed value is something you
@@ -320,7 +320,7 @@ be harder to predict than it is worth.
 let n: ?int = 5           // fine
 ```
 
-Going the other way needs the check — that is the whole point.
+Going the other way needs the check - that is the whole point.
 
 **A bare `nil` needs a type to aim at**, so a binding that starts empty
 must say what it will hold:
@@ -330,7 +330,7 @@ let x: ?int = nil         // fine
 let y = nil               // error: cannot tell what "y" can hold
 ```
 
-Nullables work anywhere a type does — struct fields, list elements, map
+Nullables work anywhere a type does - struct fields, list elements, map
 values, parameters and return types:
 
 ```qz
@@ -350,7 +350,7 @@ fn lookup(m: {str: int}, key: str) -> ?int {
 `find(m, k)` is the nil-safe counterpart to `m[k]`: it returns `?V`, so
 a missing key is distinguishable from a key holding zero.
 
-### Results — things that can fail
+### Results - things that can fail
 
 `T!` is either a `T`, or a reason it is missing. Where `?T` says
 "there might be nothing here", `T!` says "this might not have worked,
@@ -400,7 +400,7 @@ fn addressFor(host: str, port: str) -> str! {
 
 That is Go's four-line `if err != nil` dance in one character.
 
-It works mid-expression, and chains — the first failure wins and
+It works mid-expression, and chains - the first failure wins and
 nothing after it runs:
 
 ```qz
@@ -416,8 +416,8 @@ enclosing function must return a `T!`. The compiler says so if not.
 
 `?T` and `T!` stack, and the order means different things:
 
-- `?int!` — it might have failed; if it worked, there might be no value.
-- `int!` inside a `?` — not a thing; wrap the other way round.
+- `?int!` - it might have failed; if it worked, there might be no value.
+- `int!` inside a `?` - not a thing; wrap the other way round.
 
 ```qz
 fn maybePort(text: str) -> ?int! {
@@ -444,7 +444,7 @@ struct Point {
 }
 ```
 
-Fields go one per line, or separated by commas — whichever reads better.
+Fields go one per line, or separated by commas - whichever reads better.
 
 ### Making one
 
@@ -490,7 +490,7 @@ cannot share a name.
 ### Copying
 
 **Assigning a struct copies it.** The two values are independent
-afterwards — there are no references and no aliasing to reason about.
+afterwards - there are no references and no aliasing to reason about.
 
 ```qz
 let a = Point{x: 1.0, y: 1.0}
@@ -500,7 +500,7 @@ print(a.x)      // still 1
 ```
 
 The exception is a method call, which acts on the original rather than a
-copy — otherwise `scale` could not work at all.
+copy - otherwise `scale` could not work at all.
 
 ### Structs and collections
 
@@ -520,7 +520,7 @@ let byName: {str: Point} = {}
 byName["origin"] = Point{}
 ```
 
-A struct cannot contain **itself** by value — the type would need
+A struct cannot contain **itself** by value - the type would need
 infinite space. Through a list it is fine:
 
 ```qz
@@ -533,7 +533,7 @@ struct Node {
 ### One syntax wrinkle
 
 `if p {` is ambiguous: `p` could be a variable, or the start of a struct
-literal `p{...}`. Quartz resolves it the way Go does — a struct literal
+literal `p{...}`. Quartz resolves it the way Go does - a struct literal
 cannot appear unparenthesised in an `if`, `while` or `for` header:
 
 ```qz
@@ -578,7 +578,7 @@ let a = 2 + 3 * 4        // 14
 let b = (2 + 3) * 4      // 20
 ```
 
-`+` also joins strings. `&&` and `||` short-circuit — the right side is
+`+` also joins strings. `&&` and `||` short-circuit - the right side is
 not evaluated if the left already decides the result.
 
 Compound assignment: `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`.
@@ -586,7 +586,7 @@ Compound assignment: `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`.
 ### Bitwise operators
 
 `&` `|` `^` `~` `<<` `>>` work on `int` only. Masks read better in hex
-or binary — `0xFF`, `0b1010` — and `_` can group the digits.
+or binary - `0xFF`, `0b1010` - and `_` can group the digits.
 
 ```qz
 let flags = 0
@@ -628,7 +628,7 @@ const table = `name,age
 ada,36`
 ```
 
-Use them for text that is already full of backslashes and braces — a
+Use them for text that is already full of backslashes and braces - a
 regular expression, a block of CSV, a chunk of JSON. Quoting that twice
 is what goes wrong: in an ordinary string `\d` is an unknown escape and
 `{4}` is an interpolation.
@@ -661,7 +661,7 @@ print("{{literal braces}}")     // {literal braces}
 ```
 
 Interpolation compiles to a formatting call, so a bare `%` in a string
-is safe — it needs no escaping.
+is safe - it needs no escaping.
 
 ---
 
@@ -685,7 +685,7 @@ single statement.
 ### match
 
 A multi-way branch on one value. Arms may list several values, and
-**they do not fall through** — there is no `break` to forget.
+**they do not fall through** - there is no `break` to forget.
 
 ```qz
 match code {
@@ -708,7 +708,7 @@ match n % 3 {
 }
 ```
 
-The subject must be an `int`, `float`, `str` or `bool` — match compares
+The subject must be an `int`, `float`, `str` or `bool` - match compares
 values, so lists, maps and structs cannot be matched on. Every arm has
 to have the same type as the subject, and repeating a value is an error
 rather than dead code.
@@ -782,7 +782,7 @@ loop whose output changes between runs is a bad thing to hand a
 beginner, so the keys are sorted first. `keys()` and `values()` are
 sorted for the same reason.
 
-A `str` is not directly iterable — use `chars(s)` or `split(s, sep)`.
+A `str` is not directly iterable - use `chars(s)` or `split(s, sep)`.
 
 ---
 
@@ -797,7 +797,7 @@ fn add(a: int, b: int) -> int {
 - Parameter types are **required**.
 - `-> Type` is the return type; omit it for a function that returns nothing.
 - Functions must be declared at the top level, not nested.
-- Declaration order does not matter — a function may call one defined
+- Declaration order does not matter - a function may call one defined
   later in the file.
 - Recursion works.
 
@@ -849,7 +849,7 @@ let op: fn(int) -> int = double
 let show: fn(str) = fn(s: str) { print(s) }     // returns nothing
 ```
 
-Parameter types are always required, even in a literal — Quartz does
+Parameter types are always required, even in a literal - Quartz does
 not infer them.
 
 **Taking and returning them** is what makes callbacks work:
@@ -885,7 +885,7 @@ struct Rule {
 }
 ```
 
-**A builtin is not a value.** `let p = print` is an error — wrap it:
+**A builtin is not a value.** `let p = print` is an error - wrap it:
 `fn(s: str) { print(s) }`. Builtins are compiler-known shapes rather
 than real functions, and several are variadic or polymorphic in ways no
 single signature describes.
@@ -893,7 +893,7 @@ single signature describes.
 ### Scope
 
 Each function has its own scope. A top-level `let` is local to the
-implicit `main`, so functions cannot see it — pass it in as a
+implicit `main`, so functions cannot see it - pass it in as a
 parameter, or make it a `const`, which is global.
 
 ```qz
@@ -901,7 +901,7 @@ let total = 10
 const LIMIT = 100
 
 fn show() {
-    print(LIMIT)        // fine — a top-level const is global
+    print(LIMIT)        // fine - a top-level const is global
     print(total)        // error: "total" belongs to the program body
 }
 ```
@@ -935,7 +935,7 @@ print("done")           // Loading...done
 | ----------------- | ------- | ---------------------------------------------- |
 | `input()`         | `str`   | reads one line                                  |
 | `input(prompt)`   | `str`   | writes `prompt`, then reads one line            |
-| `pause()`         | —       | waits for Enter; useful before a program exits  |
+| `pause()`         | -       | waits for Enter; useful before a program exits  |
 
 ```qz
 let name = input("Your name: ")
@@ -957,7 +957,7 @@ pause()
 
 Surrounding whitespace is ignored, so `toInt(" 7 ")` gives `7`.
 
-**Careful:** `toInt` never fails — it returns the fallback instead. If bad
+**Careful:** `toInt` never fails - it returns the fallback instead. If bad
 input should not be silently accepted, check it first:
 
 ```qz
@@ -1044,7 +1044,7 @@ one side a float.
 | `padLeft(s, width)` `padRight(s, width)` | `str` | pad with spaces        |
 | `padLeft(s, width, fill)`       | `str`   | pad with a chosen character       |
 
-Index-based functions never crash — an out-of-range index gives `""`
+Index-based functions never crash - an out-of-range index gives `""`
 rather than stopping the program.
 
 ```qz
@@ -1058,19 +1058,19 @@ print(substr("Hello, world", 7, 12))
 index stops the program with a plain message rather than a Go stack
 trace.
 
-The functions that **change** a list — `push`, `pop`, `insert`,
-`removeAt`, `clear` — take the list itself as their first argument, and
+The functions that **change** a list - `push`, `pop`, `insert`,
+`removeAt`, `clear` - take the list itself as their first argument, and
 that argument has to be a variable or an element, not a temporary. The
 functions that **read** a list return a new one and leave the original
 alone.
 
 | Function                | Returns  | Description                                |
 | ----------------------- | -------- | ------------------------------------------ |
-| `push(xs, v, ...)`      | —        | append one or more values                   |
+| `push(xs, v, ...)`      | -        | append one or more values                   |
 | `pop(xs)`               | element  | remove and return the last element          |
-| `insert(xs, i, v)`      | —        | insert `v` at position `i`                  |
+| `insert(xs, i, v)`      | -        | insert `v` at position `i`                  |
 | `removeAt(xs, i)`       | element  | remove and return the element at `i`        |
-| `clear(xs)`             | —        | remove everything                           |
+| `clear(xs)`             | -        | remove everything                           |
 | `first(xs)` `last(xs)`  | element  | the first or last element                   |
 | `slice(xs, a, b)`       | list     | a copy of the range; indexes are clamped    |
 | `reverse(xs)`           | list     | a reversed copy                             |
@@ -1094,7 +1094,7 @@ list and leave the original alone.
 | `reduce(xs, start, f)`  | any      | fold into one value, starting from `start`  |
 | `sortBy(xs, less)`      | list     | sorted by your own comparison               |
 | `any(xs, test)` `all(xs, test)` | `bool` | whether some or every element passes  |
-| `each(xs, do)`          | —        | run `do` for each element                   |
+| `each(xs, do)`          | -        | run `do` for each element                   |
 
 ```qz
 let nums = [5, 3, 8, 1]
@@ -1117,23 +1117,23 @@ print(reduce(words, "", fn(acc: str, w: str) -> str { return acc + charAt(w, 0) 
 let xs: []int = []
 push(xs, 3, 1, 2)
 print(sort(xs))        // [1, 2, 3]
-print(xs)              // [3, 1, 2] — sort returned a copy
+print(xs)              // [3, 1, 2] - sort returned a copy
 ```
 
 ### Maps
 
 `m[k]` reads and `m[k] = v` writes. **A missing key reads as the zero
-value** — `0`, `""`, `false` — so use `has()` when the difference
+value** - `0`, `""`, `false` - so use `has()` when the difference
 matters.
 
 | Function        | Returns | Description                            |
 | --------------- | ------- | -------------------------------------- |
 | `has(m, k)`     | `bool`  | whether the key is present              |
 | `find(m, k)`    | `?V`    | the value, or nil if the key is absent  |
-| `remove(m, k)`  | —       | delete a key                            |
+| `remove(m, k)`  | -       | delete a key                            |
 | `keys(m)`       | list    | the keys, sorted                        |
 | `values(m)`     | list    | the values, in sorted key order         |
-| `clear(m)`      | —       | remove everything                       |
+| `clear(m)`      | -       | remove everything                       |
 | `len(m)`        | `int`   | how many entries                        |
 
 ```qz
@@ -1157,10 +1157,10 @@ print(counts)             // {"a": 2, "b": 1}
 | Function        | Returns | Description                             |
 | --------------- | ------- | --------------------------------------- |
 | `len(x)`        | `int`   | length of a `str`, list, or map          |
-| `min(a, b, ...)`| —       | smallest of its arguments                |
-| `max(a, b, ...)`| —       | largest of its arguments                 |
-| `sleep(ms)`     | —       | pauses for `ms` milliseconds             |
-| `exit(code)`    | —       | ends the program with an exit code       |
+| `min(a, b, ...)`| -       | smallest of its arguments                |
+| `max(a, b, ...)`| -       | largest of its arguments                 |
+| `sleep(ms)`     | -       | pauses for `ms` milliseconds             |
+| `exit(code)`    | -       | ends the program with an exit code       |
 
 Builtin names cannot be redefined.
 
@@ -1169,7 +1169,7 @@ Builtin names cannot be redefined.
 ## Multiple files
 
 `import` loads another `.qz` file and folds its declarations into your
-program. The path is relative to the file that writes it — there is no
+program. The path is relative to the file that writes it - there is no
 search path, no registry, and no package names to learn.
 
 ```qz
@@ -1203,11 +1203,11 @@ Using something private from another file is an error that says so:
 
 ```
 error: "helper" is private to geometry.qz
-       — mark it 'pub fn helper' to use it from another file
+       - mark it 'pub fn helper' to use it from another file
 ```
 
 **Methods are as visible as their struct.** `pub` inside an `impl`
-block is an error — a `pub struct` brings its methods with it.
+block is an error - a `pub struct` brings its methods with it.
 
 ### What an imported file may contain
 
@@ -1220,7 +1220,7 @@ to run:
 print("hello")     // error: an imported file can only declare things
 ```
 
-Importing the same file twice is harmless — it is folded in once. An
+Importing the same file twice is harmless - it is folded in once. An
 import cycle is an error rather than a hang.
 
 ### Globals
@@ -1266,7 +1266,7 @@ let page = http.get("https://example.com")
 print(time.stamp())
 ```
 
-These need no `import` — the names are always available, and the dots
+These need no `import` - the names are always available, and the dots
 group them rather than loading anything. `import` is for your own files
 and for packages other people wrote; see [PACKAGES.md](PACKAGES.md).
 
@@ -1274,7 +1274,7 @@ If you get a path wrong the compiler suggests the near misses:
 
 ```
 error: there is no builtin called os.file.slurp
-       — did you mean one of: os.file.append, os.file.delete,
+       - did you mean one of: os.file.append, os.file.delete,
          os.file.exists, os.file.lines, os.file.read, ...
 ```
 
@@ -1290,7 +1290,7 @@ says so in its type:
 | `os.file.write(p, text)` → `bool` | returns `false` |
 
 An operation that **produces a value** returns `T!`, so you unwrap it
-with `?`, `must()`, `valueOr()` or a check — see
+with `?`, `must()`, `valueOr()` or a check - see
 [Results](#results--things-that-can-fail).
 
 ```qz
@@ -1303,12 +1303,12 @@ fn wordCount(path: str) -> int! {
 ```
 
 An operation that **only acts** returns a `bool`. There is no unit type
-to put inside a result, so the reason is lost in that one case — a real
+to put inside a result, so the reason is lost in that one case - a real
 gap, and the last thing left to tidy here.
 
 ---
 
-### `void!` — an action that can fail but returns nothing
+### `void!` - an action that can fail but returns nothing
 
 Most fallible things hand back a value, so `T!` covers them. Writing a
 file does not: it either worked, or it did not. That is `void!`.
@@ -1325,7 +1325,7 @@ fn save(path: str, text: str) -> void! {
 succeeded. `?`, `isOk`, `errorOf` and `must` all work as they do on any
 other result.
 
-Used as a plain statement, nothing changes — the result is simply
+Used as a plain statement, nothing changes - the result is simply
 ignored:
 
 ```qz
@@ -1352,10 +1352,10 @@ The operations that return `void!`: `os.file.write`, `os.file.append`,
 `os.dir.change`, `os.env.set`.
 
 `os.file.exists`, `os.dir.is` and `os.env.has` are still `bool`, because
-asking a question is not the same as performing an action — there is
+asking a question is not the same as performing an action - there is
 nothing for them to fail at.
 
-### `os` — files, directories, paths, processes
+### `os` - files, directories, paths, processes
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1388,7 +1388,7 @@ nothing for them to fail at.
 | `os.cpus()` `os.pid()` | `int` | processor count, process id |
 | `os.hostname()` | `str` | this machine's name |
 
-The path functions never touch the disk — they are string manipulation.
+The path functions never touch the disk - they are string manipulation.
 
 ```qz
 os.file.write("notes.txt", "hello")
@@ -1404,7 +1404,7 @@ the library grows.
 
 ---
 
-### `http` — fetching things
+### `http` - fetching things
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1423,7 +1423,7 @@ Every request times out after 30 seconds.
 
 ---
 
-### `net` — addresses and ports
+### `net` - addresses and ports
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1449,13 +1449,13 @@ for port in net.scan("127.0.0.1", 1, 1024) {
 
 ---
 
-### `json` — reading and writing JSON
+### `json` - reading and writing JSON
 
 Two ways to use it, because two different things are usually wanted.
 
 **Whole values.** `json.encode` turns any Quartz value into text, and
 `json.decode` turns text back into a declared type. The type comes from
-the annotation on the binding — Quartz has no type arguments, so this is
+the annotation on the binding - Quartz has no type arguments, so this is
 how the decoder is told what to build:
 
 ```qz
@@ -1503,7 +1503,7 @@ let first = json.get(body, "members.0.name")
 | `json.count(text, path)` | `int` | length of an array, object or string |
 | `json.valid(text)` | `bool` | whether it parses at all |
 
-The `path` is optional everywhere — leave it out to act on the whole
+The `path` is optional everywhere - leave it out to act on the whole
 document. A path that does not exist reads as `""`, `0` or `false`
 rather than failing; use `json.has` when the difference matters.
 
@@ -1519,10 +1519,10 @@ text out.
 
 ---
 
-### `task` — doing several things at once
+### `task` - doing several things at once
 
 `task.map` is `map`, run concurrently. Same arguments, same ordered
-results — switching between them is a one-word edit.
+results - switching between them is a one-word edit.
 
 ```qz
 let pages = task.map(urls, fn(u: str) -> str {
@@ -1534,15 +1534,15 @@ let pages = task.map(urls, fn(u: str) -> str {
 | --- | --- | --- |
 | `task.map(xs, f)` | list | `f` over each element, at once; results stay in order |
 | `task.mapLimit(xs, n, f)` | list | the same, at most `n` running at a time |
-| `task.each(xs, do)` | — | run `do` for each element, at once |
-| `task.all(fns)` | — | run a list of `fn()` at once and wait for the last |
+| `task.each(xs, do)` | - | run `do` for each element, at once |
+| `task.all(fns)` | - | run a list of `fn()` at once and wait for the last |
 
 Everything has finished by the time the call returns. There is no way
 to start work that outlives the statement that started it.
 
 **There are no goroutines or channels**, deliberately. Quartz has no
 mutexes, no atomics and no way to talk about ownership, so raw shared
-memory would be the one place the compiler stops helping — every other
+memory would be the one place the compiler stops helping - every other
 sharp edge in the language is either checked or removed.
 
 **The one thing it cannot check is what your function touches.** A
@@ -1563,12 +1563,12 @@ task.each(paths, fn(p: str) {
 })
 ```
 
-That is a real limit of this design, not an oversight — enforcing it
+That is a real limit of this design, not an oversight - enforcing it
 needs an ownership system Quartz does not have.
 
 ---
 
-### `re` — regular expressions
+### `re` - regular expressions
 
 Patterns belong in raw strings. In an ordinary string `{4}` is an
 interpolation, so a quantifier would have to be written `{{4}}`, and
@@ -1604,7 +1604,7 @@ recompile it each time.
 
 ---
 
-### `hash` — digests and encodings
+### `hash` - digests and encodings
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1615,13 +1615,13 @@ recompile it each time.
 | `hash.base64(s)` `hash.hex(s)` | `str` | encode |
 | `hash.fromBase64(s)` `hash.fromHex(s)` | `str!` | decode |
 
-Digests are hex because that is what every other tool prints — a
+Digests are hex because that is what every other tool prints - a
 checksum you cannot compare by eye is not much use. Decoding can fail,
 since the input comes from outside; encoding cannot.
 
 ---
 
-### `csv` — tables
+### `csv` - tables
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1635,7 +1635,7 @@ read one is less useful than handing it over.
 
 ---
 
-### `time` — clocks and formatting
+### `time` - clocks and formatting
 
 Format strings use readable tokens rather than a reference date:
 
@@ -1655,7 +1655,7 @@ Format strings use readable tokens rather than a reference date:
 | `time.since(unix)` | `int` | seconds elapsed |
 | `time.year()` `time.month()` `time.day()` | `int` | parts of today |
 | `time.weekday()` | `str` | the day's name |
-| `time.sleep(ms)` | — | pause |
+| `time.sleep(ms)` | - | pause |
 
 ```qz
 let started = time.millis()
@@ -1665,7 +1665,7 @@ print("took {time.millis() - started} ms")
 
 ---
 
-### `mem` — what the program is using
+### `mem` - what the program is using
 
 Quartz is garbage collected, so these report and nudge rather than
 allocate and free. Manual memory needs the C backend and does not exist.
@@ -1677,10 +1677,10 @@ allocate and free. Manual memory needs the C backend and does not exist.
 | `mem.system()` | `int` | bytes obtained from the OS |
 | `mem.objects()` | `int` | live object count |
 | `mem.collections()` | `int` | how many times the collector has run |
-| `mem.collect()` | — | run the collector now |
+| `mem.collect()` | - | run the collector now |
 | `mem.goroutines()` | `int` | concurrent tasks in flight |
 
-### `bytes` — raw binary
+### `bytes` - raw binary
 
 `bytes` is a real type, alongside `int`, `str` and the rest. It holds
 binary: what comes off a socket, out of a file, or into a hash.
@@ -1694,7 +1694,7 @@ print(b)             // bytes(68656c6c6f)
 ```
 
 `len` and indexing work as they do on a list. **Indexing gives an `int`
-from 0 to 255** — there is no separate `byte` type, because a language
+from 0 to 255** - there is no separate `byte` type, because a language
 that already has `int` has somewhere to put a small number, and a
 second numeric type would infect every arithmetic rule to buy nothing.
 `==` compares contents, not identity.
@@ -1721,7 +1721,7 @@ use; the `BE` variants exist because network protocols went the other
 way. Sizes are 1, 2, 4 or 8 bytes, and anything else is an error rather
 than a guess.
 
-`bytes.slice` clamps instead of failing — reading past the end of a
+`bytes.slice` clamps instead of failing - reading past the end of a
 buffer is ordinary when parsing, and a truncated result is more useful
 than a crash. `bytes.concat` and `bytes.slice` both copy, so a later
 write cannot reach backwards into something you already handed away.
@@ -1740,7 +1740,7 @@ The data survives right up until something touches it, and then it is
 quietly wrong. A separate type makes that impossible rather than merely
 unlikely.
 
-### `rand` — randomness
+### `rand` - randomness
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1752,10 +1752,10 @@ unlikely.
 | `rand.pick(list)` | `T` | one element |
 | `rand.shuffle(list)` | `[]T` | a reordered copy |
 | `rand.sample(list, n)` | `[]T` | `n` elements, no repeats |
-| `rand.seed(n)` | — | fix the sequence |
+| `rand.seed(n)` | - | fix the sequence |
 
 Programs differ from run to run without seeding. `rand.seed` is for
-when you want the same sequence every time — a test, or a puzzle with a
+when you want the same sequence every time - a test, or a puzzle with a
 daily number.
 
 ```qz
@@ -1770,7 +1770,7 @@ reordered its argument would not fit that. `rand.pick` on an empty list
 gives the zero value; `rand.int(9, 2)`, where the range is backwards,
 gives `9` rather than failing.
 
-### `stats` — summarising numbers
+### `stats` - summarising numbers
 
 Every one of these takes `[]int` or `[]float` and returns `float`.
 
@@ -1795,14 +1795,14 @@ entire population, which is the usual case and the one people get
 wrong. An empty list gives 0, and so does a single value, which has no
 spread to measure.
 
-### `term` — colour and the console
+### `term` - colour and the console
 
 | Function | Returns | Description |
 | --- | --- | --- |
 | `term.red(s)` and `green` `yellow` `blue` `magenta` `cyan` `grey` | `str` | coloured |
 | `term.bold(s)` and `dim` `underline` `invert` | `str` | styled |
 | `term.bar(done, total, width)` | `str` | a progress bar |
-| `term.clear()` | — | clear the screen |
+| `term.clear()` | - | clear the screen |
 | `term.colour()` | `bool` | whether colour will actually show |
 
 ```qz
@@ -1821,7 +1821,7 @@ On Windows the console has to be switched into virtual-terminal mode or
 the escape codes appear literally as `←[31m`. Quartz does that
 automatically at startup for any program using `term`.
 
-### `log` — timestamped output
+### `log` - timestamped output
 
 | Function | Description |
 | --- | --- |
@@ -1837,7 +1837,7 @@ These write to **standard error**, not standard output, so logging does
 not contaminate output being piped somewhere. `print` is still the way
 to produce a program's actual results.
 
-### `url` — taking a URL apart
+### `url` - taking a URL apart
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1854,13 +1854,13 @@ print(must(url.query(u))["limit"])     // 10
 print(url.build("https://x.dev/s", {"q": "quartz"}))
 ```
 
-A missing piece is an empty string, not a failure — a URL with no port
+A missing piece is an empty string, not a failure - a URL with no port
 is perfectly valid. Failure is reserved for a URL that will not parse.
 `url.build` sorts its parameters, so the same map always produces the
 same URL; that matters for caching and for tests. A repeated query key
 keeps its first value, since a map cannot hold both.
 
-### `zip` — archives
+### `zip` - archives
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1885,7 +1885,7 @@ archive contains an unsafe path: ../../escaped.txt
 An archive that could write outside its own folder could overwrite
 anything you can, so this is a refusal rather than a warning.
 
-### `args` — the command line
+### `args` - the command line
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1910,7 +1910,7 @@ Both `--name=value` and `--name value` work, and one dash or two are
 the same. `args.rest()` skips a flag's value, so the list is only the
 positional arguments. `os.args()` is still there for the raw list.
 
-### `bits` — bit twiddling and bases
+### `bits` - bit twiddling and bases
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1956,12 +1956,12 @@ let rounded = openWindow("Hello from Quartz", 800, 500)
 messageBox("Done", "Corners rounded: {rounded}")
 ```
 
-`openWindow` **blocks** until the user closes the window — it runs the
+`openWindow` **blocks** until the user closes the window - it runs the
 Win32 message loop internally.
 
 **Rounded corners need Windows 11** (build 22000+). They are requested
 by default. On Windows 10 the attribute does not exist, so the window
-stays square and `openWindow` returns `false` — it reports what actually
+stays square and `openWindow` returns `false` - it reports what actually
 happened, never what was asked for.
 
 `hideConsole()` combined with `openWindow` gives a GUI-only program with
@@ -1987,7 +1987,7 @@ Everything added after the original bare names is grouped under `win.`.
 | `win.key.down(code)` | `bool` | whether a virtual key is held |
 
 The registry root is `HKCU`, `HKLM`, `HKCR` or `HKU`, or the long form.
-Only reading — writing to the registry from a scripting language is a
+Only reading - writing to the registry from a scripting language is a
 good way to break a machine by accident.
 
 ```qz
@@ -2023,7 +2023,7 @@ let const fn return if else while for in step break continue true false
 struct impl self match nil import pub
 ```
 
-Reserved but not yet implemented — the lexer recognises them, so they
+Reserved but not yet implemented - the lexer recognises them, so they
 cannot be used as names:
 
 ```
@@ -2043,6 +2043,34 @@ defer own unsafe
 | `quartz tokens f.qz`     | print the token stream                         |
 | `quartz version`         | print the version                              |
 | `quartz f.qz`            | same as `run`                                  |
+
+### Double-clicking a .qz file
+
+If Quartz was installed with the file association ticked, opening a
+`.qz` from Explorer asks what to do rather than guessing:
+
+```
+  Quartz 0.17
+  hello.qz
+
+    [R]  Run it now
+    [B]  Build hello.exe, so it can run without Quartz
+    [F]  Open the folder
+    [Q]  Nothing, close this
+```
+
+The window stays open until you dismiss it. That is the point of going
+through this rather than running the program directly: a console
+program launched from Explorer otherwise opens, prints, and closes
+faster than anyone can read.
+
+Right-click offers **Run with Quartz** and **Build .exe with Quartz**
+directly, skipping the menu. The same thing from a terminal:
+
+```
+quartz open hello.qz            # the menu
+quartz open hello.qz --build    # straight to building
+```
 
 ### The console
 
@@ -2081,7 +2109,7 @@ qz> double(21)
 is no interpreter to feed a line at a time. The console keeps every
 line you have typed and rebuilds the whole program on each new one.
 Only the new output is shown, and a line that does not compile is
-reported and discarded rather than added — one mistake cannot poison
+reported and discarded rather than added - one mistake cannot poison
 the session.
 
 The consequence is worth knowing: **side effects happen again on every
@@ -2093,7 +2121,7 @@ console, behaves exactly as expected.
 
 `quartz fmt` fixes indentation and spacing, collapses runs of blank
 lines, and leaves everything else alone. It does **not** reflow your
-line breaks — where you end a line is your decision.
+line breaks - where you end a line is your decision.
 
 It works on the token stream rather than the parsed program, which
 means **comments survive**, and anything it does not understand passes
@@ -2109,18 +2137,18 @@ notes.qz does not lex cleanly, so it was left alone
 Some things are worth saying but not worth refusing to compile over:
 
 ```
-warning: app.qz:12:5: this can never run — the 'return' above it always leaves
+warning: app.qz:12:5: this can never run - the 'return' above it always leaves
 warning: app.qz:17:1: "leftover" is declared but never used
 ```
 
-Warnings go to stderr, and only once the program is known to compile —
+Warnings go to stderr, and only once the program is known to compile -
 stacking them on top of a dozen type errors buries the thing that
 actually needs fixing. Set `QUARTZ_QUIET=1` to silence them.
 
 Unreachable code is reported once per block, not once per statement,
 and it is not emitted into the compiled program.
 
-`emit` and `tokens` are debugging aids — `emit` in particular is the
+`emit` and `tokens` are debugging aids - `emit` in particular is the
 fastest way to understand what the compiler did with your program.
 
 **On Windows:** a program built with `build` and then double-clicked will
@@ -2152,7 +2180,7 @@ Honest list of what v0.14 does not do yet.
 - **Windows library is Windows-only.** There is no Linux or macOS
   equivalent for the window and console functions yet.
 - **Windows are blank.** `openWindow` opens and manages a real window,
-  but there is no drawing or event API yet — no buttons, no input
+  but there is no drawing or event API yet - no buttons, no input
   handling, no canvas.
 - **Go must be installed** to compile a Quartz program, since Quartz
   hands the generated code to the Go toolchain.

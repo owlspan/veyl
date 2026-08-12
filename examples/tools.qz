@@ -16,7 +16,7 @@ os.file.append(path, "beta\n")
 os.file.append(path, "gamma\n")
 
 // Reading can fail, so these hand back a result. must() takes the
-// value or stops with the reason — fine here, where we just wrote it.
+// value or stops with the reason - fine here, where we just wrote it.
 let found = must(os.file.lines(path))
 print("wrote {len(found)} lines, {must(os.file.size(path))} bytes")
 for i, line in found {

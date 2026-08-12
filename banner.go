@@ -14,7 +14,7 @@ import (
 // character here renders the same everywhere.
 //
 // It is a raw string, so the backslashes are literal and need no
-// escaping — which is also why neither ramp in mkascii contains a
+// escaping - which is also why neither ramp in mkascii contains a
 // backtick, and why it asserts before writing here.
 //
 // This is generated from a photograph rather than drawn by hand. The

@@ -149,14 +149,14 @@ type Call struct {
 	Callee Expr
 	Args   []Expr
 
-	// ArgT and T are filled in by the checker. Polymorphic builtins —
-	// contains, push, join — need the argument types at codegen time to
+	// ArgT and T are filled in by the checker. Polymorphic builtins -
+	// contains, push, join - need the argument types at codegen time to
 	// decide what to emit.
 	ArgT []*Type
 	T    *Type
 
 	// Want is the type this call's result is expected to produce, when
-	// there is one — the annotation on `let p: Point = json.decode(s)`.
+	// there is one - the annotation on `let p: Point = json.decode(s)`.
 	// Only builtins that ask for it ever see this; it is how a decoder
 	// learns what to decode into without Quartz having type arguments.
 	Want *Type
@@ -401,11 +401,11 @@ type ReturnStmt struct {
 	Value Expr // nil for a bare `return`
 }
 
-// ForStmt is either a counted loop over a range —
+// ForStmt is either a counted loop over a range -
 //
 //	for i in start..end step n
 //
-// — or a loop over a collection:
+// - or a loop over a collection:
 //
 //	for x in list
 //	for k, v in map

@@ -2,7 +2,7 @@
 
 pub const TAU = 6.283185307179586
 
-// Private to this file — importers cannot see it.
+// Private to this file - importers cannot see it.
 const fudge = 0.0
 
 pub struct Vec {

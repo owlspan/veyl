@@ -21,7 +21,7 @@ import (
 //
 //	go test -run TestQuartz -update
 //
-// Always read the diff before accepting it — that flag is how a bug
+// Always read the diff before accepting it - that flag is how a bug
 // becomes the expected behaviour.
 
 var update = flag.Bool("update", false, "regenerate the .expected golden files")
@@ -76,7 +76,7 @@ func TestQuartzErrors(t *testing.T) {
 //
 // The whole tests/ok tree is copied, every file in it is formatted, and
 // each program is run again against the same golden output. Formatting
-// is also checked to be idempotent — a second pass must change nothing,
+// is also checked to be idempotent - a second pass must change nothing,
 // or the formatter has no fixed point and `quartz fmt` would rewrite
 // the file forever.
 func TestFormatPreservesBehaviour(t *testing.T) {

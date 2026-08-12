@@ -91,7 +91,7 @@ func describe(t Token) string {
 // expectClose consumes a closing bracket, and when it is missing says
 // where the thing being closed was opened.
 //
-// "expected '}'" is nearly useless in a file of any size — the reader
+// "expected '}'" is nearly useless in a file of any size - the reader
 // already knows a brace is missing, and what they need is which one.
 // The opening line is only mentioned when it differs from where the
 // error surfaced, since repeating the current line is noise.
@@ -209,7 +209,7 @@ func (p *Parser) ParseProgram() *Program {
 }
 
 // parseImport reads `import "helpers.qz"`. The path is a plain string
-// resolved relative to the file the import appears in — there is no
+// resolved relative to the file the import appears in - there is no
 // module registry and no search path to learn.
 func (p *Parser) parseImport() *ImportDecl {
 	kw := p.advance() // 'import'
@@ -270,7 +270,7 @@ func (p *Parser) parseImpl() *ImplBlock {
 		case p.check(PUB):
 			// A method is as visible as the struct it belongs to, so
 			// marking one individually would mean nothing.
-			p.errorAt(p.cur(), "methods are as visible as their struct — put 'pub' on 'struct %s' instead",
+			p.errorAt(p.cur(), "methods are as visible as their struct - put 'pub' on 'struct %s' instead",
 				b.Type)
 			p.advance()
 
@@ -388,12 +388,12 @@ func (p *Parser) parseTypeRef() string {
 		base = "?" + p.parseTypeRef()
 
 	case p.match(LBRACKET):
-		p.expect(RBRACKET, "']' — a list type is written []int")
+		p.expect(RBRACKET, "']' - a list type is written []int")
 		base = "[]" + p.parseTypeRef()
 
 	case p.match(LBRACE):
 		key := p.parseTypeRef()
-		p.expect(COLON, "':' — a map type is written {str: int}")
+		p.expect(COLON, "':' - a map type is written {str: int}")
 		val := p.parseTypeRef()
 		p.expect(RBRACE, "'}'")
 		base = "{" + key + ": " + val + "}"
@@ -561,7 +561,7 @@ func (p *Parser) parseFor() Stmt {
 //	}
 //
 // An arm's body is a single statement or a block. Arms do not fall
-// through — there is no `break` to forget.
+// through - there is no `break` to forget.
 func (p *Parser) parseMatch() Stmt {
 	kw := p.advance()
 	st := &MatchStmt{pos: at(kw)}
@@ -690,7 +690,7 @@ func (p *Parser) endStmt() {
 //
 // The ladder follows C's, so anyone who has met `&` and `<<` before
 // finds them where they expect. That does mean `a & b == c` parses as
-// `a & (b == c)`, which is C's famous wart — the checker turns the
+// `a & (b == c)`, which is C's famous wart - the checker turns the
 // resulting type error into a message suggesting parentheses.
 func precOf(k Kind) int {
 	switch k {
@@ -807,7 +807,7 @@ func (p *Parser) parsePrimary() Expr {
 		return p.parseStringLit(t)
 
 	case RAWSTRING:
-		// No escapes and no interpolation — the text is the value.
+		// No escapes and no interpolation - the text is the value.
 		p.advance()
 		return &StrLit{pos: at(t), Val: t.Lex}
 
@@ -864,7 +864,7 @@ func (p *Parser) parsePrimary() Expr {
 
 // isStructLitTarget reports whether `x {` should be read as a struct
 // literal. Only a bare name can name a struct, and only a capitalised
-// one by convention — but the convention is not enforced, so any plain
+// one by convention - but the convention is not enforced, so any plain
 // identifier qualifies and the checker decides whether it exists.
 func isStructLitTarget(x Expr) bool {
 	_, ok := x.(*Ident)
@@ -925,7 +925,7 @@ func (p *Parser) parseListLit() Expr {
 // parseMapLit reads `{}` or `{"a": 1, "b": 2}`.
 //
 // A map literal cannot start a statement, because `{` there opens a
-// block. That costs nothing in practice — a bare map literal as a
+// block. That costs nothing in practice - a bare map literal as a
 // statement would do nothing anyway.
 func (p *Parser) parseMapLit() Expr {
 	lb := p.advance() // '{'
@@ -1022,7 +1022,7 @@ func (p *Parser) parseStringLit(t Token) Expr {
 		if inner == "" {
 			// Almost always someone writing JSON or a literal brace, now
 			// that there is a json library to write it for.
-			p.errorAt(t, "empty {} in string — for a literal brace write {{}}")
+			p.errorAt(t, "empty {} in string - for a literal brace write {{}}")
 			continue
 		}
 
@@ -1052,15 +1052,15 @@ func (p *Parser) parseSubExpr(src string, host Token) Expr {
 	sub.skipNewlines()
 
 	if !sub.check(EOF) {
-		p.errorAt(host, "unexpected %s inside {} in string — for literal braces write {{ and }}",
+		p.errorAt(host, "unexpected %s inside {} in string - for literal braces write {{ and }}",
 			describe(sub.cur()))
 	}
 	p.Errors = append(p.Errors, sub.Errors...)
 
 	// The nested lexer starts its own line and column count, so every
 	// node in here would otherwise claim to be at 1:something. Point the
-	// whole subtree at the string that contains it. That is coarse — one
-	// position for the entire interpolation — but it is inside the right
+	// whole subtree at the string that contains it. That is coarse - one
+	// position for the entire interpolation - but it is inside the right
 	// line, which is what makes an error findable.
 	reanchor(x, at(host))
 	return x

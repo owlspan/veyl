@@ -157,7 +157,7 @@ func TestTypeAccepts(t *testing.T) {
 	for _, c := range cases {
 		want, got := ParseType(c.want), ParseType(c.got)
 		if want.Accepts(got) != c.ok {
-			t.Errorf("%s.Accepts(%s) = %t, want %t — %s",
+			t.Errorf("%s.Accepts(%s) = %t, want %t - %s",
 				c.want, c.got, !c.ok, c.ok, c.why)
 		}
 	}
@@ -173,7 +173,7 @@ func TestTypeAccepts(t *testing.T) {
 		t.Error("Any should accept a list")
 	}
 	if Any.Accepts(ParseType("int!")) {
-		t.Error("Any should not accept a result — it has to be unwrapped first")
+		t.Error("Any should not accept a result - it has to be unwrapped first")
 	}
 	if Any.Accepts(Void) {
 		t.Error("Any should not accept a call that returns nothing")

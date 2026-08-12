@@ -14,7 +14,7 @@ import (
 // Version is stamped into `quartz version`. Bump it with the tag.
 const Version = "0.17"
 
-const usage = `Quartz ` + Version + ` — a small language that compiles to native executables
+const usage = `Quartz ` + Version + ` - a small language that compiles to native executables
 
 usage:
   quartz run    <file.qz>    compile and run
@@ -23,6 +23,7 @@ usage:
   quartz emit   <file.qz>    print the generated Go
   quartz tokens <file.qz>    print the token stream
   quartz console             an interactive console
+  quartz open   <file.qz>    ask whether to run it or build an .exe
   quartz builtins            list every builtin, for editor tooling
   quartz doctor              check that everything Quartz needs is present
   quartz version             print the version
@@ -90,6 +91,13 @@ func main() {
 			err = cmdPackages()
 		}
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "open":
+		// What a double-click in Explorer lands on.
+		if err := runOpen(args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
 			os.Exit(1)
 		}
@@ -256,7 +264,7 @@ func run(cmd, path string, progArgs []string) error {
 	build.Stdout = os.Stderr
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("the Go backend rejected the generated program (see above). "+
-			"This is a compiler bug, not a mistake in %s — the type checker should have "+
+			"This is a compiler bug, not a mistake in %s - the type checker should have "+
 			"caught it first. Run 'quartz emit %s' to see what was generated.", path, path)
 	}
 
@@ -270,7 +278,7 @@ func run(cmd, path string, progArgs []string) error {
 	}
 
 	if target != runtime.GOOS {
-		return fmt.Errorf("cannot run a %s executable on %s — use 'quartz build' instead", target, runtime.GOOS)
+		return fmt.Errorf("cannot run a %s executable on %s - use 'quartz build' instead", target, runtime.GOOS)
 	}
 
 	// cmd == "run"
@@ -312,7 +320,7 @@ func printBuiltins() {
 func formatFile(abs, name, src string) error {
 	out, ok := Format(name, src)
 	if !ok {
-		return fmt.Errorf("%s does not lex cleanly, so it was left alone — "+
+		return fmt.Errorf("%s does not lex cleanly, so it was left alone - "+
 			"fix the syntax error first, then format", name)
 	}
 	if out == src {
@@ -463,7 +471,7 @@ func (l *loader) load(imp *ImportDecl, target string) (*Program, bool) {
 	for _, s := range sub.Main {
 		line, col := s.Pos()
 		l.errors = append(l.errors, fmt.Sprintf(
-			"%s:%d:%d: an imported file can only declare things — "+
+			"%s:%d:%d: an imported file can only declare things - "+
 				"move this statement into the program that imports it", name, line, col))
 	}
 
@@ -506,7 +514,7 @@ func stampFile(prog *Program, abs string) {
 }
 
 // reportWarnings prints things worth saying that are not worth
-// stopping for. Set QUARTZ_QUIET to silence them — useful when a
+// stopping for. Set QUARTZ_QUIET to silence them - useful when a
 // warning is known and the noise is in the way.
 func reportWarnings(warnings []string) {
 	if len(warnings) == 0 || os.Getenv("QUARTZ_QUIET") != "" {

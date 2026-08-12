@@ -5,7 +5,7 @@ package main
 // Everything here is emitted into the generated program on demand and
 // calls into Win32 through Go's syscall package, which loads DLLs at
 // runtime. That means no cgo, no C compiler, and no external
-// dependencies — a Quartz program that opens a window is still a single
+// dependencies - a Quartz program that opens a window is still a single
 // self-contained .exe.
 
 var winHelperDefs = map[string]helperDef{
@@ -170,7 +170,7 @@ var __wndProcPtr = syscall.NewCallback(__wndProc)
 var __classCount int
 
 // __openWindow returns whether the window's corners were actually
-// rounded — never whether they were merely requested.
+// rounded - never whether they were merely requested.
 func __openWindow(title string, width int, height int, rounded bool) bool {
 	// Win32 requires that a window and its message loop live on the same
 	// OS thread. Without this, Go's scheduler may move the goroutine and

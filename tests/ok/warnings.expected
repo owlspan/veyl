@@ -1,5 +1,5 @@
-warning: warnings.qz:6:5: this can never run — the 'return' above it always leaves
-warning: warnings.qz:12:9: this can never run — the 'break' above it always leaves
+warning: warnings.qz:6:5: this can never run - the 'return' above it always leaves
+warning: warnings.qz:12:9: this can never run - the 'break' above it always leaves
 warning: warnings.qz:17:1: "leftover" is declared but never used
 earlyOut 7
 still running

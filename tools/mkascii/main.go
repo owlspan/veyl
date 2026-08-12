@@ -37,7 +37,7 @@ import (
 // output is small, because adjacent characters stay distinguishable.
 const (
 	// No backtick in either ramp. The output gets pasted into a Go raw
-	// string, and a single backtick would end it early — a break that
+	// string, and a single backtick would end it early - a break that
 	// depends on which image was converted, which is the kind of bug
 	// that appears once and baffles everyone.
 	rampLong  = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^'. "
@@ -282,7 +282,7 @@ func convert(img image.Image, cols int, ramp string, invert bool, gamma float64,
 	return b.String()
 }
 
-// trimBorders crops the uniform margin many photographs carry — the
+// trimBorders crops the uniform margin many photographs carry - the
 // letterboxing on a screenshot, or a flat band of sky. Without this the
 // subject is squeezed into the middle of the output while the edges
 // spend characters saying nothing.

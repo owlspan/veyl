@@ -19,8 +19,8 @@ import (
 // That has one consequence worth stating plainly, because it is
 // surprising the first time: **side effects happen again on every
 // line.** Appending to a file three times in a row appends more than
-// three times. Pure code — the overwhelming majority of what anyone
-// types into a console — behaves exactly as expected, and state is
+// three times. Pure code - the overwhelming majority of what anyone
+// types into a console - behaves exactly as expected, and state is
 // rebuilt deterministically rather than drifting.
 //
 // Rerunning everything would also reprint everything, so only the new
@@ -262,7 +262,7 @@ func (c *console) eval(line string) {
 }
 
 // looksLikeExpression is a deliberately shallow guess. Getting it wrong
-// is cheap — eval retries the other way — so this only has to be right
+// is cheap - eval retries the other way - so this only has to be right
 // often enough to avoid a second compile on the common case.
 func looksLikeExpression(line string) bool {
 	t := strings.TrimSpace(line)
@@ -368,7 +368,7 @@ func (c *console) build(src string) (out, goSrc, errs string) {
 			return "", "", fmt.Sprintf("  %v\n", runErr)
 		}
 		// A few things pass Quartz's checker and are still rejected by
-		// Go — a constant `1 / 0` is caught there, not here. That is a
+		// Go - a constant `1 / 0` is caught there, not here. That is a
 		// refused line, not output: accepting it would leave a session
 		// that can never compile again.
 		if strings.Contains(stderr.String(), "the Go backend rejected") {
@@ -377,8 +377,8 @@ func (c *console) build(src string) (out, goSrc, errs string) {
 		// Otherwise it compiled and failed at runtime, which is output:
 		// the crash handler has already explained it.
 	}
-	// Captured separately so a program writing to stderr — log.info, or
-	// a traceback — is still diffed against the right stream.
+	// Captured separately so a program writing to stderr - log.info, or
+	// a traceback - is still diffed against the right stream.
 	return stdout.String() + stderr.String(), string(emitted), ""
 }
 

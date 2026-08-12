@@ -7,7 +7,7 @@ package main
 // other tool prints and a checksum you cannot compare by eye is not
 // much use.
 //
-// Decoding is the fallible half — the input comes from outside — so
+// Decoding is the fallible half - the input comes from outside - so
 // those return `T!` while the encoders do not.
 
 var dataHelperDefs = map[string]helperDef{

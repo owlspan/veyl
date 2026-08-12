@@ -1,7 +1,7 @@
 error: type_mismatch.qz:2:17: cannot add str and int (use "{...}" interpolation or str(...))
 error: type_mismatch.qz:4:4: an if condition must be bool, got int
 error: type_mismatch.qz:8:1: "x" is declared as float but the value is str
-error: type_mismatch.qz:12:11: cannot mix int and float in '+' — convert one with int(...) or float(...)
+error: type_mismatch.qz:12:11: cannot mix int and float in '+' - convert one with int(...) or float(...)
 error: type_mismatch.qz:14:12: sqrt expects int or float for argument 1, got str
 error: type_mismatch.qz:17:1: cannot assign int to "s", which is str
 error: type_mismatch.qz:20:5: function "f" returns int but this returns str

@@ -5,7 +5,7 @@ executables.
 
 Quartz source (`.qz`) is translated to Go, which the Go toolchain
 compiles to a single self-contained binary. You get native speed and a
-program you can hand to someone with nothing to install — but you write
+program you can hand to someone with nothing to install - but you write
 something closer to Python than to C++.
 
 ```qz
@@ -32,7 +32,7 @@ $ quartz run primes.qz
 a full type checker, lists and maps, structs with methods, nullable
 types, an error type, modules, and libraries for files, HTTP,
 networking, JSON, time, randomness, statistics and terminal output,
-plus a package manager. Tooling is in place too — a formatter,
+plus a package manager. Tooling is in place too - a formatter,
 warnings, a VS Code extension, and a Windows installer that brings its
 own Go toolchain. See [Roadmap](#roadmap).
 
@@ -69,7 +69,7 @@ Three things at once, which most languages make you pick two of:
   `main`, no manual memory management.
 - **Batteries included.** Math, strings, input, files, HTTP, JSON,
   randomness, statistics, colour, and native Windows GUI calls are all
-  builtins — no imports and nothing to install before you can use them.
+  builtins - no imports and nothing to install before you can use them.
   A package manager exists for everything else, but you should be able
   to write a useful program without touching it.
 
@@ -93,7 +93,7 @@ The bundled toolchain lives inside Quartz's own folder and is kept off
 PATH deliberately, so if you already have Go it is left completely
 alone. Untick that component during setup and Quartz will use yours.
 
-**Building it yourself** needs **Go 1.21 or newer** —
+**Building it yourself** needs **Go 1.21 or newer** -
 <https://go.dev/dl/>. Go is required both to build the compiler and to
 compile Quartz programs, since Quartz hands its generated code to the
 Go toolchain.
@@ -136,7 +136,7 @@ go test ./...
 ```
 
 Each case is a `.qz` file next to a `.expected` file holding what the
-compiler should produce — program output for `tests/ok`, error messages
+compiler should produce - program output for `tests/ok`, error messages
 for `tests/err`. Adding a test means adding two files, not editing any
 Go code.
 
@@ -159,6 +159,7 @@ go test -run TestQuartz -update .
 | `quartz emit f.qz`       | print the generated Go                         |
 | `quartz tokens f.qz`     | print the token stream                         |
 | `quartz console`         | an interactive console                         |
+| `quartz open f.qz`       | ask whether to run it or build an .exe         |
 | `quartz doctor`          | check the install and report which Go it found |
 | `quartz init [name]`     | start a project here                           |
 | `quartz add <source>`    | add a dependency and fetch it                  |
@@ -174,9 +175,14 @@ Anything after the `.qz` file is passed to the program, not to Quartz:
 `emit` is the single most useful debugging tool in the project. When a
 program behaves strangely, look at what it actually compiled to.
 
-**On Windows:** double-clicking a built `.exe` opens a console, runs,
-and closes instantly. That's normal for a console program. Either run it
-from a terminal, or end the program with `pause()`.
+**On Windows:** double-clicking a `.qz` file asks what you want - run
+it, or build a standalone `.exe` you can hand to someone. The window
+stays open either way. Right-click gives both directly, without the
+menu.
+
+Double-clicking a `.exe` you built is a different matter: it opens a
+console, runs, and closes instantly. That's normal for a console
+program. Run it from a terminal, or end the program with `pause()`.
 
 ---
 
@@ -200,7 +206,7 @@ declaration. Assigning to a `const` is a compile error.
 `int`, `float`, `str`, `bool`, `bytes` for raw binary, `[]T` lists,
 `{K: V}` maps, `?T` for a value that might be missing, and `T!` for one
 that might have failed.
-No implicit conversion — use `str()`, `int()`, `float()`.
+No implicit conversion - use `str()`, `int()`, `float()`.
 
 ```qz
 let nums  = [3, 1, 2]
@@ -228,7 +234,7 @@ print(Vec{x: 3.0, y: 4.0}.length())     // 5
 ### Handling failure
 
 Anything that can fail returns `T!`, or `void!` when there is no value
-to hand back — writing a file either worked or has a reason it did not. `?` unwraps it or hands the
+to hand back - writing a file either worked or has a reason it did not. `?` unwraps it or hands the
 failure up, which is Go's four-line error check in one character.
 
 ```qz
@@ -299,7 +305,7 @@ fn greet(name: str) {
 }
 ```
 
-Parameter types are required. Declaration order doesn't matter — a
+Parameter types are required. Declaration order doesn't matter - a
 function can call one defined later in the file. Recursion works. A
 function with a return type must return on every path, and the compiler
 checks it.
@@ -328,7 +334,7 @@ No imports needed, ever.
 
 Every numeric builtin accepts `int` or `float`.
 
-The rest of the library lives under a dotted path — still no imports,
+The rest of the library lives under a dotted path - still no imports,
 the dots only group the names:
 
 **`os`** files, directories, paths, environment, processes
@@ -371,7 +377,7 @@ let rounded = openWindow("Hello from Quartz", 800, 500)
 messageBox("Done", "Window closed.")
 ```
 
-`openWindow` **blocks** until the user closes the window — it runs the
+`openWindow` **blocks** until the user closes the window - it runs the
 Win32 message loop internally.
 
 **Rounded corners need Windows 11** (build 22000+). On Windows 10 the
@@ -506,8 +512,8 @@ compiler to know the type of an expression, and it does: `check.go`
 walks the tree between resolve and codegen and returns a type for every
 node.
 
-The next structural pieces are a real `bytes` type — which files,
-sockets, crypto and any future FFI all want — and generics, without
+The next structural pieces are a real `bytes` type - which files,
+sockets, crypto and any future FFI all want - and generics, without
 which containers like `Set` and `Queue` cannot be written in Quartz
 itself. After those, the C backend, which is what buys back manual
 memory and pointers.
@@ -542,7 +548,7 @@ Honest list of what v0.16 does not do.
   build from source there.
 - **Windows only for GUI.** No Linux or macOS equivalent yet.
 - **Windows are blank.** `openWindow` opens and manages a real window,
-  but there is no drawing or event API — no buttons, no input handling,
+  but there is no drawing or event API - no buttons, no input handling,
   no canvas.
 - **Conservative return checking.** A function whose only `return` is
   inside a loop is rejected, even when it is provably fine.

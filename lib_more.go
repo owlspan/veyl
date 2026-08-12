@@ -174,7 +174,7 @@ func __urlBuild(base string, params map[string]string) string {
 	if len(params) == 0 {
 		return base
 	}
-	// Sorted, so the same map always builds the same URL — which
+	// Sorted, so the same map always builds the same URL - which
 	// matters for caching and for tests.
 	keys := make([]string, 0, len(params))
 	for k := range params {

@@ -1,7 +1,7 @@
 # Learn Quartz in 20 minutes
 
-This is the fast tour. It assumes you can already program in something —
-Python, JavaScript, a bit of C — and just want to know how Quartz does
+This is the fast tour. It assumes you can already program in something -
+Python, JavaScript, a bit of C - and just want to know how Quartz does
 it.
 
 For the full rules see [SYNTAX.md](SYNTAX.md). For how the compiler
@@ -39,7 +39,7 @@ quartz run hello.qz
 
 No `main`, no imports, no semicolons. Top-level statements run in order.
 
-`quartz build hello.qz` gives you `hello.exe` instead — one file, no
+`quartz build hello.qz` gives you `hello.exe` instead - one file, no
 runtime to install, nothing to ship alongside it.
 
 > Quartz compiles through Go, so **Go has to be installed**. Your
@@ -168,7 +168,7 @@ fn greet(name: str) {
 }
 ```
 
-Order does not matter — a function can call one written below it. A
+Order does not matter - a function can call one written below it. A
 function with a return type must return on **every** path, and the
 compiler checks.
 
@@ -195,7 +195,7 @@ print(nums[0], len(nums), sort(nums))
 ```
 
 `sort` returns a **new** list. Everything that reads leaves the original
-alone; everything that changes it — `push`, `pop`, `insert`, `clear` —
+alone; everything that changes it - `push`, `pop`, `insert`, `clear` -
 says so by taking the list as its first argument.
 
 ```qz
@@ -207,7 +207,7 @@ print(has(ages, "grace"))   // false
 print(keys(ages))           // sorted
 ```
 
-A missing key reads as the zero value — `0`, `""`, `false` — which is
+A missing key reads as the zero value - `0`, `""`, `false` - which is
 what makes counting a one-liner:
 
 ```qz
@@ -273,7 +273,7 @@ b.x = 99.0
 print(a.x)      // still 1
 ```
 
-A method is the exception — it acts on the original, which is what lets
+A method is the exception - it acts on the original, which is what lets
 `scale` work at all.
 
 ---
@@ -370,7 +370,7 @@ let pages = task.map(urls, fn(u: str) -> str {
 
 Everything has finished by the time it returns.
 
-**A whole program** is in `examples\wordfreq.qz` — arguments, a file
+**A whole program** is in `examples\wordfreq.qz` - arguments, a file
 that might not be there, a pattern, a map, a struct, and sorting with
 your own comparison, in about sixty lines:
 
@@ -418,11 +418,11 @@ quartz builtins             list everything available
 `emit` is the best debugging tool here. When something behaves oddly,
 read what it actually compiled to.
 
-The compiler warns about things that are legal but probably wrong —
-a variable you never read, code that can never run — after your program
+The compiler warns about things that are legal but probably wrong -
+a variable you never read, code that can never run - after your program
 compiles, so warnings never bury a real error.
 
-- **[SYNTAX.md](SYNTAX.md)** — every rule, every builtin
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the compiler is built
-- **`examples\`** — programs that run
-- **`editors\vscode\`** — syntax highlighting
+- **[SYNTAX.md](SYNTAX.md)** - every rule, every builtin
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - how the compiler is built
+- **`examples\`** - programs that run
+- **`editors\vscode\`** - syntax highlighting

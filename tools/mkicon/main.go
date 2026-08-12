@@ -73,7 +73,7 @@ func crystal() [][]pt {
 
 	// Nine facets: three columns, each cut into a termination cap at
 	// the top, the prism body, and a cap at the bottom. Cutting at the
-	// shoulders is what stops the mark reading as three flat stripes —
+	// shoulders is what stops the mark reading as three flat stripes -
 	// the caps catch different light from the body, which is the whole
 	// reason a real crystal looks like a crystal.
 	return [][]pt{
@@ -94,7 +94,7 @@ func crystal() [][]pt {
 	}
 }
 
-// shade brightens or darkens a face. Flat tones only — a gradient here
+// shade brightens or darkens a face. Flat tones only - a gradient here
 // would be the exact thing this mark is trying not to be.
 func shade(c color.NRGBA, f float64) color.NRGBA {
 	clamp := func(v float64) uint8 {

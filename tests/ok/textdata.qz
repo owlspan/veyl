@@ -1,8 +1,8 @@
 // ---- raw strings ----
 //
 // Backticks: no escapes, no interpolation, and they span lines. For
-// text already full of backslashes and braces — a pattern, a block of
-// CSV — quoting it twice is what goes wrong.
+// text already full of backslashes and braces - a pattern, a block of
+// CSV - quoting it twice is what goes wrong.
 
 const log = `2024-01-15 ERROR disk full
 2024-01-16 WARN low memory

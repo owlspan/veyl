@@ -270,7 +270,7 @@ func __reduce[T any, U any](xs []T, start U, step func(U, T) U) U {
 }
 
 // A copy is sorted rather than the original, matching sort() and
-// reverse() — a read never changes what it was given.
+// reverse() - a read never changes what it was given.
 func __sortBy[T any](xs []T, less func(T, T) bool) []T {
 	out := make([]T, len(xs))
 	copy(out, xs)
@@ -708,7 +708,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if ret.Kind == KVoid {
-					c.errorAt(x.Args[1], "map needs a function that returns something — use each(...) to just do work")
+					c.errorAt(x.Args[1], "map needs a function that returns something - use each(...) to just do work")
 					return Unknown
 				}
 				return ListOf(ret)
@@ -1171,12 +1171,12 @@ func __explain(msg string) string {
 	case strings.Contains(msg, "integer divide by zero"):
 		return "divided by zero"
 	case strings.Contains(msg, "index out of range"):
-		return msg + " — check the length before indexing"
+		return msg + " - check the length before indexing"
 	case strings.Contains(msg, "nil pointer dereference"),
 		strings.Contains(msg, "invalid memory address"):
-		return "used a value that was nil — narrow it with 'if x != nil' first"
+		return "used a value that was nil - narrow it with 'if x != nil' first"
 	case strings.Contains(msg, "slice bounds out of range"):
-		return msg + " — the start or end is outside the list"
+		return msg + " - the start or end is outside the list"
 	}
 	return msg
 }

@@ -27,7 +27,7 @@ const (
 	KFunc
 	KNullable
 
-	// KResult is `T!` — either a T, or a reason it is missing.
+	// KResult is `T!` - either a T, or a reason it is missing.
 	KResult
 
 	// KErrLit is the type of `fail("...")`, which fits into any T! the
@@ -40,7 +40,7 @@ const (
 	KNilLit
 
 	// Signature-only kinds. These never appear as the type of a real
-	// expression — they exist so a builtin can say "any number" or
+	// expression - they exist so a builtin can say "any number" or
 	// "anything at all" in its parameter list.
 	KNumeric
 	KAny
@@ -70,7 +70,7 @@ func FuncOf(params []*Type, ret *Type) *Type {
 func (t *Type) IsFunc() bool { return t != nil && t.Kind == KFunc }
 
 // StructOf names a struct type. Two struct types are the same exactly
-// when their names are, so this carries no field list — the declaration
+// when their names are, so this carries no field list - the declaration
 // table in the checker is the single source of truth for those.
 func StructOf(name string) *Type { return &Type{Kind: KStruct, Name: name} }
 
@@ -105,7 +105,7 @@ func (t *Type) IsNullable() bool { return t != nil && t.Kind == KNullable }
 func (t *Type) IsResult() bool   { return t != nil && t.Kind == KResult }
 
 // ResultOf wraps a type so it can also carry a failure. Wrapping twice
-// is a no-op — there is no useful T!!.
+// is a no-op - there is no useful T!!.
 func ResultOf(inner *Type) *Type {
 	if inner == nil || inner.Kind == KResult {
 		return inner
@@ -223,7 +223,7 @@ func (t *Type) Equal(u *Type) bool {
 }
 
 // Accepts reports whether a value of type `got` may be passed where this
-// type is expected. It is deliberately almost as strict as Equal —
+// type is expected. It is deliberately almost as strict as Equal -
 // Quartz has no implicit conversions. The exceptions are the two
 // signature-only kinds and KUnknown, which is already an error.
 func (t *Type) Accepts(got *Type) bool {
@@ -238,13 +238,13 @@ func (t *Type) Accepts(got *Type) bool {
 		// "Anything" still excludes a result. Passing one to print would
 		// show the wrapper rather than the value, and silently treating a
 		// failure as printable output defeats the point of having the
-		// type at all — unwrap it first.
+		// type at all - unwrap it first.
 		return got.Kind != KVoid && got.Kind != KResult && got.Kind != KErrLit
 	case KNumeric:
 		return got.IsNumeric()
 	case KNullable:
 		// nil fits any nullable, and so does a plain value of the inner
-		// type — widening a T into a ?T loses nothing. The checker
+		// type - widening a T into a ?T loses nothing. The checker
 		// inserts the wrapping where this fires.
 		return got.Kind == KNilLit || t.Elem.Accepts(got) || t.Equal(got)
 	case KResult:
@@ -322,7 +322,7 @@ func (t *Type) Go() string {
 }
 
 // Zero is the Go expression for this type's zero value. Needed wherever
-// codegen must produce a value out of nothing — a missing map key, an
+// codegen must produce a value out of nothing - a missing map key, an
 // out-of-range index, a declared-but-unassigned variable.
 func (t *Type) Zero() string {
 	if t == nil {
@@ -411,7 +411,7 @@ func ParseType(s string) *Type {
 	}
 
 	// `void!` is an action that either worked or explains why not. It
-	// is only meaningful under `!` — a bare `void` is not a type
+	// is only meaningful under `!` - a bare `void` is not a type
 	// anybody can hold, so it is not accepted on its own.
 	if s == "void!" {
 		return ResultOf(Void)
@@ -474,7 +474,7 @@ func ParseType(s string) *Type {
 	}
 
 	// Anything else that looks like a name is taken to be a struct. The
-	// checker owns the question of whether that struct was declared —
+	// checker owns the question of whether that struct was declared -
 	// this function has no table to consult.
 	if isTypeName(s) {
 		return StructOf(s)
@@ -500,7 +500,7 @@ func matchingParen(s string, open int) int {
 }
 
 // splitTopLevel splits on sep, ignoring separators nested inside
-// brackets — so fn({str: int}, []int) has two parameters, not three.
+// brackets - so fn({str: int}, []int) has two parameters, not three.
 func splitTopLevel(s string, sep byte) []string {
 	var parts []string
 	depth, start := 0, 0

@@ -54,13 +54,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Types]
 Name: "full";    Description: "Everything, including the Go toolchain (recommended)"
-Name: "compact"; Description: "Just Quartz — I already have Go installed"
+Name: "compact"; Description: "Just Quartz - I already have Go installed"
 Name: "custom";  Description: "Choose what to install"; Flags: iscustom
 
 [Components]
 Name: "core"; Description: "Quartz compiler, examples and documentation"; \
     Types: full compact custom; Flags: fixed
-Name: "gotoolchain"; Description: "Go toolchain (required to compile — leave ticked unless you already have Go)"; \
+Name: "gotoolchain"; Description: "Go toolchain (required to compile - leave ticked unless you already have Go)"; \
     Types: full custom; ExtraDiskSpaceRequired: 185000000
 Name: "vscode"; Description: "VS Code syntax highlighting"; Types: full custom
 Name: "docs"; Description: "Tutorial, language reference and examples"; Types: full custom
@@ -101,10 +101,10 @@ Source: "..\dist\stage\go\*"; DestDir: "{app}\go"; Components: gotoolchain; \
 ; task was ticked. This is what makes the install usable immediately
 ; instead of after a sign-out and back in.
 Name: "{group}\Quartz prompt"; Filename: "{cmd}"; \
-    Parameters: "/K ""set PATH={app};%PATH% && echo Quartz {#AppVersion} — try: quartz run examples\hello.qz && cd /d {app}"""; \
+    Parameters: "/K ""set PATH={app};%PATH% && echo Quartz {#AppVersion} - try: quartz run examples\hello.qz && cd /d {app}"""; \
     IconFilename: "{app}\quartz.ico"; Tasks: prompt
 Name: "{autodesktop}\Quartz prompt"; Filename: "{cmd}"; \
-    Parameters: "/K ""set PATH={app};%PATH% && echo Quartz {#AppVersion} — try: quartz run examples\hello.qz && cd /d {app}"""; \
+    Parameters: "/K ""set PATH={app};%PATH% && echo Quartz {#AppVersion} - try: quartz run examples\hello.qz && cd /d {app}"""; \
     IconFilename: "{app}\quartz.ico"; Tasks: desktopicon
 
 ; The interactive console, which is what most people will actually
@@ -136,10 +136,38 @@ Root: HKA; Subkey: "Software\Classes\Quartz.Source"; ValueType: string; ValueNam
     ValueData: "Quartz source file"; Flags: uninsdeletekey; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\Quartz.Source\DefaultIcon"; ValueType: string; ValueName: ""; \
     ValueData: "{app}\quartz.ico"; Tasks: associate
+; Double-clicking used to run the program straight away, which meant a
+; console window that opened, printed, and closed faster than anyone
+; could read it. It also assumed running was the only thing you might
+; want, when building a standalone .exe is arguably more useful.
+;
+; The default verb now asks, and keeps the window open. The other two
+; are on the right-click menu for when you already know.
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell"; ValueType: string; ValueName: ""; \
+    ValueData: "open"; Tasks: associate
+
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\open"; ValueType: string; ValueName: ""; \
+    ValueData: "Open with Quartz"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\open"; ValueType: string; ValueName: "Icon"; \
+    ValueData: "{app}\quartz.ico"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\open\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" open ""%1"""; Tasks: associate
+
 Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\run"; ValueType: string; ValueName: ""; \
     ValueData: "Run with Quartz"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\run"; ValueType: string; ValueName: "Icon"; \
+    ValueData: "{app}\quartz.ico"; Tasks: associate
+; Through `open --run` rather than `run` directly, so the window stays
+; up long enough to read what the program printed.
 Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\run\command"; ValueType: string; ValueName: ""; \
-    ValueData: """{app}\{#AppExeName}"" run ""%1"""; Tasks: associate
+    ValueData: """{app}\{#AppExeName}"" open ""%1"" --run"; Tasks: associate
+
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\build"; ValueType: string; ValueName: ""; \
+    ValueData: "Build .exe with Quartz"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\build"; ValueType: string; ValueName: "Icon"; \
+    ValueData: "{app}\quartz.ico"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Quartz.Source\shell\build\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" open ""%1"" --build"; Tasks: associate
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Parameters: "doctor"; \

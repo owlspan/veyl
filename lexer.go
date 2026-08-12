@@ -120,7 +120,7 @@ func (l *Lexer) number(line, col int) {
 		}
 	}
 
-	// Underscores group digits — 1_000_000 — and are ignored by Go too.
+	// Underscores group digits - 1_000_000 - and are ignored by Go too.
 	for !l.atEnd() && (isDigit(l.peek()) || l.peek() == '_') {
 		l.advance()
 	}
@@ -138,7 +138,7 @@ func (l *Lexer) number(line, col int) {
 // endNumber emits a numeric literal, refusing one that runs straight
 // into a letter or digit.
 //
-// Without this, `0b1210` quietly lexes as `0b1` followed by `210` — two
+// Without this, `0b1210` quietly lexes as `0b1` followed by `210` - two
 // numbers where the author wrote one. A malformed literal should say so
 // rather than parse as something else entirely.
 func (l *Lexer) endNumber(start, line, col int, base string) {
@@ -161,7 +161,7 @@ func isHexDigit(c byte) bool {
 // rawStr reads a backtick string: everything up to the closing
 // backtick, spanning as many lines as it likes, with no escapes and no
 // interpolation. For text that is already full of backslashes and
-// braces — a regular expression, a block of CSV, some JSON — quoting it
+// braces - a regular expression, a block of CSV, some JSON - quoting it
 // twice is the thing that goes wrong.
 func (l *Lexer) rawStr(line, col int) {
 	rawStart := l.pos
@@ -214,8 +214,8 @@ func (l *Lexer) str(line, col int) {
 			// Inside an interpolation the text belongs to a nested lexer,
 			// which will handle its own escapes. Decoding here as well
 			// would mean `"{re.find("\\d", s)}"` needed four backslashes
-			// to survive both passes, and `\d` — perfectly good inside
-			// the inner string — would be rejected by the outer one.
+			// to survive both passes, and `\d` - perfectly good inside
+			// the inner string - would be rejected by the outer one.
 			if depth > 0 {
 				sb.WriteByte(c)
 				sb.WriteByte(l.advance())

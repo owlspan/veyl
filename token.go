@@ -28,7 +28,7 @@ const (
 	NIL
 	IMPORT
 
-	// reserved for later — recognised but not yet implemented
+	// reserved for later - recognised but not yet implemented
 	CONST
 	STRUCT
 	IMPL
@@ -223,7 +223,7 @@ var keywords = map[string]Kind{
 }
 
 // Token is a single lexical unit, tagged with where it came from.
-// Line and Col are 1-based. Never drop these — every good error message
+// Line and Col are 1-based. Never drop these - every good error message
 // and every //line directive in codegen depends on them.
 type Token struct {
 	Kind Kind

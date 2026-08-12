@@ -2,7 +2,7 @@ package main
 
 // The time and mem libraries.
 //
-// time uses friendly format tokens — YYYY-MM-DD HH:mm:ss — rather than
+// time uses friendly format tokens - YYYY-MM-DD HH:mm:ss - rather than
 // Go's reference-date layout. Go's "2006-01-02 15:04:05" is a genuinely
 // good design that nobody can remember, and a language aimed at
 // beginners should not make them look it up.

@@ -7,7 +7,7 @@ Read `CLAUDE.md` first for architecture and invariants. This file covers
 
 ---
 
-## Part 1 — How we use Git
+## Part 1 - How we use Git
 
 ### The setup that exists
 
@@ -71,7 +71,7 @@ desktop.ini
 
 Compiled binaries are ~2 MB. Committing them on every build would bloat
 the repo fast. If `git status` ever lists `quartz.exe`, the ignore file
-is not being read — on Windows this is almost always because a browser
+is not being read - on Windows this is almost always because a browser
 download saved it as `gitignore.txt`. Windows hides known extensions, so
 it *looks* correct in Explorer. Check with `dir /a`.
 
@@ -115,7 +115,7 @@ reached, tagged.
 
 ---
 
-## Part 2 — Where we are
+## Part 2 - Where we are
 
 **Version 0.4.** The compiler works, produces native executables, has a
 real standard library, and now type-checks.
@@ -158,7 +158,7 @@ are written back onto the AST so codegen emits explicit Go types.
 
 `Type` was built as a struct with `Elem`/`Key` pointers rather than a
 flat enum, so nested types like `[][]int` and `{str: []int}` need no new
-machinery — v0.5 should mostly be parser and codegen work.
+machinery - v0.5 should mostly be parser and codegen work.
 
 Two decisions were made and are worth knowing before building on them:
 
@@ -166,7 +166,7 @@ Two decisions were made and are worth knowing before building on them:
   with an `int` and a `float` is an error.
 - **Integer literals are untyped**, following Go. `radius * 2` works
   where radius is a float; `radius * someInt` does not. This was a
-  refinement of the recommendation, not a departure from it — without
+  refinement of the recommendation, not a departure from it - without
   it, ordinary arithmetic needs `float(...)` everywhere.
 
 A data-driven test suite also landed early (ROADMAP 10.1), because
@@ -174,7 +174,7 @@ unattended work on the compiler is not safe without one.
 
 ---
 
-## Part 3 — The backlog
+## Part 3 - The backlog
 
 Ordered by dependency. Items within a milestone can mostly be done in
 any order; milestones should be done in sequence.
@@ -183,7 +183,7 @@ Each item notes **files touched** and **done when**.
 
 ---
 
-### v0.4 — Type checker — **DONE**
+### v0.4 - Type checker - **DONE**
 
 The gate. Nothing below this ships without it. All items below are
 implemented; kept here as a record of what was agreed and built.
@@ -212,7 +212,7 @@ not a Go one.
 **4.4 Decide on numeric promotion**
 Is `1 + 2.5` legal? **Recommendation: no.** Require `float(1) + 2.5`.
 It matches the existing no-implicit-conversion rule and keeps codegen
-simple. Document the decision either way — this is a language design
+simple. Document the decision either way - this is a language design
 choice, so surface it to the user rather than deciding silently.
 
 **4.5 Statement checking**
@@ -230,7 +230,7 @@ Add a `Type` field to `LetStmt` and `Param`. Codegen then emits
 `builtin` currently has only arity. Add parameter types and a return
 type. This lets calls be checked properly **and removes the
 `float64()`-wrapping hack** in `stdlib.go`. Some builtins are
-polymorphic (`min`, `max`, `str`, `print`) — allow a signature to mark
+polymorphic (`min`, `max`, `str`, `print`) - allow a signature to mark
 a parameter as "any numeric" or "any".
 *Files:* `codegen.go`, `stdlib.go`, `runtime_win.go`, `check.go`.
 *Done when:* `sqrt("hello")` is a compile error.
@@ -256,11 +256,11 @@ checker" line leaves Known Limitations in both `SYNTAX.md` and
 
 ---
 
-### v0.5 — Collections
+### v0.5 - Collections
 
 **5.1 List type and literals**
 `[]int`, `[]str`, etc. Literal syntax `[1, 2, 3]`. Empty literal `[]`
-needs an annotation (`let xs: []int = []`) since it cannot be inferred —
+needs an annotation (`let xs: []int = []`) since it cannot be inferred -
 report a clear error saying exactly that.
 *Files:* `token.go` (already has brackets), `parser.go`, `ast.go`,
 `check.go`, `codegen.go`.
@@ -284,7 +284,7 @@ Emit `for _, x := range xs`.
 
 **5.6 Map operations**
 Index, assign, `has`, `delete`, `keys`, `values`, `len`. Decide what a
-missing key returns — this is where nullable types start to matter.
+missing key returns - this is where nullable types start to matter.
 
 **5.7 `for k, v in map`**
 Note Go's map iteration order is random. Either document that or emit
@@ -297,11 +297,11 @@ Now possible: `split(s, sep) -> []str`, `chars(s) -> []str`. Add
 
 **5.9 Nested collections**
 `[][]int`, `{str: []int}`. Mostly falls out of the type representation
-if it was designed with nesting in mind — verify with tests.
+if it was designed with nesting in mind - verify with tests.
 
 ---
 
-### v0.6 — Structs
+### v0.6 - Structs
 
 **6.1 Declaration**
 ```qz
@@ -335,7 +335,7 @@ nullability.
 
 ---
 
-### v0.7 — Nullability and errors
+### v0.7 - Nullability and errors
 
 **7.1 `?T` nullable types**
 Plain `T` can never be nil; `?T` can. This is the single biggest thing
@@ -367,7 +367,7 @@ the design issue the user found in v0.2 with `toInt("")` returning `0`.
 
 ---
 
-### v0.8 — Files, JSON, data
+### v0.8 - Files, JSON, data
 
 **8.1 File I/O**
 `readFile`, `writeFile`, `appendFile`, `exists`, `deleteFile`,
@@ -378,7 +378,7 @@ the design issue the user found in v0.2 with `toInt("")` returning `0`.
 
 **8.3 JSON**
 `parseJson(s)` and `toJson(v)`. Needs a dynamic value type or generics
-over structs — this is a real design decision. **Recommendation:** a
+over structs - this is a real design decision. **Recommendation:** a
 `Json` union type that can be inspected, rather than reflection-based
 struct mapping, which is much harder without a full generic system.
 
@@ -400,7 +400,7 @@ not just add a dependency silently.
 
 ---
 
-### v0.9 — Modules
+### v0.9 - Modules
 
 **9.1 Multi-file programs**
 `import` currently does nothing. Make it load another `.qz` file.
@@ -414,12 +414,12 @@ cannot see it. Allow top-level `const` to be genuinely global.
 
 **9.4 Namespacing**
 `math.sqrt` vs bare `sqrt`. Decide whether the stdlib becomes modules or
-stays as builtins. **Recommendation:** keep builtins bare — "no imports
-needed" is a stated design goal — and use modules only for user code.
+stays as builtins. **Recommendation:** keep builtins bare - "no imports
+needed" is a stated design goal - and use modules only for user code.
 
 ---
 
-### v1.0 — Polish
+### v1.0 - Polish
 
 **10.1 Real test suite**
 The examples are currently the tests. Add `_test.go` files with table
@@ -446,14 +446,14 @@ A canonical formatter. The AST already exists; this is a pretty-printer.
 A TextMate grammar is about an hour of work for syntax highlighting.
 Disproportionate morale value.
 
-**10.8 Installer** — **DONE**
+**10.8 Installer** - **DONE**
 `installer\quartz.iss`, built by `installer\build.ps1`. PATH entry,
 `.qz` association with an icon and a right-click "Run with Quartz"
 verb, Start Menu shortcuts, components, and a clean uninstall. Verified
 by installing it silently to a temp directory, compiling a program with
 PATH stripped to `System32`, and uninstalling again.
 
-**10.9 Bundle the Go toolchain** — **DONE**
+**10.9 Bundle the Go toolchain** - **DONE**
 Bundled, not documented-around. A trimmed GOROOT (177 MB on disk, 36 MB
 inside the installer once LZMA2 has had it) ships as an optional
 component and is found by position rather than PATH, so a developer's
@@ -490,7 +490,7 @@ rewrite.
 
 **11.5 Concurrency**
 Go's goroutines and channels map almost directly. Cheap on the Go
-backend, hard on the C backend — which is an argument for designing the
+backend, hard on the C backend - which is an argument for designing the
 API now.
 
 **11.6 GUI event handling**
@@ -509,7 +509,7 @@ control.
 
 ---
 
-## Part 4 — Rules for whoever works on this next
+## Part 4 - Rules for whoever works on this next
 
 **Verify before handing anything over.** Run all four:
 
@@ -531,7 +531,7 @@ promotion, map iteration order, struct value semantics, and the SQLite
 dependency are all real forks. Present the trade-off.
 
 **Do not claim something works if it was not verified.** GUI code cannot
-be run in a Linux container — cross-compiling proves it type-checks and
+be run in a Linux container - cross-compiling proves it type-checks and
 nothing more. A previous session claimed rounded corners worked on a
 Windows 10 machine where they cannot; that was a real bug caused by
 ignoring a return value.

@@ -6,7 +6,7 @@ import (
 )
 
 // The os library: files, directories, paths, environment, time and
-// process control, reached through dotted names — os.file.read(...).
+// process control, reached through dotted names - os.file.read(...).
 //
 // Failure is reported one of two ways, and which one is visible from
 // the signature:
@@ -15,7 +15,7 @@ import (
 //     reason when it fails. `os.file.readOr(p, fallback)` is the
 //     variant for when you would rather not deal with it.
 //   - An operation that only acts returns a `bool`. There is no unit
-//     type to put inside a result, so the reason is lost here — a real
+//     type to put inside a result, so the reason is lost here - a real
 //     gap, and the one thing left to fix in this file.
 //
 // Nothing in this library kills the program any more. That was the

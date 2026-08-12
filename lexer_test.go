@@ -259,7 +259,7 @@ func TestLexPositions(t *testing.T) {
 // Notepad writes a UTF-8 byte order mark by default, and so do several
 // other Windows editors. It is metadata rather than content, and the
 // lexer used to report three unexpected characters that are invisible
-// in the editor that wrote them — unfixable by anyone reading their own
+// in the editor that wrote them - unfixable by anyone reading their own
 // file.
 func TestLexSkipsByteOrderMark(t *testing.T) {
 	const bom = "\ufeff"
