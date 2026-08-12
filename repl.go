@@ -41,6 +41,10 @@ func runConsole() error {
 		return err
 	}
 
+	// Ask the console to interpret escape sequences before printing any.
+	// Without this the banner arrives as literal <-[36m on Windows.
+	enableVirtualTerminal()
+
 	fmt.Print(banner())
 
 	c := &console{in: bufio.NewScanner(os.Stdin)}

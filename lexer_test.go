@@ -255,3 +255,30 @@ func TestLexPositions(t *testing.T) {
 		t.Errorf("second line starts at %d:%d, want 2:1", toks[5].Line, toks[5].Col)
 	}
 }
+
+// Notepad writes a UTF-8 byte order mark by default, and so do several
+// other Windows editors. It is metadata rather than content, and the
+// lexer used to report three unexpected characters that are invisible
+// in the editor that wrote them — unfixable by anyone reading their own
+// file.
+func TestLexSkipsByteOrderMark(t *testing.T) {
+	const bom = "\ufeff"
+
+	toks, errs := scan(t, bom+`let x = 1`)
+	if len(errs) > 0 {
+		t.Fatalf("a leading BOM should be ignored, got %v", errs)
+	}
+	if got := kinds(toks); got != "LET IDENT ASSIGN NUMBER" {
+		t.Errorf("lexed as %s, want LET IDENT ASSIGN NUMBER", got)
+	}
+	// Positions are measured from the real first character, not the mark.
+	if toks[0].Line != 1 || toks[0].Col != 1 {
+		t.Errorf("first token at %d:%d, want 1:1", toks[0].Line, toks[0].Col)
+	}
+
+	// Only at the very start. One in the middle of a file is a genuine
+	// stray character and should still be reported.
+	if _, errs := scan(t, "let x = 1\n"+bom+"let y = 2"); len(errs) == 0 {
+		t.Error("a BOM in the middle of a file should still be an error")
+	}
+}

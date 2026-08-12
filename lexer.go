@@ -24,6 +24,19 @@ type Lexer struct {
 }
 
 func NewLexer(file, src string) *Lexer {
+	// Notepad writes a UTF-8 byte order mark by default, and so do
+	// several other Windows editors. It is metadata, not content, but
+	// the lexer would see three stray bytes and report
+	//
+	//	unexpected character "ï"
+	//	unexpected character "»"
+	//	unexpected character "¿"
+	//
+	// which is both baffling and unfixable by anyone reading their own
+	// file, since the mark is invisible in the editor that wrote it.
+	// Written as an escape because Go will not accept a byte order mark
+	// sitting in its own source either.
+	src = strings.TrimPrefix(src, "\ufeff")
 	return &Lexer{src: src, file: file, line: 1, col: 1}
 }
 

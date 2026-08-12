@@ -14,28 +14,46 @@ import (
 // character here renders the same everywhere.
 //
 // It is a raw string, so the backslashes are literal and need no
-// escaping — which is also why the art must not contain a backtick.
+// escaping — which is also why neither ramp in mkascii contains a
+// backtick, and why it asserts before writing here.
 //
-// The speckling is what makes it read as a snowy owl rather than a
-// generic bird, and the straight sides keep the body full instead of
-// tapering the way a first attempt did.
+// This is generated from a photograph rather than drawn by hand. The
+// hand-drawn one it replaces was, accurately, described as ugly: at
+// this size a person picking characters cannot compete with sampling
+// real luminance. Regenerate it with
+//
+//	go run ./tools/mkascii -in owl.jpg -w 54 -cut 0.05 -invert > art.txt
+//
+// -invert is what suits a console: on a dark background a dense
+// character reads as bright, which is the opposite of ink on paper.
+// -cut removes the sky by colour rather than brightness, because a
+// snowy owl is *lighter* than the sky behind it and no brightness
+// threshold can separate the two.
 
 const owlArt = `
-                 __________
-              .-'          '-.
-            .'   .-.    .-.   '.
-           /    ( o )  ( o )    \
-          ;      '-'    '-'      ;
-          |           v          |
-          ;     '  .  '  .  '    ;
-          |   .  '  .  '  .  '   |
-          ;  '  .  '  .  '  .  ' ;
-          |   .  '  .  '  .  '   |
-           \ '  .  '  .  '  .  '/
-            '.  .  '  .  '  .  .'
-              '-.______________.-'
-                   /        \
-          ~~~~~~~~'          '~~~~~~~~
+                              wUvnYcvLQq
+                            mQZdbaWWWW@dd
+                           wkMhXCM8B@pm%$%
+                          mqa&&hdkko&B@@@@M
+                         pwp*##okdO0M%@$$@W
+                       qQOC#owLnxrJ0MB$$$@*
+                    qLcvvYkowCnpurnzQqWB$@*
+                  0cv/zujOQvUUmdYucvOqb*&8W
+                qz/fujJpbzufmwOJJOuvmwaMW8#
+               Lr|z1\LUYucujvCUmJpYYZ0L*Wa
+              J1(]|YUtQ}rzc)zOLodpbCQpbo#q
+             C(||Xn\-f/1ufjc0QmhmdmYmQa#qd
+            dtcCUJ|\Xu/1fjYOqwkb0mZO00akZ
+            cffJX/x1tjvJxCQ0pbbpOZCkmdqZ
+            vvr)|frXUCLYQLJ0mLb*OOqZmZOq
+           Yu}uf(fxYUYJL0XQQOw0wm00QLQwb
+         qj\(|/|t\uvYJCQCQQJL0L0ZZOLCQq
+        u1fuunx/jfYJJCZCmYQOQcmwqLcUQd
+       }]jQYzUUzXYUzzUznc|1fr\cqp({Xw
+     dtQrJLCCCL         z! ':,;!i!]Uqp
+     Z|UOQUCOZ       wbbq!:Ii>+<<uJ mmCQQJZm
+    rf/ruuQ         dd                     wJQZZZq
+    wLJfUZ          m           W                p
 `
 
 // banner returns the greeting the console opens with.
