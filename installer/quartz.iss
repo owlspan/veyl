@@ -15,7 +15,7 @@
 ; behaviour: a bundled installer missing its bundle is worse than none.
 
 #define AppName "Quartz"
-#define AppVersion "0.16"
+#define AppVersion "0.17"
 #define AppPublisher "Quartz"
 #define AppExeName "quartz.exe"
 
