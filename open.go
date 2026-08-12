@@ -9,20 +9,6 @@ import (
 	"strings"
 )
 
-// `veyl open <file.vy>` - what happens when someone double-clicks a
-// .vy file in Explorer.
-//
-// The association used to run the program directly, which is wrong in
-// two ways. A console program launched from Explorer opens a window,
-// prints, and closes faster than anyone can read it, so the output was
-// effectively invisible. And running is not the only thing you might
-// want: building a standalone .exe is arguably the more useful one,
-// since that is the artefact you can hand to somebody.
-//
-// So a double-click asks. The window stays open until it is dismissed,
-// which is the whole point of going through here rather than calling
-// `run` from the shell.
-
 func runOpen(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("open needs a .vy file")
@@ -48,8 +34,6 @@ func runOpen(args []string) error {
 		return err
 	}
 	if _, err := os.Stat(abs); err != nil {
-		// Launched from Explorer, so there is no terminal to return an
-		// error to that anyone would see.
 		fmt.Printf("Cannot find %s\n", path)
 		waitForEnter()
 		return nil
@@ -79,14 +63,13 @@ func runOpen(args []string) error {
 		openFolder(filepath.Dir(abs))
 		return nil
 	default:
-		return nil // quit
+		return nil
 	}
 
 	waitForEnter()
 	return nil
 }
 
-// chooseAction shows the menu and returns what was picked.
 func chooseAction(abs string) string {
 	name := filepath.Base(abs)
 	exe := strings.TrimSuffix(name, filepath.Ext(name)) + ".exe"
@@ -103,7 +86,7 @@ func chooseAction(abs string) string {
 		fmt.Print("  Choose [R/B/F/Q]: ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return "" // no console to read from; do nothing rather than guess
+			return ""
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "r", "run", "":
@@ -120,6 +103,7 @@ func chooseAction(abs string) string {
 }
 
 func doRun(abs string) {
+	os.Chdir(filepath.Dir(abs))
 	fmt.Printf("\n%s\n\n", paint("-- running -----------------------------", "90"))
 	if err := run("run", abs, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "\nveyl: %v\n", err)
@@ -128,6 +112,7 @@ func doRun(abs string) {
 }
 
 func doBuild(abs string) {
+	os.Chdir(filepath.Dir(abs))
 	fmt.Printf("\n%s\n\n", paint("-- building ----------------------------", "90"))
 	if err := run("build", abs, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "\nveyl: %v\n", err)
@@ -138,8 +123,6 @@ func doBuild(abs string) {
 	fmt.Println("\n  That .exe is standalone. It needs neither Veyl nor Go\n  on the machine you copy it to.")
 }
 
-// doSimple runs one of the commands that needs no explanation beyond
-// what it printed: fmt and emit.
 func doSimple(abs, cmd, doing, done string) {
 	fmt.Printf("\n%s\n\n", paint("-- "+doing, "90"))
 	if err := run(cmd, abs, nil); err != nil {
@@ -150,8 +133,6 @@ func doSimple(abs, cmd, doing, done string) {
 	fmt.Printf("\n%s\n", paint("-- "+done, "90"))
 }
 
-// openFolder shows the file's directory in Explorer. Best-effort: if
-// the shell will not cooperate there is nothing useful to report.
 func openFolder(dir string) {
 	_ = exec.Command("explorer", dir).Start()
 }
