@@ -22,6 +22,7 @@ usage:
   quartz fmt    <file.qz>    reformat the file in place
   quartz emit   <file.qz>    print the generated Go
   quartz tokens <file.qz>    print the token stream
+  quartz console             an interactive console
   quartz builtins            list every builtin, for editor tooling
   quartz doctor              check that everything Quartz needs is present
   quartz version             print the version
@@ -89,6 +90,12 @@ func main() {
 			err = cmdPackages()
 		}
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "console", "repl":
+		if err := runConsole(); err != nil {
 			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
 			os.Exit(1)
 		}

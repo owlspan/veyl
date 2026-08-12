@@ -107,6 +107,15 @@ Name: "{autodesktop}\Quartz prompt"; Filename: "{cmd}"; \
     Parameters: "/K ""set PATH={app};%PATH% && echo Quartz {#AppVersion} — try: quartz run examples\hello.qz && cd /d {app}"""; \
     IconFilename: "{app}\quartz.ico"; Tasks: desktopicon
 
+; The interactive console, which is what most people will actually
+; click. Kept first in the group for that reason.
+Name: "{group}\Quartz console"; Filename: "{app}\{#AppExeName}"; \
+    Parameters: "console"; WorkingDir: "{app}"; \
+    IconFilename: "{app}\quartz.ico"
+Name: "{autodesktop}\Quartz console"; Filename: "{app}\{#AppExeName}"; \
+    Parameters: "console"; WorkingDir: "{app}"; \
+    IconFilename: "{app}\quartz.ico"; Tasks: desktopicon
+
 Name: "{group}\Learn Quartz (tutorial)"; Filename: "{app}\TUTORIAL.md"; Components: docs
 Name: "{group}\Quartz language reference"; Filename: "{app}\SYNTAX.md"; Components: docs
 Name: "{group}\Examples"; Filename: "{app}\examples"; Components: docs

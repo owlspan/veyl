@@ -158,6 +158,7 @@ go test -run TestQuartz -update .
 | `quartz fmt f.qz`        | reformat the file in place                     |
 | `quartz emit f.qz`       | print the generated Go                         |
 | `quartz tokens f.qz`     | print the token stream                         |
+| `quartz console`         | an interactive console                         |
 | `quartz doctor`          | check the install and report which Go it found |
 | `quartz init [name]`     | start a project here                           |
 | `quartz add <source>`    | add a dependency and fetch it                  |

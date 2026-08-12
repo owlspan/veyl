@@ -286,3 +286,84 @@ print(outer())
 		t.Errorf("QUARTZ_TRACE=1 should show the Go stack, got:\n%s", traced)
 	}
 }
+
+// The console rebuilds and reruns the whole session on every line, so
+// the two things that can go wrong are showing output twice and letting
+// a line that does not compile into the session.
+func TestConsole(t *testing.T) {
+	quartz := buildCompiler(t)
+
+	feed := func(t *testing.T, input string) string {
+		t.Helper()
+		cmd := exec.Command(quartz, "console")
+		cmd.Stdin = strings.NewReader(input)
+		// No console attached, so colour is off and the output is plain.
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("console failed: %v\n%s", err, out)
+		}
+		return strings.ReplaceAll(string(out), "\r\n", "\n")
+	}
+
+	t.Run("evaluates and remembers", func(t *testing.T) {
+		got := feed(t, "1 + 1\nlet name = \"quartz\"\n\"hi, {name}\"\n:quit\n")
+		for _, want := range []string{"2", "hi, quartz"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q in:\n%s", want, got)
+			}
+		}
+	})
+
+	t.Run("output is not repeated", func(t *testing.T) {
+		// Rerunning the session reprints everything; only the new part
+		// should reach the screen.
+		got := feed(t, "print(\"once\")\nprint(\"twice\")\n:quit\n")
+		if n := strings.Count(got, "once"); n != 1 {
+			t.Errorf("printed \"once\" %d times, want 1:\n%s", n, got)
+		}
+	})
+
+	t.Run("warnings stay out of the way", func(t *testing.T) {
+		// A variable declared now and used on the next line would warn
+		// on every rebuild.
+		got := feed(t, "let unused = 5\n:quit\n")
+		if strings.Contains(got, "never used") {
+			t.Errorf("a warning leaked into the console:\n%s", got)
+		}
+	})
+
+	t.Run("a bad line is refused, not kept", func(t *testing.T) {
+		got := feed(t, "let a = 5\nnope()\na * 2\n:list\n:quit\n")
+		if !strings.Contains(got, `undefined function "nope"`) {
+			t.Errorf("expected the error to be reported:\n%s", got)
+		}
+		if !strings.Contains(got, "10") {
+			t.Errorf("the session should still work after a bad line:\n%s", got)
+		}
+		if strings.Contains(got, "nope()") {
+			t.Errorf("the bad line was kept in the session:\n%s", got)
+		}
+	})
+
+	t.Run("a Go backend rejection is also refused", func(t *testing.T) {
+		// `1 / 0` passes Quartz's checker and is caught by Go. Keeping
+		// it would leave a session that can never compile again.
+		got := feed(t, "let a = 5\n1/0\na * 2\n:quit\n")
+		if !strings.Contains(got, "division by zero") {
+			t.Errorf("expected the rejection to be reported:\n%s", got)
+		}
+		if !strings.Contains(got, "10") {
+			t.Errorf("the session should still work afterwards:\n%s", got)
+		}
+		if strings.Contains(got, "session.qz") || strings.Contains(got, "Temp") {
+			t.Errorf("the temporary path leaked into the message:\n%s", got)
+		}
+	})
+
+	t.Run("brackets hold the prompt open", func(t *testing.T) {
+		got := feed(t, "fn twice(n: int) -> int {\n    return n * 2\n}\ntwice(21)\n:quit\n")
+		if !strings.Contains(got, "42") {
+			t.Errorf("a multi-line function was not accepted:\n%s", got)
+		}
+	})
+}

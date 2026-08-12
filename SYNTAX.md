@@ -1984,6 +1984,51 @@ defer own unsafe
 | `quartz version`         | print the version                              |
 | `quartz f.qz`            | same as `run`                                  |
 
+### The console
+
+```
+quartz console
+```
+
+An interactive session: type an expression to see its value, a
+statement to run it. Brackets hold the prompt open, so a function or a
+loop can be typed across lines.
+
+```
+qz> 1 + 1
+2
+qz> let name = "quartz"
+qz> "hello, {name}"
+hello, quartz
+qz> fn double(n: int) -> int {
+..>     return n * 2
+..> }
+qz> double(21)
+42
+```
+
+| Command | Effect |
+| --- | --- |
+| `:help` | the commands |
+| `:list` | every line in the session |
+| `:undo` | drop the last line |
+| `:clear` | start over |
+| `:save <file>` | write the session out as a `.qz` program |
+| `:emit` | show the Go the session compiles to |
+| `:quit` | leave |
+
+**How it works, and the one consequence.** Quartz is compiled, so there
+is no interpreter to feed a line at a time. The console keeps every
+line you have typed and rebuilds the whole program on each new one.
+Only the new output is shown, and a line that does not compile is
+reported and discarded rather than added — one mistake cannot poison
+the session.
+
+The consequence is worth knowing: **side effects happen again on every
+line.** Appending to a file three times in a row appends more than
+three times. Pure code, which is almost everything anyone types into a
+console, behaves exactly as expected.
+
 ### Formatting
 
 `quartz fmt` fixes indentation and spacing, collapses runs of blank
