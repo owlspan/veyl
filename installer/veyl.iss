@@ -18,6 +18,9 @@
 #define AppVersion "0.17"
 #define AppPublisher "Veyl"
 #define AppExeName "veyl.exe"
+; Kept in step with editors/vscode/package.json by hand; the
+; folder name VS Code expects embeds it.
+#define ExtVersion "0.12.0"
 
 [Setup]
 AppId={{8E3C1F42-7A55-4C0E-9D21-2B6F4A8E5C10}
@@ -95,7 +98,15 @@ Source: "..\examples\*.vy";   DestDir: "{app}\examples"; Components: docs; Flags
 ; Dropped straight into the extensions folder. VS Code scans that
 ; directory at startup, so there is no marketplace step and nothing to
 ; sideload by hand.
-Source: "..\editors\vscode\*"; DestDir: "{%USERPROFILE}\.vscode\extensions\veyl-lang"; \
+;
+; The folder name is not decoration. VS Code expects
+; publisher.name-version, the same shape it gives its own installs, and
+; a plain "veyl-lang" is treated as something it did not put there.
+; Worse, the id it derives can end up listed in the .obsolete file
+; alongside the extensions folder, and anything named there is ignored
+; outright: no highlighting, no bracket matching, no error, nothing.
+Source: "..\editors\vscode\*"; \
+    DestDir: "{%USERPROFILE}\.vscode\extensions\veyl.veyl-lang-{#ExtVersion}"; \
     Components: editors\vscode; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Notepad++ reads every XML in userDefineLangs at startup.
@@ -260,7 +271,7 @@ Filename: "{app}\{#AppExeName}"; Parameters: "doctor"; \
 Type: dirifempty; Name: "{app}\go"
 Type: dirifempty; Name: "{app}\examples"
 Type: dirifempty; Name: "{app}"
-Type: filesandordirs; Name: "{%USERPROFILE}\.vscode\extensions\veyl-lang"
+Type: filesandordirs; Name: "{%USERPROFILE}\.vscode\extensions\veyl.veyl-lang-{#ExtVersion}"
 
 [Code]
 { Where PATH lives depends on how setup was run. Both the check and the
