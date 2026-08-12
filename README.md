@@ -166,6 +166,7 @@ go test -run TestVeyl -update .
 | `veyl install`         | fetch everything the manifest lists            |
 | `veyl packages`        | list dependencies                              |
 | `veyl builtins`        | list every builtin, for editor tooling         |
+| `veyl editors [dir]`   | regenerate the editor syntax files             |
 | `veyl version`         | print the version                              |
 | `veyl f.vy`            | same as `run`                                  |
 
@@ -175,10 +176,41 @@ Anything after the `.vy` file is passed to the program, not to Veyl:
 `emit` is the single most useful debugging tool in the project. When a
 program behaves strangely, look at what it actually compiled to.
 
+### Editors
+
+Syntax highlighting for **VS Code**, **Notepad++**, **Sublime Text** and
+**Vim/Neovim**. The installer sets up whichever you tick; ticking one
+for an editor you do not have is harmless, since it only writes into
+that editor's own config folder.
+
+To install by hand, copy from `editors/` into:
+
+| Editor | Destination |
+| --- | --- |
+| VS Code | `%USERPROFILE%\.vscode\extensions\veyl-lang` |
+| Notepad++ | `%APPDATA%\Notepad++\userDefineLangs` |
+| Sublime Text | `%APPDATA%\Sublime Text\Packages\User` |
+| Vim | `%USERPROFILE%\Documents\vimfiles\syntax` and `\ftdetect` |
+| Neovim | `%LOCALAPPDATA%\nvim\syntax` and `\ftdetect` |
+
+Restart the editor afterwards.
+
+All of them except the VS Code grammar are **generated from the
+compiler's own keyword and builtin tables** by `veyl editors`, so a
+builtin added to the library is highlighted everywhere as soon as that
+is re-run. Three hundred builtins transcribed by hand into four file
+formats would be wrong within a week.
+
+### Explorer
+
 **On Windows:** double-clicking a `.vy` file asks what you want - run
 it, or build a standalone `.exe` you can hand to someone. The window
 stays open either way. Right-click gives both directly, without the
 menu.
+
+Right-click gives a **Veyl** submenu: Compile to .exe, Run, Format,
+and Show the generated Go. Right-clicking a folder offers **Open Veyl
+console here**.
 
 Double-clicking a `.exe` you built is a different matter: it opens a
 console, runs, and closes instantly. That's normal for a console
