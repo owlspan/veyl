@@ -15,7 +15,7 @@ print(q["sort"])
 
 // Parameters come out sorted, so the same map always builds the same
 // URL. That matters for caching and for tests like this one.
-print(url.build("https://x.dev/s", {"q": "quartz", "page": "2"}))
+print(url.build("https://x.dev/s", {"q": "veyl", "page": "2"}))
 print(url.build("https://x.dev/s?a=1", {"b": "2"}))
 print(url.build("https://x.dev/s", {}))
 print(must(url.join("https://x.dev/a/b", "../c")))

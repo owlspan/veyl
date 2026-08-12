@@ -1,4 +1,4 @@
-// windows.qz -- the Win32 half of the library.
+// windows.vy -- the Win32 half of the library.
 //
 // Windows only. Using any of this while building for another OS is a
 // compile error rather than a runtime crash.
@@ -14,7 +14,7 @@ print("== clipboard ==")
 // does not cost you what you had copied.
 let before = win.clipboard.get()
 
-win.clipboard.set("set by Quartz")
+win.clipboard.set("set by Veyl")
 print("read back: {win.clipboard.get()}")
 
 if win.clipboard.set(before) {

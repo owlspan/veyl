@@ -10,7 +10,7 @@ import "fmt"
 // there is exactly one helper per operation rather than one per type.
 
 var collectionHelperDefs = map[string]helperDef{
-	// A Quartz program should never show the user a Go panic and a stack
+	// A Veyl program should never show the user a Go panic and a stack
 	// trace through generated code they did not write. Out-of-range
 	// access exits with a plain sentence instead.
 	"qzBounds": {
@@ -323,7 +323,7 @@ func __each[T any](xs []T, do func(T)) {
 }`,
 		deps: []string{"mapKeys"},
 	},
-	// show renders a value the way Quartz spells it, not the way Go does:
+	// show renders a value the way Veyl spells it, not the way Go does:
 	// [1, 2, 3] rather than [1 2 3], and {"a": 1} rather than map[a:1].
 	// A printed value should be something the user could paste back into
 	// their program.
@@ -334,7 +334,7 @@ func __each[T any](xs []T, do func(T)) {
 	// irrelevant.
 	"show": {
 		// Everything walks reflect.Value rather than `any`, because
-		// Quartz field names are lower case and therefore unexported in
+		// Veyl field names are lower case and therefore unexported in
 		// the generated Go. reflect refuses .Interface() on an unexported
 		// field, but reading the Value itself is fine, and fmt prints a
 		// reflect.Value as the value it holds.
@@ -373,7 +373,7 @@ func __showV(rv reflect.Value) string {
 		t := rv.Type()
 		parts := make([]string, rv.NumField())
 		for i := 0; i < rv.NumField(); i++ {
-			// The json tag holds the name as it was written in Quartz;
+			// The json tag holds the name as it was written in Veyl;
 			// the Go field name carries a prefix to make it exported.
 			name := t.Field(i).Tag.Get("json")
 			if name == "" {
@@ -1138,8 +1138,8 @@ func registerCollections() {
 // Without it a runtime failure reaches the terminal as a Go panic:
 // a goroutine dump, hexadecimal offsets, and words like "interface
 // conversion" that describe the backend rather than the program. The
-// //line directives mean the frames already carry .qz paths, so the
-// stack can be filtered down to the Quartz ones and printed as a
+// //line directives mean the frames already carry .vy paths, so the
+// stack can be filtered down to the Veyl ones and printed as a
 // traceback the person who wrote the program can act on.
 var crashHelperDefs = map[string]helperDef{
 	"crash": {
@@ -1149,9 +1149,9 @@ var crashHelperDefs = map[string]helperDef{
 		return
 	}
 
-	// QUARTZ_TRACE is for debugging the compiler itself, where the Go
+	// VEYL_TRACE is for debugging the compiler itself, where the Go
 	// frames are the interesting ones.
-	if os.Getenv("QUARTZ_TRACE") != "" {
+	if os.Getenv("VEYL_TRACE") != "" {
 		fmt.Fprintf(os.Stderr, "%v\n\n%s", r, debug.Stack())
 		os.Exit(1)
 	}
@@ -1160,11 +1160,11 @@ var crashHelperDefs = map[string]helperDef{
 	for _, frame := range __qzFrames(string(debug.Stack())) {
 		fmt.Fprintf(os.Stderr, "  at %s\n", frame)
 	}
-	fmt.Fprintln(os.Stderr, "\nRun with QUARTZ_TRACE=1 to see the underlying Go stack.")
+	fmt.Fprintln(os.Stderr, "\nRun with VEYL_TRACE=1 to see the underlying Go stack.")
 	os.Exit(1)
 }
 
-// __explain restates Go's runtime vocabulary in Quartz's.
+// __explain restates Go's runtime vocabulary in Veyl's.
 func __explain(msg string) string {
 	msg = strings.TrimPrefix(msg, "runtime error: ")
 	switch {
@@ -1181,14 +1181,14 @@ func __explain(msg string) string {
 	return msg
 }
 
-// __qzFrames pulls the .qz locations out of a Go stack, innermost
-// first. Frame lines look like "\tC:/path/thing.qz:12 +0x1d".
+// __qzFrames pulls the .vy locations out of a Go stack, innermost
+// first. Frame lines look like "\tC:/path/thing.vy:12 +0x1d".
 func __qzFrames(stack string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, line := range strings.Split(stack, "\n") {
 		line = strings.TrimSpace(line)
-		i := strings.Index(line, ".qz:")
+		i := strings.Index(line, ".vy:")
 		if i < 0 {
 			continue
 		}

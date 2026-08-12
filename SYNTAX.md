@@ -1,8 +1,8 @@
-# Quartz Language Reference
+# Veyl Language Reference
 
 **Version 0.16** - the language as currently implemented.
 
-Quartz compiles to Go, which compiles to a native executable. A finished
+Veyl compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
 
 > Anything marked **planned** is not implemented yet. If you write it,
@@ -35,10 +35,10 @@ print("Hello, world!")
 ```
 
 ```
-quartz run hello.qz
+veyl run hello.vy
 ```
 
-Source files use the `.qz` extension. There is no required `main`
+Source files use the `.vy` extension. There is no required `main`
 function - statements at the top level of a file run in order.
 
 ---
@@ -106,7 +106,7 @@ The type is inferred from the value. Annotate it explicitly with `: Type`
 when you want to be specific:
 
 ```qz
-let name: str = "Quartz"
+let name: str = "Veyl"
 let ratio: float = 0.5
 ```
 
@@ -132,7 +132,7 @@ total = 5           // error: undefined variable "total"
 
 ## Types
 
-| Quartz  | Holds                        | Example        |
+| Veyl  | Holds                        | Example        |
 | ------- | ---------------------------- | -------------- |
 | `int`     | whole numbers                | `42`, `-7`          |
 | `float`   | numbers with a decimal point | `3.14`, `0.5`       |
@@ -157,7 +157,7 @@ let big   = 1_000_000
 let ratio = 1_234.5
 ```
 
-Quartz does not convert between types automatically. Mixing them is an
+Veyl does not convert between types automatically. Mixing them is an
 error - use `str()`, `int()`, or `float()` to convert explicitly.
 
 ```qz
@@ -188,7 +188,7 @@ generating any code. The rules are short:
 | `for i in a..b` | the bounds and the `step` must be `int` |
 
 There is **no implicit conversion between two values**. This is an
-error, and the message says so in Quartz's words:
+error, and the message says so in Veyl's words:
 
 ```qz
 let a = 1
@@ -262,7 +262,7 @@ let oops = []               // error: cannot tell what kind of list
                             //        this is - annotate it
 ```
 
-Printing uses Quartz's own notation, so a printed value is something you
+Printing uses Veyl's own notation, so a printed value is something you
 could paste back into your program:
 
 ```qz
@@ -280,7 +280,7 @@ let name: str  = "ada"    // always holds a string
 let note: ?str = nil      // holds a string, or nothing
 ```
 
-This is the main thing Quartz offers over its own backend: there is no
+This is the main thing Veyl offers over its own backend: there is no
 such thing as a nil `str`, so there is no such thing as a nil-dereference
 crash. The cost is that a `?T` has to be checked before it can be used.
 
@@ -533,7 +533,7 @@ struct Node {
 ### One syntax wrinkle
 
 `if p {` is ambiguous: `p` could be a variable, or the start of a struct
-literal `p{...}`. Quartz resolves it the way Go does - a struct literal
+literal `p{...}`. Veyl resolves it the way Go does - a struct literal
 cannot appear unparenthesised in an `if`, `while` or `for` header:
 
 ```qz
@@ -603,7 +603,7 @@ if flags & 4 == 4 { }      // parses as flags & (4 == 4)
 if (flags & 4) == 4 { }    // what you meant
 ```
 
-Quartz keeps C's ordering so the operators behave the way people expect
+Veyl keeps C's ordering so the operators behave the way people expect
 from elsewhere, and the type checker catches the mistake with a message
 that says to add parentheses.
 
@@ -849,7 +849,7 @@ let op: fn(int) -> int = double
 let show: fn(str) = fn(s: str) { print(s) }     // returns nothing
 ```
 
-Parameter types are always required, even in a literal - Quartz does
+Parameter types are always required, even in a literal - Veyl does
 not infer them.
 
 **Taking and returning them** is what makes callbacks work:
@@ -1168,13 +1168,13 @@ Builtin names cannot be redefined.
 
 ## Multiple files
 
-`import` loads another `.qz` file and folds its declarations into your
+`import` loads another `.vy` file and folds its declarations into your
 program. The path is relative to the file that writes it - there is no
 search path, no registry, and no package names to learn.
 
 ```qz
-import "geometry.qz"
-import "shapes/circle.qz"
+import "geometry.vy"
+import "shapes/circle.vy"
 ```
 
 ### `pub` decides what escapes
@@ -1182,7 +1182,7 @@ import "shapes/circle.qz"
 A declaration is private to its own file unless it is marked `pub`:
 
 ```qz
-// geometry.qz
+// geometry.vy
 pub const TAU = 6.283185307179586
 
 pub struct Vec {
@@ -1202,7 +1202,7 @@ fn helper() -> int {      // no pub: this file only
 Using something private from another file is an error that says so:
 
 ```
-error: "helper" is private to geometry.qz
+error: "helper" is private to geometry.vy
        - mark it 'pub fn helper' to use it from another file
 ```
 
@@ -1453,9 +1453,9 @@ for port in net.scan("127.0.0.1", 1, 1024) {
 
 Two ways to use it, because two different things are usually wanted.
 
-**Whole values.** `json.encode` turns any Quartz value into text, and
+**Whole values.** `json.encode` turns any Veyl value into text, and
 `json.decode` turns text back into a declared type. The type comes from
-the annotation on the binding - Quartz has no type arguments, so this is
+the annotation on the binding - Veyl has no type arguments, so this is
 how the decoder is told what to build:
 
 ```qz
@@ -1540,7 +1540,7 @@ let pages = task.map(urls, fn(u: str) -> str {
 Everything has finished by the time the call returns. There is no way
 to start work that outlives the statement that started it.
 
-**There are no goroutines or channels**, deliberately. Quartz has no
+**There are no goroutines or channels**, deliberately. Veyl has no
 mutexes, no atomics and no way to talk about ownership, so raw shared
 memory would be the one place the compiler stops helping - every other
 sharp edge in the language is either checked or removed.
@@ -1564,7 +1564,7 @@ task.each(paths, fn(p: str) {
 ```
 
 That is a real limit of this design, not an oversight - enforcing it
-needs an ownership system Quartz does not have.
+needs an ownership system Veyl does not have.
 
 ---
 
@@ -1667,7 +1667,7 @@ print("took {time.millis() - started} ms")
 
 ### `mem` - what the program is using
 
-Quartz is garbage collected, so these report and nudge rather than
+Veyl is garbage collected, so these report and nudge rather than
 allocate and free. Manual memory needs the C backend and does not exist.
 
 | Function | Returns | Description |
@@ -1765,7 +1765,7 @@ print(rand.pick(["a", "b"]))
 ```
 
 `rand.shuffle` returns a **new** list and leaves the original alone,
-because assignment in Quartz copies and a function that quietly
+because assignment in Veyl copies and a function that quietly
 reordered its argument would not fit that. `rand.pick` on an empty list
 gives the zero value; `rand.int(9, 2)`, where the range is backwards,
 gives `9` rather than failing.
@@ -1818,7 +1818,7 @@ program can pick a different layout rather than relying on colour that
 is not there.
 
 On Windows the console has to be switched into virtual-terminal mode or
-the escape codes appear literally as `←[31m`. Quartz does that
+the escape codes appear literally as `←[31m`. Veyl does that
 automatically at startup for any program using `term`.
 
 ### `log` - timestamped output
@@ -1851,7 +1851,7 @@ let u = "https://api.example.com:8443/v2/items?limit=10"
 print(must(url.host(u)))               // api.example.com
 print(must(url.port(u)))               // 8443
 print(must(url.query(u))["limit"])     // 10
-print(url.build("https://x.dev/s", {"q": "quartz"}))
+print(url.build("https://x.dev/s", {"q": "veyl"}))
 ```
 
 A missing piece is an empty string, not a failure - a URL with no port
@@ -1903,7 +1903,7 @@ for file in args.rest() {
 ```
 
 ```
-quartz run tool.qz --verbose --out=result.txt notes.txt
+veyl run tool.vy --verbose --out=result.txt notes.txt
 ```
 
 Both `--name=value` and `--name value` work, and one dash or two are
@@ -1952,7 +1952,7 @@ Using one on another target is a compile error, not a runtime crash.
 ```qz
 setTitle("My App")
 beep(880, 150)
-let rounded = openWindow("Hello from Quartz", 800, 500)
+let rounded = openWindow("Hello from Veyl", 800, 500)
 messageBox("Done", "Corners rounded: {rounded}")
 ```
 
@@ -1968,7 +1968,7 @@ happened, never what was asked for.
 no console behind it.
 
 These compile down to `syscall` calls that load DLLs at runtime, so a
-Quartz program with a window is still one self-contained `.exe` with no
+Veyl program with a window is still one self-contained `.exe` with no
 DLLs to ship and no C compiler involved.
 
 ### The `win` namespace
@@ -1998,18 +1998,18 @@ print(valueOr(win.registry.read("HKLM", KEY, "ProductName"), "unknown"))
 Note the raw string: registry paths are full of backslashes, and an
 ordinary string would need every one of them doubled.
 
-`examples\windows.qz` exercises all of it, and puts your clipboard back
+`examples\windows.vy` exercises all of it, and puts your clipboard back
 the way it found it.
 
 ### Cross-compiling
 
-Set `QUARTZ_TARGET` to build for a different OS than the one you are on:
+Set `VEYL_TARGET` to build for a different OS than the one you are on:
 
 ```
-QUARTZ_TARGET=windows quartz build app.qz
+VEYL_TARGET=windows veyl build app.vy
 ```
 
-`quartz run` needs the target to match your machine; use `quartz build`
+`veyl run` needs the target to match your machine; use `veyl build`
 otherwise.
 
 ---
@@ -2036,25 +2036,25 @@ defer own unsafe
 
 | Command                  | Effect                                        |
 | ------------------------ | --------------------------------------------- |
-| `quartz run f.qz`        | compile and run                                |
-| `quartz build f.qz`      | write an executable next to the source         |
-| `quartz fmt f.qz`        | reformat the file in place                     |
-| `quartz emit f.qz`       | print the generated Go                         |
-| `quartz tokens f.qz`     | print the token stream                         |
-| `quartz version`         | print the version                              |
-| `quartz f.qz`            | same as `run`                                  |
+| `veyl run f.vy`        | compile and run                                |
+| `veyl build f.vy`      | write an executable next to the source         |
+| `veyl fmt f.vy`        | reformat the file in place                     |
+| `veyl emit f.vy`       | print the generated Go                         |
+| `veyl tokens f.vy`     | print the token stream                         |
+| `veyl version`         | print the version                              |
+| `veyl f.vy`            | same as `run`                                  |
 
-### Double-clicking a .qz file
+### Double-clicking a .vy file
 
-If Quartz was installed with the file association ticked, opening a
-`.qz` from Explorer asks what to do rather than guessing:
+If Veyl was installed with the file association ticked, opening a
+`.vy` from Explorer asks what to do rather than guessing:
 
 ```
-  Quartz 0.17
-  hello.qz
+  Veyl 0.17
+  hello.vy
 
     [R]  Run it now
-    [B]  Build hello.exe, so it can run without Quartz
+    [B]  Build hello.exe, so it can run without Veyl
     [F]  Open the folder
     [Q]  Nothing, close this
 ```
@@ -2064,18 +2064,18 @@ through this rather than running the program directly: a console
 program launched from Explorer otherwise opens, prints, and closes
 faster than anyone can read.
 
-Right-click offers **Run with Quartz** and **Build .exe with Quartz**
+Right-click offers **Run with Veyl** and **Build .exe with Veyl**
 directly, skipping the menu. The same thing from a terminal:
 
 ```
-quartz open hello.qz            # the menu
-quartz open hello.qz --build    # straight to building
+veyl open hello.vy            # the menu
+veyl open hello.vy --build    # straight to building
 ```
 
 ### The console
 
 ```
-quartz console
+veyl console
 ```
 
 An interactive session: type an expression to see its value, a
@@ -2085,9 +2085,9 @@ loop can be typed across lines.
 ```
 qz> 1 + 1
 2
-qz> let name = "quartz"
+qz> let name = "veyl"
 qz> "hello, {name}"
-hello, quartz
+hello, veyl
 qz> fn double(n: int) -> int {
 ..>     return n * 2
 ..> }
@@ -2101,11 +2101,11 @@ qz> double(21)
 | `:list` | every line in the session |
 | `:undo` | drop the last line |
 | `:clear` | start over |
-| `:save <file>` | write the session out as a `.qz` program |
+| `:save <file>` | write the session out as a `.vy` program |
 | `:emit` | show the Go the session compiles to |
 | `:quit` | leave |
 
-**How it works, and the one consequence.** Quartz is compiled, so there
+**How it works, and the one consequence.** Veyl is compiled, so there
 is no interpreter to feed a line at a time. The console keeps every
 line you have typed and rebuilds the whole program on each new one.
 Only the new output is shown, and a line that does not compile is
@@ -2119,7 +2119,7 @@ console, behaves exactly as expected.
 
 ### Formatting
 
-`quartz fmt` fixes indentation and spacing, collapses runs of blank
+`veyl fmt` fixes indentation and spacing, collapses runs of blank
 lines, and leaves everything else alone. It does **not** reflow your
 line breaks - where you end a line is your decision.
 
@@ -2129,7 +2129,7 @@ through untouched. A file that does not lex is left completely alone
 rather than half-rewritten:
 
 ```
-notes.qz does not lex cleanly, so it was left alone
+notes.vy does not lex cleanly, so it was left alone
 ```
 
 ### Warnings
@@ -2137,13 +2137,13 @@ notes.qz does not lex cleanly, so it was left alone
 Some things are worth saying but not worth refusing to compile over:
 
 ```
-warning: app.qz:12:5: this can never run - the 'return' above it always leaves
-warning: app.qz:17:1: "leftover" is declared but never used
+warning: app.vy:12:5: this can never run - the 'return' above it always leaves
+warning: app.vy:17:1: "leftover" is declared but never used
 ```
 
 Warnings go to stderr, and only once the program is known to compile -
 stacking them on top of a dozen type errors buries the thing that
-actually needs fixing. Set `QUARTZ_QUIET=1` to silence them.
+actually needs fixing. Set `VEYL_QUIET=1` to silence them.
 
 Unreachable code is reported once per block, not once per statement,
 and it is not emitted into the compiled program.
@@ -2182,7 +2182,7 @@ Honest list of what v0.14 does not do yet.
 - **Windows are blank.** `openWindow` opens and manages a real window,
   but there is no drawing or event API yet - no buttons, no input
   handling, no canvas.
-- **Go must be installed** to compile a Quartz program, since Quartz
+- **Go must be installed** to compile a Veyl program, since Veyl
   hands the generated code to the Go toolchain.
 
 

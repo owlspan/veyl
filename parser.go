@@ -208,12 +208,12 @@ func (p *Parser) ParseProgram() *Program {
 	return prog
 }
 
-// parseImport reads `import "helpers.qz"`. The path is a plain string
+// parseImport reads `import "helpers.vy"`. The path is a plain string
 // resolved relative to the file the import appears in - there is no
 // module registry and no search path to learn.
 func (p *Parser) parseImport() *ImportDecl {
 	kw := p.advance() // 'import'
-	pathTok := p.expect(STRING, `a file path in quotes, as in: import "helpers.qz"`)
+	pathTok := p.expect(STRING, `a file path in quotes, as in: import "helpers.vy"`)
 	p.endStmt()
 	if pathTok.Kind != STRING {
 		return nil
@@ -664,7 +664,7 @@ func (p *Parser) parseSimpleStmt() Stmt {
 }
 
 // endStmt enforces that a statement is followed by a newline, '}' or EOF.
-// This is what lets Quartz skip semicolons.
+// This is what lets Veyl skip semicolons.
 func (p *Parser) endStmt() {
 	if p.check(NEWLINE) {
 		p.advance()

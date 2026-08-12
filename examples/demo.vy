@@ -1,4 +1,4 @@
-// Quartz v0.2 -- functions
+// Veyl v0.2 -- functions
 
 fn square(n: int) -> int {
     return n * n

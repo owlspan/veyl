@@ -1,4 +1,4 @@
-// logic.qz -- loops, math, and strings
+// logic.vy -- loops, math, and strings
 
 fn isPrime(n: int) -> bool {
     if n < 2 { return false }

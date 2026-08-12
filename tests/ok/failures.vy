@@ -6,18 +6,18 @@
 
 // A path that cannot exist, so the reason is stable enough to test the
 // shape of without depending on the wording the OS chose.
-let bad = os.file.write("qz_no_such_dir/deep/a.txt", "x")
+let bad = os.file.write("vy_no_such_dir/deep/a.txt", "x")
 print(isOk(bad))
 print(len(errorOf(bad)) > 0)
-print(contains(errorOf(bad), "qz_no_such_dir"))
+print(contains(errorOf(bad), "vy_no_such_dir"))
 
 // The ordinary path still reads as a plain statement.
-os.file.write("qz_fail_probe.txt", "one")
-os.file.append("qz_fail_probe.txt", " two")
-print(must(os.file.read("qz_fail_probe.txt")))
+os.file.write("vy_fail_probe.txt", "one")
+os.file.append("vy_fail_probe.txt", " two")
+print(must(os.file.read("vy_fail_probe.txt")))
 
 // A success carries no value, so isOk is the whole story.
-let good = os.file.write("qz_fail_probe.txt", "again")
+let good = os.file.write("vy_fail_probe.txt", "again")
 print(isOk(good))
 print(errorOf(good) == "")
 
@@ -28,19 +28,19 @@ fn saveBoth(dir: str) -> void! {
     return ok()
 }
 
-os.dir.make("qz_fail_dir")
-print(isOk(saveBoth("qz_fail_dir")))
+os.dir.make("vy_fail_dir")
+print(isOk(saveBoth("vy_fail_dir")))
 
-let nested = saveBoth("qz_missing_dir/inner")
+let nested = saveBoth("vy_missing_dir/inner")
 print(isOk(nested))
 print(len(errorOf(nested)) > 0)
 
 // The predicates stayed bool, because asking is not the same as doing.
-print(os.file.exists("qz_fail_probe.txt"))
-print(os.dir.is("qz_fail_dir"))
+print(os.file.exists("vy_fail_probe.txt"))
+print(os.dir.is("vy_fail_dir"))
 print(os.env.has("QZ_DEFINITELY_NOT_SET_XYZ"))
 
 // Tidying up is itself a fallible action.
-print(isOk(os.file.delete("qz_fail_probe.txt")))
-print(isOk(os.dir.delete("qz_fail_dir")))
-print(isOk(os.file.delete("qz_never_existed.txt")))
+print(isOk(os.file.delete("vy_fail_probe.txt")))
+print(isOk(os.dir.delete("vy_fail_dir")))
+print(isOk(os.file.delete("vy_never_existed.txt")))

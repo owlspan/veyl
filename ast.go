@@ -30,7 +30,7 @@ type Stmt interface {
 	stmtNode()
 }
 
-// Program is a whole .qz file: zero or more functions, plus the
+// Program is a whole .vy file: zero or more functions, plus the
 // top-level statements that become main().
 // Program is a whole compilation: the main file plus everything it
 // imported, flattened into one set of declarations. Which file each
@@ -47,7 +47,7 @@ type Program struct {
 	MainFile string
 }
 
-// ImportDecl is `import "helpers.qz"`. The path is relative to the file
+// ImportDecl is `import "helpers.vy"`. The path is relative to the file
 // containing the import.
 type ImportDecl struct {
 	pos
@@ -158,7 +158,7 @@ type Call struct {
 	// Want is the type this call's result is expected to produce, when
 	// there is one - the annotation on `let p: Point = json.decode(s)`.
 	// Only builtins that ask for it ever see this; it is how a decoder
-	// learns what to decode into without Quartz having type arguments.
+	// learns what to decode into without Veyl having type arguments.
 	Want *Type
 
 	// ViaValue is set when the callee is a variable holding a function

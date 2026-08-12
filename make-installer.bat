@@ -1,5 +1,5 @@
 @echo off
-rem Double-click this to build a Quartz installer.
+rem Double-click this to build a Veyl installer.
 rem
 rem It exists because Windows will not run a .ps1 on double-click --
 rem that is a deliberate security default, not something to work around
@@ -16,7 +16,7 @@ rem     powershell -ExecutionPolicy Bypass -File release.ps1 -Version 0.18 -Push
 setlocal
 cd /d "%~dp0"
 
-echo Building the Quartz installer. This takes about two minutes.
+echo Building the Veyl installer. This takes about two minutes.
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "installer\build.ps1"

@@ -62,7 +62,7 @@ func banner() string {
 
 	b.WriteString(paint(owlArt, "36"))
 	b.WriteString("\n")
-	b.WriteString(paint(fmt.Sprintf("  Quartz %s", Version), "1"))
+	b.WriteString(paint(fmt.Sprintf("  Veyl %s", Version), "1"))
 	b.WriteString("  -  an interactive console\n\n")
 	b.WriteString("  Type an expression to see its value, or a statement to run it.\n")
 	b.WriteString("  " + paint(":help", "1") + " for the commands, " +

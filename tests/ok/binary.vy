@@ -57,13 +57,13 @@ print(isOk(bytes.hash(b, "sha3")))
 
 // A file that is not text, written and read back unchanged.
 let raw = must(bytes.ofList([0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE]))
-print(isOk(bytes.write("qz_blob.bin", raw)))
-let back = must(bytes.read("qz_blob.bin"))
+print(isOk(bytes.write("vy_blob.bin", raw)))
+let back = must(bytes.read("vy_blob.bin"))
 print(back == raw)
 print(back)
 print(must(bytes.getIntBE(back, 0, 4)))
-print(isOk(bytes.read("qz_no_such_file.bin")))
-print(isOk(os.file.delete("qz_blob.bin")))
+print(isOk(bytes.read("vy_no_such_file.bin")))
+print(isOk(os.file.delete("vy_blob.bin")))
 
 // An annotation, and a function that threads a result through.
 let empty: bytes = bytes.of("")
@@ -73,4 +73,4 @@ fn headerOf(path: str) -> int! {
     let data = bytes.read(path)?
     return bytes.getIntBE(data, 0, 2)?
 }
-print(isOk(headerOf("qz_definitely_missing.bin")))
+print(isOk(headerOf("vy_definitely_missing.bin")))

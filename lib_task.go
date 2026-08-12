@@ -2,7 +2,7 @@ package main
 
 // The task library: doing several things at once.
 //
-// Quartz deliberately does not expose goroutines and channels. It has
+// Veyl deliberately does not expose goroutines and channels. It has
 // no mutexes, no atomics and no way to talk about ownership, so raw
 // shared-memory concurrency would be the one place in the language
 // where the compiler stops helping - every other sharp edge here is

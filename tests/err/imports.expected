@@ -1,6 +1,6 @@
-error: loop_b.qz:1:1: import cycle: loop_a.qz imports itself, directly or indirectly
-error: imports.qz:2:1: cannot find "no_such_module.qz" next to imports.qz
-error: imports.qz:5:1: an import must name a .qz file, got "notes.txt"
-error: runs_things.qz:8:1: an imported file can only declare things - move this statement into the program that imports it
-error: runs_things.qz:9:1: an imported file can only declare things - move this statement into the program that imports it
-quartz: 5 error(s)
+error: loop_b.vy:1:1: import cycle: loop_a.vy imports itself, directly or indirectly
+error: imports.vy:2:1: cannot find "no_such_module.vy" next to imports.vy
+error: imports.vy:5:1: an import must name a .vy file, got "notes.txt"
+error: runs_things.vy:8:1: an imported file can only declare things - move this statement into the program that imports it
+error: runs_things.vy:9:1: an imported file can only declare things - move this statement into the program that imports it
+veyl: 5 error(s)

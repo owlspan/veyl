@@ -113,7 +113,7 @@ var stdlibHelperDefs = map[string]helperDef{
 }`,
 		imports: []string{"math/rand"},
 	},
-	// Index-based string helpers clamp instead of panicking. Quartz has
+	// Index-based string helpers clamp instead of panicking. Veyl has
 	// no exceptions yet, so a crash would be unrecoverable for the user.
 	"charAt": {
 		code: `func __charAt(s string, i int) string {

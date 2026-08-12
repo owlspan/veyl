@@ -1,9 +1,9 @@
-# Quartz
+# Veyl
 
 A small, fast, readable programming language that compiles to native
 executables.
 
-Quartz source (`.qz`) is translated to Go, which the Go toolchain
+Veyl source (`.vy`) is translated to Go, which the Go toolchain
 compiles to a single self-contained binary. You get native speed and a
 program you can hand to someone with nothing to install - but you write
 something closer to Python than to C++.
@@ -24,7 +24,7 @@ print("")
 ```
 
 ```
-$ quartz run primes.qz
+$ veyl run primes.vy
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
@@ -52,7 +52,7 @@ own Go toolchain. See [Roadmap](#roadmap).
 - [Roadmap](#roadmap)
 - [Known limitations](#known-limitations)
 
-**New here? [Learn Quartz in 20 minutes](TUTORIAL.md).**
+**New here? [Learn Veyl in 20 minutes](TUTORIAL.md).**
 
 Full language reference: **[SYNTAX.md](SYNTAX.md)**
 Using and writing packages: **[PACKAGES.md](PACKAGES.md)**
@@ -73,33 +73,33 @@ Three things at once, which most languages make you pick two of:
   A package manager exists for everything else, but you should be able
   to write a useful program without touching it.
 
-A Quartz program that opens a native window is one `.exe` with no DLLs
+A Veyl program that opens a native window is one `.exe` with no DLLs
 to ship and no C compiler involved anywhere.
 
 ---
 
 ## Installing
 
-**The easy way, on Windows:** run `quartz-<version>-setup.exe`. It
-installs the compiler, adds it to PATH if you let it, associates `.qz`
+**The easy way, on Windows:** run `veyl-<version>-setup.exe`. It
+installs the compiler, adds it to PATH if you let it, associates `.vy`
 files, and ships a private copy of the Go toolchain so there is nothing
 else to install. Then check it:
 
 ```
-quartz doctor
+veyl doctor
 ```
 
-The bundled toolchain lives inside Quartz's own folder and is kept off
+The bundled toolchain lives inside Veyl's own folder and is kept off
 PATH deliberately, so if you already have Go it is left completely
-alone. Untick that component during setup and Quartz will use yours.
+alone. Untick that component during setup and Veyl will use yours.
 
 **Building it yourself** needs **Go 1.21 or newer** -
 <https://go.dev/dl/>. Go is required both to build the compiler and to
-compile Quartz programs, since Quartz hands its generated code to the
+compile Veyl programs, since Veyl hands its generated code to the
 Go toolchain.
 
-If Quartz cannot find a Go toolchain it says so and tells you what to
-do, rather than failing with a PATH error. `QUARTZ_GO` forces a
+If Veyl cannot find a Go toolchain it says so and tells you what to
+do, rather than failing with a PATH error. `VEYL_GO` forces a
 specific one.
 
 ---
@@ -108,15 +108,15 @@ specific one.
 
 ```
 git clone <your-repo>   # or just cd into the folder
-cd quartz
-go build -o quartz.exe .
+cd veyl
+go build -o veyl.exe .
 ```
 
-That produces `quartz.exe` in the project folder. To run it from
+That produces `veyl.exe` in the project folder. To run it from
 anywhere, add that folder to your PATH:
 
 ```
-setx PATH "%PATH%;C:\path\to\quartz"
+setx PATH "%PATH%;C:\path\to\veyl"
 ```
 
 Open a new terminal afterwards for the change to take effect.
@@ -124,10 +124,10 @@ Open a new terminal afterwards for the change to take effect.
 While working on the compiler itself, skip the rebuild step:
 
 ```
-go run . run examples\demo.qz
+go run . run examples\demo.vy
 ```
 
-The first `run` is Go's, the second is Quartz's.
+The first `run` is Go's, the second is Veyl's.
 
 ## Running the tests
 
@@ -135,7 +135,7 @@ The first `run` is Go's, the second is Quartz's.
 go test ./...
 ```
 
-Each case is a `.qz` file next to a `.expected` file holding what the
+Each case is a `.vy` file next to a `.expected` file holding what the
 compiler should produce - program output for `tests/ok`, error messages
 for `tests/err`. Adding a test means adding two files, not editing any
 Go code.
@@ -144,7 +144,7 @@ After an intentional change to output or error wording, regenerate the
 expectations and **read the diff before committing it**:
 
 ```
-go test -run TestQuartz -update .
+go test -run TestVeyl -update .
 ```
 
 ---
@@ -153,29 +153,29 @@ go test -run TestQuartz -update .
 
 | Command                  | Effect                                        |
 | ------------------------ | --------------------------------------------- |
-| `quartz run f.qz`        | compile and run                                |
-| `quartz build f.qz`      | write an executable next to the source         |
-| `quartz fmt f.qz`        | reformat the file in place                     |
-| `quartz emit f.qz`       | print the generated Go                         |
-| `quartz tokens f.qz`     | print the token stream                         |
-| `quartz console`         | an interactive console                         |
-| `quartz open f.qz`       | ask whether to run it or build an .exe         |
-| `quartz doctor`          | check the install and report which Go it found |
-| `quartz init [name]`     | start a project here                           |
-| `quartz add <source>`    | add a dependency and fetch it                  |
-| `quartz install`         | fetch everything the manifest lists            |
-| `quartz packages`        | list dependencies                              |
-| `quartz builtins`        | list every builtin, for editor tooling         |
-| `quartz version`         | print the version                              |
-| `quartz f.qz`            | same as `run`                                  |
+| `veyl run f.vy`        | compile and run                                |
+| `veyl build f.vy`      | write an executable next to the source         |
+| `veyl fmt f.vy`        | reformat the file in place                     |
+| `veyl emit f.vy`       | print the generated Go                         |
+| `veyl tokens f.vy`     | print the token stream                         |
+| `veyl console`         | an interactive console                         |
+| `veyl open f.vy`       | ask whether to run it or build an .exe         |
+| `veyl doctor`          | check the install and report which Go it found |
+| `veyl init [name]`     | start a project here                           |
+| `veyl add <source>`    | add a dependency and fetch it                  |
+| `veyl install`         | fetch everything the manifest lists            |
+| `veyl packages`        | list dependencies                              |
+| `veyl builtins`        | list every builtin, for editor tooling         |
+| `veyl version`         | print the version                              |
+| `veyl f.vy`            | same as `run`                                  |
 
-Anything after the `.qz` file is passed to the program, not to Quartz:
-`quartz run app.qz --verbose` reaches `os.args()`.
+Anything after the `.vy` file is passed to the program, not to Veyl:
+`veyl run app.vy --verbose` reaches `os.args()`.
 
 `emit` is the single most useful debugging tool in the project. When a
 program behaves strangely, look at what it actually compiled to.
 
-**On Windows:** double-clicking a `.qz` file asks what you want - run
+**On Windows:** double-clicking a `.vy` file asks what you want - run
 it, or build a standalone `.exe` you can hand to someone. The window
 stays open either way. Right-click gives both directly, without the
 menu.
@@ -193,7 +193,7 @@ program. Run it from a terminal, or end the program with `pause()`.
 ```qz
 let count = 0            // mutable, type inferred
 const limit = 10         // cannot be reassigned
-let name: str = "Quartz" // explicit type
+let name: str = "Veyl" // explicit type
 
 count += 1
 ```
@@ -247,7 +247,7 @@ fn wordCount(path: str) -> int! {
 ### Multiple files
 
 ```qz
-import "geometry.qz"
+import "geometry.vy"
 ```
 
 `pub` decides what a file exports. A top-level `const` is a global; a
@@ -373,7 +373,7 @@ compile error, not a runtime crash.
 ```qz
 setTitle("My App")
 hideConsole()
-let rounded = openWindow("Hello from Quartz", 800, 500)
+let rounded = openWindow("Hello from Veyl", 800, 500)
 messageBox("Done", "Window closed.")
 ```
 
@@ -392,17 +392,17 @@ no cgo, no C compiler, and no DLLs to ship.
 ## Cross-compiling
 
 ```
-QUARTZ_TARGET=windows quartz build app.qz
+VEYL_TARGET=windows veyl build app.vy
 ```
 
 On Windows cmd:
 
 ```
-set QUARTZ_TARGET=windows
-quartz build app.qz
+set VEYL_TARGET=windows
+veyl build app.vy
 ```
 
-`quartz run` needs the target to match your machine. Use `build`
+`veyl run` needs the target to match your machine. Use `build`
 otherwise.
 
 ---
@@ -410,7 +410,7 @@ otherwise.
 ## Project layout
 
 ```
-quartz/
+veyl/
   token.go        token kinds, keywords, the Token type
   lexer.go        source text  -> tokens
   ast.go          node type definitions
@@ -421,9 +421,9 @@ quartz/
   codegen.go      AST          -> Go source
   stdlib.go       math and string builtins
   runtime_win.go  Win32 builtins and helpers
-  quartz.go       CLI driver
-  toolchain.go    finding the Go toolchain, and 'quartz doctor'
-  quartz_test.go  the test harness
+  veyl.go       CLI driver
+  toolchain.go    finding the Go toolchain, and 'veyl doctor'
+  veyl_test.go  the test harness
   examples/       sample programs
   editors/vscode/ syntax highlighting
   installer/      Inno Setup script and its build script
@@ -439,7 +439,7 @@ quartz/
 
 The compiler has grown past the file list above; `token.go`, `lexer.go`,
 `parser.go`, `ast.go`, `resolve.go`, `types.go`, `check.go`,
-`codegen.go`, `format.go` and `quartz.go` are the pipeline, and the
+`codegen.go`, `format.go` and `veyl.go` are the pipeline, and the
 `lib_*.go` and `collections.go` files are the standard library.
 
 ---
@@ -447,7 +447,7 @@ The compiler has grown past the file list above; `token.go`, `lexer.go`,
 ## How the compiler works
 
 ```
-hello.qz
+hello.vy
    |
    |  lexer.go        text into tokens, each tagged with line and column
    v
@@ -461,7 +461,7 @@ hello.qz
    v
 checked AST
    |
-   |  check.go        a type for every expression, in Quartz's vocabulary
+   |  check.go        a type for every expression, in Veyl's vocabulary
    v
  typed AST
    |
@@ -475,7 +475,7 @@ resulting binary is moved next to your source. The temp directory is
 deleted afterwards.
 
 **`//line` directives** are what make errors readable. Every emitted
-statement is preceded by a comment pointing at the original `.qz` line,
+statement is preceded by a comment pointing at the original `.vy` line,
 so when the Go backend reports a type error it names your file and your
 line number, not generated code you never wrote.
 
@@ -502,7 +502,7 @@ More detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 | v1.0    | a formatter, warnings, a VS Code grammar            |
 | v0.15   | a Windows installer bundling its own Go toolchain   |
 | **v0.16**| **a package manager, `rand`/`stats`/`term`/`log`** |
-| unreleased | namespaced imports, Quartz tracebacks, `url`/`zip`/`args`/`bits` |
+| unreleased | namespaced imports, Veyl tracebacks, `url`/`zip`/`args`/`bits` |
 | unreleased | a `bytes` type, an interactive console, `void!`   |
 | next    | generics, then the C backend                        |
 
@@ -514,7 +514,7 @@ node.
 
 The next structural pieces are a real `bytes` type - which files,
 sockets, crypto and any future FFI all want - and generics, without
-which containers like `Set` and `Queue` cannot be written in Quartz
+which containers like `Set` and `Queue` cannot be written in Veyl
 itself. After those, the C backend, which is what buys back manual
 memory and pointers.
 
@@ -531,7 +531,7 @@ Honest list of what v0.16 does not do.
   `has()` and `find()` tell the difference; the bare index was left
   alone rather than putting a nil check on every read.
 - **No generics.** `Set`, `Queue` and friends cannot be written in
-  Quartz itself yet, which is why they are not in the library.
+  Veyl itself yet, which is why they are not in the library.
 - **No global *variables*.** A top-level `const` is global, but a
   top-level `let` belongs to the program body.
 - **No databases.** SQLite needs a Go dependency, which would break the
@@ -541,9 +541,9 @@ Honest list of what v0.16 does not do.
   the rest of the function.
 - **Garbage collected.** Manual memory, pointers, and `unsafe` require
   a C backend and are not available.
-- **The formatter does not reflow lines.** `quartz fmt` fixes
+- **The formatter does not reflow lines.** `veyl fmt` fixes
   indentation and spacing; where you break a line is left to you.
-- **The installer is Windows only.** `installer\quartz.iss` builds a
+- **The installer is Windows only.** `installer\veyl.iss` builds a
   Windows setup program. Linux and macOS have no packaging at all; you
   build from source there.
 - **Windows only for GUI.** No Linux or macOS equivalent yet.

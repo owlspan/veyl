@@ -1,7 +1,7 @@
 // A file that touches everything the grammar highlights, so a change
 // to it can be eyeballed in one screen.
 
-import "helpers.qz"
+import "helpers.vy"
 
 pub const LIMIT = 100
 const RATIO = 1.5
@@ -50,7 +50,7 @@ let flags = 0
 flags |= 1 << 3
 flags &= ~1
 // Parens needed: comparison binds tighter than & in C's ladder, and
-// Quartz keeps C's ladder.
+// Veyl keeps C's ladder.
 print("flags {flags} masked {(flags & 0xff) == flags}")
 
 for i in 0..=10 step 2 {

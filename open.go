@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// `quartz open <file.qz>` — what happens when someone double-clicks a
-// .qz file in Explorer.
+// `veyl open <file.vy>` - what happens when someone double-clicks a
+// .vy file in Explorer.
 //
 // The association used to run the program directly, which is wrong in
 // two ways. A console program launched from Explorer opens a window,
@@ -25,7 +25,7 @@ import (
 
 func runOpen(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("open needs a .qz file")
+		return fmt.Errorf("open needs a .vy file")
 	}
 
 	path := args[0]
@@ -50,8 +50,8 @@ func runOpen(args []string) error {
 		waitForEnter()
 		return nil
 	}
-	if !strings.HasSuffix(strings.ToLower(abs), ".qz") {
-		fmt.Printf("%s is not a Quartz file\n", filepath.Base(abs))
+	if !strings.HasSuffix(strings.ToLower(abs), ".vy") {
+		fmt.Printf("%s is not a Veyl file\n", filepath.Base(abs))
 		waitForEnter()
 		return nil
 	}
@@ -83,10 +83,10 @@ func chooseAction(abs string) string {
 	name := filepath.Base(abs)
 	exe := strings.TrimSuffix(name, filepath.Ext(name)) + ".exe"
 
-	fmt.Printf("\n  %s\n", paint("Quartz "+Version, "1"))
+	fmt.Printf("\n  %s\n", paint("Veyl "+Version, "1"))
 	fmt.Printf("  %s\n\n", paint(name, "36"))
 	fmt.Printf("    %s  Run it now\n", paint("[R]", "1"))
-	fmt.Printf("    %s  Build %s, so it can run without Quartz\n", paint("[B]", "1"), exe)
+	fmt.Printf("    %s  Build %s, so it can run without Veyl\n", paint("[B]", "1"), exe)
 	fmt.Printf("    %s  Open the folder\n", paint("[F]", "1"))
 	fmt.Printf("    %s  Nothing, close this\n\n", paint("[Q]", "1"))
 
@@ -112,22 +112,22 @@ func chooseAction(abs string) string {
 }
 
 func doRun(abs string) {
-	fmt.Printf("\n%s\n\n", paint("── running ─────────────────────────────", "90"))
+	fmt.Printf("\n%s\n\n", paint("-- running -----------------------------", "90"))
 	if err := run("run", abs, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "\nquartz: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\nveyl: %v\n", err)
 	}
-	fmt.Printf("\n%s\n", paint("── finished ────────────────────────────", "90"))
+	fmt.Printf("\n%s\n", paint("-- finished ----------------------------", "90"))
 }
 
 func doBuild(abs string) {
-	fmt.Printf("\n%s\n\n", paint("── building ────────────────────────────", "90"))
+	fmt.Printf("\n%s\n\n", paint("-- building ----------------------------", "90"))
 	if err := run("build", abs, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "\nquartz: %v\n", err)
-		fmt.Printf("\n%s\n", paint("── failed ──────────────────────────────", "90"))
+		fmt.Fprintf(os.Stderr, "\nveyl: %v\n", err)
+		fmt.Printf("\n%s\n", paint("-- failed ------------------------------", "90"))
 		return
 	}
-	fmt.Printf("\n%s\n", paint("── done ────────────────────────────────", "90"))
-	fmt.Println("\n  That .exe is standalone. It needs neither Quartz nor Go\n  on the machine you copy it to.")
+	fmt.Printf("\n%s\n", paint("-- done --------------------------------", "90"))
+	fmt.Println("\n  That .exe is standalone. It needs neither Veyl nor Go\n  on the machine you copy it to.")
 }
 
 // openFolder shows the file's directory in Explorer. Best-effort: if

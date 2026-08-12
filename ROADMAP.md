@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-Working practices, current state, and the full backlog for Quartz.
+Working practices, current state, and the full backlog for Veyl.
 
 Read `CLAUDE.md` first for architecture and invariants. This file covers
 **how we work**, **where we are**, and **what to build next**.
@@ -13,7 +13,7 @@ Read `CLAUDE.md` first for architecture and invariants. This file covers
 
 The repo was created locally with `git init`. There is **no GitHub
 remote**. Everything lives on the user's machine at
-`C:\Users\john linux\Desktop\quartz`. Nothing has ever been pushed, which
+`C:\Users\john linux\Desktop\veyl`. Nothing has ever been pushed, which
 matters because it means history can be safely rewritten.
 
 Identity was configured globally:
@@ -55,8 +55,8 @@ left the machine.
 Ignores build output and editor noise:
 
 ```
-quartz
-quartz.exe
+veyl
+veyl.exe
 qzc
 examples/*.exe
 examples/demo
@@ -70,7 +70,7 @@ desktop.ini
 ```
 
 Compiled binaries are ~2 MB. Committing them on every build would bloat
-the repo fast. If `git status` ever lists `quartz.exe`, the ignore file
+the repo fast. If `git status` ever lists `veyl.exe`, the ignore file
 is not being read - on Windows this is almost always because a browser
 download saved it as `gitignore.txt`. Windows hides known extensions, so
 it *looks* correct in Explorer. Check with `dir /a`.
@@ -123,7 +123,7 @@ real standard library, and now type-checks.
 ### Pipeline
 
 ```
-.qz  ->  lexer  ->  parser  ->  resolver  ->  checker  ->  codegen  ->  Go  ->  .exe
+.vy  ->  lexer  ->  parser  ->  resolver  ->  checker  ->  codegen  ->  Go  ->  .exe
 ```
 
 Six stages, each gating the next. Errors accumulate within a stage,
@@ -142,7 +142,7 @@ are sorted into source order, and are all reported at once.
 | Stdlib | ~60 builtins: I/O, conversion, math, trig, random, strings |
 | Constants | `PI`, `E`, `INF`, `NAN` |
 | Windows | `setTitle`, `beep`, `messageBox`, `hideConsole`, `winBuild`, `isWin11`, `openWindow` |
-| Tooling | `run`, `build`, `emit`, `tokens`, cross-compilation via `QUARTZ_TARGET` |
+| Tooling | `run`, `build`, `emit`, `tokens`, cross-compilation via `VEYL_TARGET` |
 
 ### What does not exist
 
@@ -153,7 +153,7 @@ Windows-only and windows are blank.
 ### The gate is open
 
 **The type checker is done** (`types.go` + `check.go`). Every expression
-has a type, errors are reported in Quartz's vocabulary, and the results
+has a type, errors are reported in Veyl's vocabulary, and the results
 are written back onto the AST so codegen emits explicit Go types.
 
 `Type` was built as a struct with `Elem`/`Key` pointers rather than a
@@ -194,7 +194,7 @@ Add `check.go` with a `Type` value covering `int`, `float`, `str`,
 once an expression is `unknown`, downstream checks stay quiet so one
 mistake does not cascade into ten.
 *Files:* new `check.go`. *Done when:* the type enum exists and prints
-Quartz names (`str`, not `string`).
+Veyl names (`str`, not `string`).
 
 **4.2 Expression typing**
 `func (c *Checker) expr(e Expr) Type` covering every expression node.
@@ -206,7 +206,7 @@ requires numeric for `-` and `bool` for `!`.
 `+` on `int`, `float`, `str`. `- * / %` numeric only. Comparisons yield
 `bool`. `&&` / `||` require `bool` operands. Mismatched operands are an
 error naming both types.
-*Done when:* `"x" + 5` reports a Quartz error with a Quartz message,
+*Done when:* `"x" + 5` reports a Veyl error with a Veyl message,
 not a Go one.
 
 **4.4 Decide on numeric promotion**
@@ -247,7 +247,7 @@ or is deprecated.
 
 **4.10 Wire the checker into the driver**
 Between resolve and codegen. Errors gate codegen like every other stage.
-*Files:* `quartz.go`.
+*Files:* `veyl.go`.
 
 **4.11 Update docs**
 `SYNTAX.md` gains a Types section describing the rules. The "no type
@@ -268,7 +268,7 @@ report a clear error saying exactly that.
 **5.2 Indexing**
 `xs[0]` for read and `xs[0] = v` for write. Decide bounds behaviour:
 Go panics. **Recommendation:** emit a bounds-checked helper that reports
-a clean Quartz-level runtime message rather than a Go stack trace.
+a clean Veyl-level runtime message rather than a Go stack trace.
 
 **5.3 List builtins**
 `push`, `pop`, `len` (extend the existing one), `slice`, `contains`,
@@ -339,7 +339,7 @@ nullability.
 
 **7.1 `?T` nullable types**
 Plain `T` can never be nil; `?T` can. This is the single biggest thing
-Quartz can offer over Go, whose nil-pointer panics are its worst wart.
+Veyl can offer over Go, whose nil-pointer panics are its worst wart.
 
 **7.2 Nil checks and narrowing**
 `if x != nil { ... }` should narrow `?T` to `T` inside the block.
@@ -403,7 +403,7 @@ not just add a dependency silently.
 ### v0.9 - Modules
 
 **9.1 Multi-file programs**
-`import` currently does nothing. Make it load another `.qz` file.
+`import` currently does nothing. Make it load another `.vy` file.
 
 **9.2 Visibility**
 `pub` marks a declaration as visible outside its file. Already reserved.
@@ -439,7 +439,7 @@ Distinct from errors; do not block compilation.
 **10.5 `--version`, `--help`**
 Plus a build-time version stamp.
 
-**10.6 `quartz fmt`**
+**10.6 `veyl fmt`**
 A canonical formatter. The AST already exists; this is a pretty-printer.
 
 **10.7 VS Code extension**
@@ -447,8 +447,8 @@ A TextMate grammar is about an hour of work for syntax highlighting.
 Disproportionate morale value.
 
 **10.8 Installer** - **DONE**
-`installer\quartz.iss`, built by `installer\build.ps1`. PATH entry,
-`.qz` association with an icon and a right-click "Run with Quartz"
+`installer\veyl.iss`, built by `installer\build.ps1`. PATH entry,
+`.vy` association with an icon and a right-click "Run with Veyl"
 verb, Start Menu shortcuts, components, and a clean uninstall. Verified
 by installing it silently to a temp directory, compiling a program with
 PATH stripped to `System32`, and uninstalling again.
@@ -458,7 +458,7 @@ Bundled, not documented-around. A trimmed GOROOT (177 MB on disk, 36 MB
 inside the installer once LZMA2 has had it) ships as an optional
 component and is found by position rather than PATH, so a developer's
 own Go is never shadowed. `findGo` in `toolchain.go` prefers
-`QUARTZ_GO`, then the bundled copy, then PATH. `quartz doctor` reports
+`VEYL_GO`, then the bundled copy, then PATH. `veyl doctor` reports
 which one was chosen.
 
 Worth knowing: the first compile against a fresh bundled toolchain
@@ -467,7 +467,7 @@ an empty cache. Every compile after that is ~1.6 seconds. That is
 alarming exactly once, so it is written down here.
 
 **10.10 Website and tutorial**
-`README.md` is the seed. A "learn Quartz in 20 minutes" page matters
+`README.md` is the seed. A "learn Veyl in 20 minutes" page matters
 more than reference docs for adoption.
 
 ---
@@ -516,11 +516,11 @@ control.
 ```bash
 gofmt -l .        # must print nothing
 go vet ./...      # must be clean
-go build -o quartz .
-./quartz run examples/logic.qz && ./quartz run examples/demo.qz
+go build -o veyl .
+./veyl run examples/logic.vy && ./veyl run examples/demo.vy
 ```
 
-**`quartz emit <file>` is the debugger.** When behaviour is wrong, read
+**`veyl emit <file>` is the debugger.** When behaviour is wrong, read
 the generated Go before theorising.
 
 **Do not add Go module dependencies** without raising it explicitly.

@@ -1,6 +1,6 @@
-// tools.qz -- a tour of the dotted libraries.
+// tools.vy -- a tour of the dotted libraries.
 //
-// Everything here is a builtin. There are no imports in Quartz.
+// Everything here is a builtin. There are no imports in Veyl.
 
 print("== this machine ==")
 print("{os.name()}/{os.arch()}, {os.cpus()} cpus, host {os.hostname()}")

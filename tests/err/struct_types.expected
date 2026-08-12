@@ -1,15 +1,15 @@
-error: struct_types.qz:9:5: unknown type "Missing"
-error: struct_types.qz:14:5: Loop cannot contain itself - use []Loop if you meant a list of them
-error: struct_types.qz:36:8: Point has no field called "z" - it has: length(), x, y
-error: struct_types.qz:37:26: Point has no field called "z" - it has: length(), x, y
-error: struct_types.qz:40:26: field "x" is given twice
-error: struct_types.qz:43:18: Point.x is float, got str
-error: struct_types.qz:46:8: length is a method on Point; did you mean length()?
-error: struct_types.qz:47:10: Point.x is a field, not a method
-error: struct_types.qz:50:9: Point has no method called "rotate" - it has: length(), x, y
-error: struct_types.qz:54:6: Counter.add expects 1 argument, got 0
-error: struct_types.qz:55:6: Counter.add expects 1 argument, got 2
-error: struct_types.qz:56:7: Counter.add expects int for "by", got str
-error: struct_types.qz:60:8: int has no fields, so "field" cannot be read from it
-error: struct_types.qz:63:1: cannot assign str to "x", which is float
-quartz: 14 error(s)
+error: struct_types.vy:9:5: unknown type "Missing"
+error: struct_types.vy:14:5: Loop cannot contain itself - use []Loop if you meant a list of them
+error: struct_types.vy:36:8: Point has no field called "z" - it has: length(), x, y
+error: struct_types.vy:37:26: Point has no field called "z" - it has: length(), x, y
+error: struct_types.vy:40:26: field "x" is given twice
+error: struct_types.vy:43:18: Point.x is float, got str
+error: struct_types.vy:46:8: length is a method on Point; did you mean length()?
+error: struct_types.vy:47:10: Point.x is a field, not a method
+error: struct_types.vy:50:9: Point has no method called "rotate" - it has: length(), x, y
+error: struct_types.vy:54:6: Counter.add expects 1 argument, got 0
+error: struct_types.vy:55:6: Counter.add expects 1 argument, got 2
+error: struct_types.vy:56:7: Counter.add expects int for "by", got str
+error: struct_types.vy:60:8: int has no fields, so "field" cannot be read from it
+error: struct_types.vy:63:1: cannot assign str to "x", which is float
+veyl: 14 error(s)

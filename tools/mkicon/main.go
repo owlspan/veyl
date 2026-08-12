@@ -1,5 +1,5 @@
-// Command mkicon draws the Quartz logo and writes it out as a Windows
-// icon, plus a COFF resource object so the compiled quartz.exe carries
+// Command mkicon draws the Veyl logo and writes it out as a Windows
+// icon, plus a COFF resource object so the compiled veyl.exe carries
 // it in Explorer and the taskbar.
 //
 //	go run ./tools/mkicon
@@ -10,7 +10,7 @@
 // size from the same geometry keeps the facet edges landing on whole
 // pixels.
 //
-// The shape is a quartz crystal reduced to three flat faces: a light
+// The shape is a veyl crystal reduced to three flat faces: a light
 // one catching the light down the middle, a mid tone on the left, a
 // dark one on the right. No gradients, no bevels, no glow. At 16 pixels
 // all that survives is the silhouette and the tonal split, which is
@@ -28,7 +28,7 @@ import (
 	"path/filepath"
 )
 
-// The three faces. Cool blue-violet: quartz is not grey, and a real
+// The three faces. Cool blue-violet: veyl is not grey, and a real
 // hue survives downscaling better than near-white does.
 var (
 	faceLight = color.NRGBA{0xAF, 0xC0, 0xF0, 0xFF}
@@ -41,11 +41,11 @@ type pt struct{ X, Y float64 }
 
 // crystal returns the three faces of the mark, left to right.
 //
-// The silhouette is a double-terminated quartz point: a hexagonal
+// The silhouette is a double-terminated veyl point: a hexagonal
 // prism coming to a pyramid at both ends. The first attempt had a flat
 // base and a pointed top, which at any size reads unmistakably as a
 // house. A point at both ends cannot be read as a building, and it is
-// what quartz actually does when it grows without a substrate.
+// what veyl actually does when it grows without a substrate.
 func crystal() [][]pt {
 	const (
 		topApexY = 0.030 // tip of the upper termination
@@ -300,7 +300,7 @@ func main() {
 		fail(err)
 	}
 
-	icoPath := filepath.Join(iconDir, "quartz.ico")
+	icoPath := filepath.Join(iconDir, "veyl.ico")
 	if err := writeICO(icoPath, imgs); err != nil {
 		fail(err)
 	}
@@ -311,7 +311,7 @@ func main() {
 	if err := png.Encode(&big, render(512)); err != nil {
 		fail(err)
 	}
-	pngPath := filepath.Join(iconDir, "quartz-512.png")
+	pngPath := filepath.Join(iconDir, "veyl-512.png")
 	if err := os.WriteFile(pngPath, big.Bytes(), 0o644); err != nil {
 		fail(err)
 	}

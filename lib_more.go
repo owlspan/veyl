@@ -209,7 +209,7 @@ func __urlJoin(base, ref string) __Res[string] {
 	},
 
 	// Command-line flags. Deliberately tiny: no declaration step, no
-	// usage generation, no types. A Quartz program asks whether a flag
+	// usage generation, no types. A Veyl program asks whether a flag
 	// is there and what it was set to, and the answers come straight
 	// from os.Args.
 	"args": {

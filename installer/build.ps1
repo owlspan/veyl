@@ -1,8 +1,8 @@
-# Builds the Quartz Windows installer.
+# Builds the Veyl Windows installer.
 #
 #     powershell -ExecutionPolicy Bypass -File installer\build.ps1
 #
-# Three steps: build quartz.exe, assemble a trimmed copy of the Go
+# Three steps: build veyl.exe, assemble a trimmed copy of the Go
 # toolchain under dist\stage\go, then compile the Inno Setup script.
 #
 # The trimmed toolchain is the reason this script exists. A full GOROOT
@@ -21,8 +21,8 @@ $goDest = Join-Path $stage 'go'
 Push-Location $repo
 try {
     # 1. The compiler itself.
-    Write-Host '==> building quartz.exe' -ForegroundColor Cyan
-    & go build -o quartz.exe .
+    Write-Host '==> building veyl.exe' -ForegroundColor Cyan
+    & go build -o veyl.exe .
     if ($LASTEXITCODE -ne 0) { throw "go build failed" }
 
     # 2. The toolchain to bundle. GOROOT is asked of the Go that is
@@ -75,13 +75,13 @@ try {
     # A bundle that cannot compile is the failure worth catching early,
     # so prove it before spending minutes on LZMA compression.
     Write-Host '==> verifying the staged toolchain' -ForegroundColor Cyan
-    Copy-Item (Join-Path $repo 'quartz.exe') $stage -Force
+    Copy-Item (Join-Path $repo 'veyl.exe') $stage -Force
     $savedPath = $env:PATH
     $env:PATH = "$env:SystemRoot\System32"
     try {
-        $out = & (Join-Path $stage 'quartz.exe') run (Join-Path $repo 'examples\hello.qz')
-        if ($LASTEXITCODE -ne 0) { throw "the staged toolchain could not compile hello.qz" }
-        if ($out -notmatch 'Hello world') { throw "unexpected output from hello.qz: $out" }
+        $out = & (Join-Path $stage 'veyl.exe') run (Join-Path $repo 'examples\hello.vy')
+        if ($LASTEXITCODE -ne 0) { throw "the staged toolchain could not compile hello.vy" }
+        if ($out -notmatch 'Hello world') { throw "unexpected output from hello.vy: $out" }
     } finally {
         $env:PATH = $savedPath
     }
@@ -100,7 +100,7 @@ try {
     }
 
     Write-Host '==> compiling the installer (this takes a few minutes)' -ForegroundColor Cyan
-    & $iscc (Join-Path $PSScriptRoot 'quartz.iss')
+    & $iscc (Join-Path $PSScriptRoot 'veyl.iss')
     if ($LASTEXITCODE -ne 0) { throw "iscc failed with $LASTEXITCODE" }
 
     Get-ChildItem (Join-Path $dist '*-setup.exe') | ForEach-Object {

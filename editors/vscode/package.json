@@ -1,9 +1,9 @@
 {
-  "name": "quartz-lang",
-  "displayName": "Quartz",
-  "description": "Syntax highlighting for the Quartz programming language",
+  "name": "veyl-lang",
+  "displayName": "Veyl",
+  "description": "Syntax highlighting for the Veyl programming language",
   "version": "0.12.0",
-  "publisher": "quartz",
+  "publisher": "veyl",
   "license": "MIT",
   "engines": {
     "vscode": "^1.60.0"
@@ -14,26 +14,26 @@
   "contributes": {
     "languages": [
       {
-        "id": "quartz",
+        "id": "veyl",
         "aliases": [
-          "Quartz",
-          "quartz"
+          "Veyl",
+          "veyl"
         ],
         "extensions": [
-          ".qz"
+          ".vy"
         ],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "quartz",
-        "scopeName": "source.quartz",
-        "path": "./syntaxes/quartz.tmLanguage.json"
+        "language": "veyl",
+        "scopeName": "source.veyl",
+        "path": "./syntaxes/veyl.tmLanguage.json"
       }
     ],
     "configurationDefaults": {
-      "[quartz]": {
+      "[veyl]": {
         "editor.insertSpaces": true,
         "editor.tabSize": 4,
         "files.trimTrailingWhitespace": true,

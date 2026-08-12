@@ -5,7 +5,7 @@ package main
 // Everything here is emitted into the generated program on demand and
 // calls into Win32 through Go's syscall package, which loads DLLs at
 // runtime. That means no cgo, no C compiler, and no external
-// dependencies - a Quartz program that opens a window is still a single
+// dependencies - a Veyl program that opens a window is still a single
 // self-contained .exe.
 
 var winHelperDefs = map[string]helperDef{
@@ -192,7 +192,7 @@ func __openWindow(title string, width int, height int, rounded bool) bool {
 	cursor, _, _ := __user32.NewProc("LoadCursorW").Call(0, IDC_ARROW)
 
 	__classCount++
-	className, err := syscall.UTF16PtrFromString(fmt.Sprintf("QuartzWindow%d", __classCount))
+	className, err := syscall.UTF16PtrFromString(fmt.Sprintf("VeylWindow%d", __classCount))
 	if err != nil {
 		return false
 	}

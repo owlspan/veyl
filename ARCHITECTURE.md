@@ -1,4 +1,4 @@
-# Quartz compiler internals
+# Veyl compiler internals
 
 How the compiler is put together, and why it is put together that way.
 For the language itself see [SYNTAX.md](SYNTAX.md); for what to build
@@ -24,14 +24,14 @@ next see [ROADMAP.md](ROADMAP.md).
 
 ## The shape of the thing
 
-Quartz is a single Go package `main` in the repository root, with zero
+Veyl is a single Go package `main` in the repository root, with zero
 external dependencies. `go.mod` lists nothing, and that is deliberate:
 the compiler must build anywhere Go builds, with no network.
 
 Six stages, each a plain function over the previous stage's output:
 
 ```
-hello.qz
+hello.vy
    |  lexer.go        text -> []Token
    v
  tokens
@@ -47,7 +47,7 @@ checked AST
    |  codegen.go      -> Go source, with //line directives
    v
  main.go
-   |  quartz.go       shells out to `go build`
+   |  veyl.go       shells out to `go build`
    v
 hello.exe
 ```
@@ -61,7 +61,7 @@ exists, every call has the right arity, and every expression has a type.
 **Why compile to Go rather than to machine code or C?** Go gives us a
 garbage collector, a cross-compiler for every major platform, and a
 linker producing static binaries, for free. The cost is that Go must be
-installed to build a Quartz program. A C backend is planned for the
+installed to build a Veyl program. A C backend is planned for the
 low-level work that Go cannot express (see ROADMAP 11.1), and the AST is
 the intended seam.
 
@@ -126,8 +126,8 @@ not of *type*:
 - Is this `break` or `continue` actually inside a loop?
 - Is this variable ever read?
 
-That last one exists to serve Go, not Quartz. Go rejects unused locals,
-but `let x = 5` with no read is perfectly legal Quartz. The resolver
+That last one exists to serve Go, not Veyl. Go rejects unused locals,
+but `let x = 5` with no read is perfectly legal Veyl. The resolver
 records `LetStmt.Used`, and codegen emits `_ = x` only where it is
 false. **Any new binding form needs the same treatment** or the
 generated program will not compile.
@@ -155,7 +155,7 @@ onto an `int` enum later would have meant touching every use.
 **`KUnknown` suppresses cascades.** When a check fails, the checker
 reports once and returns `Unknown`. Every operation involving `Unknown`
 succeeds silently and propagates it. One mistake yields one error. The
-`tests/err/cascade.qz` case exists to keep it that way.
+`tests/err/cascade.vy` case exists to keep it that way.
 
 **`KNumeric` and `KAny` are signature-only.** They never appear as the
 type of a real expression; they exist so a builtin can declare "any
@@ -169,7 +169,7 @@ concession to convenience in an otherwise strict system, and it costs
 codegen nothing - Go has the identical concept, so the emitted `2`
 simply becomes a float64 constant on the Go side.
 
-Error messages use Quartz's vocabulary. A user should never see
+Error messages use Veyl's vocabulary. A user should never see
 `float64` or `string`. `Type.String()` is the only place that decides
 how a type is spelled, and `Type.Go()` is the only place that knows the
 Go spelling.
@@ -187,12 +187,12 @@ types instead of leaning on Go's inference.
 **Every binary expression is fully parenthesised.** The parser already
 encoded precedence in the shape of the tree, so emitting `(a + b)`
 guarantees Go's precedence rules can never silently disagree with
-Quartz's. The output is ugly. It is also impossible to get wrong.
+Veyl's. The output is ugly. It is also impossible to get wrong.
 
 **Every statement is preceded by a `//line` directive**, at column 1,
-naming the absolute path of the `.qz` file and the source line. This is
+naming the absolute path of the `.vy` file and the source line. This is
 the single most valuable thing in the generated output: it means a type
-error from the Go backend points at the user's Quartz line rather than
+error from the Go backend points at the user's Veyl line rather than
 at generated code they never wrote. `c.line(node)` emits it, and it must
 be called at the top of every statement case.
 
@@ -210,7 +210,7 @@ inference from quietly reaching a different conclusion.
 
 ## Stage 6 - the Go handoff
 
-`quartz.go`. Writes `main.go` and a minimal `go.mod` into a temp
+`veyl.go`. Writes `main.go` and a minimal `go.mod` into a temp
 directory, runs `go build`, and moves the binary next to the source.
 The temp directory is removed afterwards.
 
@@ -295,18 +295,18 @@ Breaking any of these produces failures that are hard to trace back.
 4. **`//line` directives precede every emitted statement**, at column 1.
 5. **Codegen fully parenthesises binary expressions.**
 6. **`KUnknown` propagates silently.** Report once, then stay quiet.
-7. **Type names are spelled in Quartz** in every user-facing message.
+7. **Type names are spelled in Veyl** in every user-facing message.
 8. **No Go module dependencies.** `go.mod` stays empty.
 
 ---
 
 ## Debugging
 
-`quartz emit <file>` prints the generated Go. When behaviour is wrong,
+`veyl emit <file>` prints the generated Go. When behaviour is wrong,
 read it before theorising - it is faster than reasoning about what
 codegen should have done.
 
-`quartz tokens <file>` prints the token stream, for when the problem is
+`veyl tokens <file>` prints the token stream, for when the problem is
 further upstream than it looks.
 
 Verify a change with all of:
@@ -315,7 +315,7 @@ Verify a change with all of:
 gofmt -l $(git ls-files '*.go')   # must print nothing
 go vet ./...                      # must be clean
 go test ./...                     # must pass
-go build -o quartz.exe .
+go build -o veyl.exe .
 ```
 
 `gofmt -l .` would also walk `Working version/`, an untracked snapshot
@@ -331,11 +331,11 @@ It does not prove a window appeared. Say so.
 
 ## Testing
 
-`quartz_test.go` is a data-driven harness. A case is two files:
+`veyl_test.go` is a data-driven harness. A case is two files:
 
 ```
-tests/ok/NAME.qz   + tests/ok/NAME.expected     expected program output
-tests/err/NAME.qz  + tests/err/NAME.expected    expected compiler errors
+tests/ok/NAME.vy   + tests/ok/NAME.expected     expected program output
+tests/err/NAME.vy  + tests/err/NAME.expected    expected compiler errors
 ```
 
 Cases in `tests/ok` must compile, run, and match their output. Cases in
@@ -350,7 +350,7 @@ machine.
 Regenerate after an intentional change:
 
 ```
-go test -run TestQuartz -update .
+go test -run TestVeyl -update .
 ```
 
 Then read the diff. That flag is exactly how a bug becomes the expected

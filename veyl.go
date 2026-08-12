@@ -11,43 +11,43 @@ import (
 	"strings"
 )
 
-// Version is stamped into `quartz version`. Bump it with the tag.
+// Version is stamped into `veyl version`. Bump it with the tag.
 const Version = "0.17"
 
-const usage = `Quartz ` + Version + ` - a small language that compiles to native executables
+const usage = `Veyl ` + Version + ` - a small language that compiles to native executables
 
 usage:
-  quartz run    <file.qz>    compile and run
-  quartz build  <file.qz>    compile to an executable next to the source
-  quartz fmt    <file.qz>    reformat the file in place
-  quartz emit   <file.qz>    print the generated Go
-  quartz tokens <file.qz>    print the token stream
-  quartz console             an interactive console
-  quartz open   <file.qz>    ask whether to run it or build an .exe
-  quartz builtins            list every builtin, for editor tooling
-  quartz doctor              check that everything Quartz needs is present
-  quartz version             print the version
-  quartz help                print this
+  veyl run    <file.vy>    compile and run
+  veyl build  <file.vy>    compile to an executable next to the source
+  veyl fmt    <file.vy>    reformat the file in place
+  veyl emit   <file.vy>    print the generated Go
+  veyl tokens <file.vy>    print the token stream
+  veyl console             an interactive console
+  veyl open   <file.vy>    ask whether to run it or build an .exe
+  veyl builtins            list every builtin, for editor tooling
+  veyl doctor              check that everything Veyl needs is present
+  veyl version             print the version
+  veyl help                print this
 
 packages:
-  quartz init [name]         start a project here
-  quartz add <source>        add a dependency and fetch it
-  quartz remove <name>       drop a dependency
-  quartz install             fetch everything the manifest lists
-  quartz packages            list what is installed
+  veyl init [name]         start a project here
+  veyl add <source>        add a dependency and fetch it
+  veyl remove <name>       drop a dependency
+  veyl install             fetch everything the manifest lists
+  veyl packages            list what is installed
 
-  quartz <file.qz>           same as 'run'
+  veyl <file.vy>           same as 'run'
 
-Anything after the .qz file is passed to the program, not to Quartz.
+Anything after the .vy file is passed to the program, not to Veyl.
 
 environment:
-  QUARTZ_TARGET=windows      cross-compile for another OS
-  QUARTZ_QUIET=1             suppress warnings
-  QUARTZ_GO=<path to go.exe> use a specific Go toolchain
+  VEYL_TARGET=windows      cross-compile for another OS
+  VEYL_QUIET=1             suppress warnings
+  VEYL_GO=<path to go.exe> use a specific Go toolchain
 
-Quartz hands its generated code to the Go toolchain, so Go has to be
+Veyl hands its generated code to the Go toolchain, so Go has to be
 present. The installer ships a copy; otherwise get it from
-https://go.dev/dl. Run 'quartz doctor' to check.
+https://go.dev/dl. Run 'veyl doctor' to check.
 Language reference: SYNTAX.md
 `
 
@@ -58,15 +58,15 @@ func main() {
 		os.Exit(64)
 	}
 
-	// Anything after the .qz file belongs to the program being run, not
-	// to the compiler, so `quartz run app.qz --verbose` passes
+	// Anything after the .vy file belongs to the program being run, not
+	// to the compiler, so `veyl run app.vy --verbose` passes
 	// --verbose through to os.args rather than trying to interpret it.
 	cmd, path := "run", ""
 	var progArgs []string
 	switch args[0] {
 	case "run", "build", "emit", "tokens", "fmt":
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "quartz: %s needs a file\n", args[0])
+			fmt.Fprintf(os.Stderr, "veyl: %s needs a file\n", args[0])
 			os.Exit(64)
 		}
 		cmd, path, progArgs = args[0], args[1], args[2:]
@@ -74,7 +74,7 @@ func main() {
 		fmt.Print(usage)
 		return
 	case "-v", "--version", "version":
-		fmt.Printf("quartz %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("veyl %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
 		return
 	case "init", "add", "remove", "install", "packages":
 		var err error
@@ -91,20 +91,20 @@ func main() {
 			err = cmdPackages()
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+			fmt.Fprintf(os.Stderr, "veyl: %v\n", err)
 			os.Exit(1)
 		}
 		return
 	case "open":
 		// What a double-click in Explorer lands on.
 		if err := runOpen(args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+			fmt.Fprintf(os.Stderr, "veyl: %v\n", err)
 			os.Exit(1)
 		}
 		return
 	case "console", "repl":
 		if err := runConsole(); err != nil {
-			fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+			fmt.Fprintf(os.Stderr, "veyl: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -126,14 +126,14 @@ func main() {
 	}
 
 	if err := run(cmd, path, progArgs); err != nil {
-		fmt.Fprintf(os.Stderr, "quartz: %v\n", err)
+		fmt.Fprintf(os.Stderr, "veyl: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run(cmd, path string, progArgs []string) error {
-	if !strings.HasSuffix(path, ".qz") {
-		return fmt.Errorf("%s is not a .qz file", path)
+	if !strings.HasSuffix(path, ".vy") {
+		return fmt.Errorf("%s is not a .vy file", path)
 	}
 
 	abs, err := filepath.Abs(path)
@@ -205,7 +205,7 @@ func run(cmd, path string, progArgs []string) error {
 	reportWarnings(rs.Warnings)
 
 	// ---- codegen ----
-	target := os.Getenv("QUARTZ_TARGET")
+	target := os.Getenv("VEYL_TARGET")
 	if target == "" {
 		target = runtime.GOOS
 	}
@@ -221,12 +221,12 @@ func run(cmd, path string, progArgs []string) error {
 	}
 
 	// ---- hand off to the Go toolchain ----
-	exeName := strings.TrimSuffix(name, ".qz")
+	exeName := strings.TrimSuffix(name, ".vy")
 	if target == "windows" {
 		exeName += ".exe"
 	}
 
-	tmp, err := os.MkdirTemp("", "quartz-build-")
+	tmp, err := os.MkdirTemp("", "veyl-build-")
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func run(cmd, path string, progArgs []string) error {
 	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(goSrc), 0o644); err != nil {
 		return err
 	}
-	gomod := "module qzprog\n\ngo 1.21\n"
+	gomod := "module vyprog\n\ngo 1.21\n"
 	if err := os.WriteFile(filepath.Join(tmp, "go.mod"), []byte(gomod), 0o644); err != nil {
 		return err
 	}
@@ -265,7 +265,7 @@ func run(cmd, path string, progArgs []string) error {
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("the Go backend rejected the generated program (see above). "+
 			"This is a compiler bug, not a mistake in %s - the type checker should have "+
-			"caught it first. Run 'quartz emit %s' to see what was generated.", path, path)
+			"caught it first. Run 'veyl emit %s' to see what was generated.", path, path)
 	}
 
 	if cmd == "build" {
@@ -278,7 +278,7 @@ func run(cmd, path string, progArgs []string) error {
 	}
 
 	if target != runtime.GOOS {
-		return fmt.Errorf("cannot run a %s executable on %s - use 'quartz build' instead", target, runtime.GOOS)
+		return fmt.Errorf("cannot run a %s executable on %s - use 'veyl build' instead", target, runtime.GOOS)
 	}
 
 	// cmd == "run"
@@ -336,7 +336,7 @@ func formatFile(abs, name, src string) error {
 
 // ---- modules ----
 //
-// An import loads another .qz file and folds its declarations into the
+// An import loads another .vy file and folds its declarations into the
 // same program. There is no module registry, no search path and no
 // package naming: a path is a path, relative to the file that wrote it.
 //
@@ -383,8 +383,8 @@ func (l *loader) resolve(prog *Program, from string) {
 
 		// A path names a file; a bare word names a package. The two
 		// cannot be confused, because a file import has always had to
-		// end in .qz and a package name never may.
-		if strings.HasSuffix(imp.Path, ".qz") {
+		// end in .vy and a package name never may.
+		if strings.HasSuffix(imp.Path, ".vy") {
 			target = imp.Path
 			if !filepath.IsAbs(target) {
 				target = filepath.Join(filepath.Dir(from), target)
@@ -399,7 +399,7 @@ func (l *loader) resolve(prog *Program, from string) {
 			// Something with a dot, a slash or a drive letter was meant
 			// to be a file. Reading it as a package name would answer a
 			// question nobody asked ("no package called notes.txt").
-			l.errorAt(imp, "an import must name a .qz file, got %q", imp.Path)
+			l.errorAt(imp, "an import must name a .vy file, got %q", imp.Path)
 			continue
 		} else {
 			if l.pkgs == nil {
@@ -514,10 +514,10 @@ func stampFile(prog *Program, abs string) {
 }
 
 // reportWarnings prints things worth saying that are not worth
-// stopping for. Set QUARTZ_QUIET to silence them - useful when a
+// stopping for. Set VEYL_QUIET to silence them - useful when a
 // warning is known and the noise is in the way.
 func reportWarnings(warnings []string) {
-	if len(warnings) == 0 || os.Getenv("QUARTZ_QUIET") != "" {
+	if len(warnings) == 0 || os.Getenv("VEYL_QUIET") != "" {
 		return
 	}
 	sortByPosition(warnings)

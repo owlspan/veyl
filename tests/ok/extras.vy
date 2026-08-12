@@ -11,7 +11,7 @@ print(rand.hex(4))
 print(len(rand.uuid()))
 
 // A shuffle returns a new list; the original is untouched, because
-// assignment in Quartz copies.
+// assignment in Veyl copies.
 let xs = [1, 2, 3, 4, 5]
 let mixed = rand.shuffle(xs)
 print(len(mixed))

@@ -22,7 +22,7 @@ fn fib(n: int) -> int {
 }
 
 print("{half(9.0)} {describe(20)} {describe(2)}")
-greet("quartz")
+greet("veyl")
 print("fib(20) = {fib(20)}")
 
 // A float parameter accepts an integer literal.

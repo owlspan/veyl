@@ -1,7 +1,7 @@
-# Learn Quartz in 20 minutes
+# Learn Veyl in 20 minutes
 
 This is the fast tour. It assumes you can already program in something -
-Python, JavaScript, a bit of C - and just want to know how Quartz does
+Python, JavaScript, a bit of C - and just want to know how Veyl does
 it.
 
 For the full rules see [SYNTAX.md](SYNTAX.md). For how the compiler
@@ -27,22 +27,22 @@ works see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Hello
 
-Put this in `hello.qz`:
+Put this in `hello.vy`:
 
 ```qz
 print("Hello, world!")
 ```
 
 ```
-quartz run hello.qz
+veyl run hello.vy
 ```
 
 No `main`, no imports, no semicolons. Top-level statements run in order.
 
-`quartz build hello.qz` gives you `hello.exe` instead - one file, no
+`veyl build hello.vy` gives you `hello.exe` instead - one file, no
 runtime to install, nothing to ship alongside it.
 
-> Quartz compiles through Go, so **Go has to be installed**. Your
+> Veyl compiles through Go, so **Go has to be installed**. Your
 > finished `.exe` does not need it; only building does.
 
 ---
@@ -66,7 +66,7 @@ let xs    = [1, 2, 3]     // []int
 let ages  = {"ada": 36}   // {str: int}
 ```
 
-**Quartz never converts between types for you.** This is the rule that
+**Veyl never converts between types for you.** This is the rule that
 surprises people first:
 
 ```qz
@@ -296,7 +296,7 @@ if note != nil {
 print(upper(note))          // error: ?str might be nil
 ```
 
-This is the main thing Quartz offers over most languages: there is no
+This is the main thing Veyl offers over most languages: there is no
 such thing as a nil `str`, so there is no such thing as a
 nil-dereference crash.
 
@@ -370,12 +370,12 @@ let pages = task.map(urls, fn(u: str) -> str {
 
 Everything has finished by the time it returns.
 
-**A whole program** is in `examples\wordfreq.qz` - arguments, a file
+**A whole program** is in `examples\wordfreq.vy` - arguments, a file
 that might not be there, a pattern, a map, a struct, and sorting with
 your own comparison, in about sixty lines:
 
 ```
-quartz run examples\wordfreq.qz SYNTAX.md 10
+veyl run examples\wordfreq.vy SYNTAX.md 10
 ```
 
 ---
@@ -383,14 +383,14 @@ quartz run examples\wordfreq.qz SYNTAX.md 10
 ## Several files
 
 ```qz
-import "helpers.qz"
+import "helpers.vy"
 ```
 
 The path is relative to the file that writes it. A declaration is
 private unless marked `pub`:
 
 ```qz
-// helpers.qz
+// helpers.vy
 pub const TAU = 6.283185307179586
 
 pub fn shout(text: str) -> str {
@@ -410,9 +410,9 @@ A top-level `const` is a global, visible inside functions. A top-level
 ## Where to go next
 
 ```
-quartz fmt yourfile.qz      tidy the formatting
-quartz emit yourfile.qz     see the Go it generates
-quartz builtins             list everything available
+veyl fmt yourfile.vy      tidy the formatting
+veyl emit yourfile.vy     see the Go it generates
+veyl builtins             list everything available
 ```
 
 `emit` is the best debugging tool here. When something behaves oddly,

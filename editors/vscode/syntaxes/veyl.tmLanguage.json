@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "Quartz",
-  "scopeName": "source.quartz",
+  "name": "Veyl",
+  "scopeName": "source.veyl",
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
@@ -19,12 +19,12 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.quartz",
+          "name": "comment.line.double-slash.veyl",
           "begin": "//",
           "end": "$"
         },
         {
-          "name": "comment.block.quartz",
+          "name": "comment.block.veyl",
           "begin": "/\\*",
           "end": "\\*/",
           "patterns": [{ "include": "#comments" }]
@@ -33,24 +33,24 @@
     },
 
     "strings": {
-      "name": "string.quoted.double.quartz",
+      "name": "string.quoted.double.veyl",
       "begin": "\"",
       "end": "\"",
       "patterns": [
         {
-          "name": "constant.character.escape.quartz",
+          "name": "constant.character.escape.veyl",
           "match": "\\\\[ntr\"\\\\0]"
         },
         {
-          "name": "constant.character.escape.quartz",
+          "name": "constant.character.escape.veyl",
           "match": "\\{\\{|\\}\\}"
         },
         {
-          "name": "meta.embedded.quartz",
+          "name": "meta.embedded.veyl",
           "begin": "\\{",
           "end": "\\}",
-          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.quartz" } },
-          "endCaptures": { "0": { "name": "punctuation.section.embedded.end.quartz" } },
+          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.veyl" } },
+          "endCaptures": { "0": { "name": "punctuation.section.embedded.end.veyl" } },
           "patterns": [
             { "include": "#strings" },
             { "include": "#keywords" },
@@ -70,27 +70,27 @@
         {
           "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.function.quartz" },
-            "2": { "name": "entity.name.function.quartz" }
+            "1": { "name": "keyword.declaration.function.veyl" },
+            "2": { "name": "entity.name.function.veyl" }
           }
         },
         {
           "match": "\\b(struct|impl)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.struct.quartz" },
-            "2": { "name": "entity.name.type.quartz" }
+            "1": { "name": "keyword.declaration.struct.veyl" },
+            "2": { "name": "entity.name.type.veyl" }
           }
         },
         {
           "match": "\\b(let|const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "keyword.declaration.variable.quartz" },
-            "2": { "name": "variable.other.quartz" }
+            "1": { "name": "keyword.declaration.variable.veyl" },
+            "2": { "name": "variable.other.veyl" }
           }
         },
         {
           "match": "\\b(import)\\b",
-          "name": "keyword.control.import.quartz"
+          "name": "keyword.control.import.veyl"
         }
       ]
     },
@@ -98,24 +98,24 @@
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.quartz",
+          "name": "keyword.control.veyl",
           "match": "\\b(if|else|while|for|in|step|break|continue|return|match)\\b"
         },
         {
-          "name": "keyword.declaration.quartz",
+          "name": "keyword.declaration.veyl",
           "match": "\\b(let|const|fn|struct|impl|pub|import)\\b"
         },
         {
-          "name": "variable.language.self.quartz",
+          "name": "variable.language.self.veyl",
           "match": "\\bself\\b"
         },
         {
-          "name": "constant.language.quartz",
+          "name": "constant.language.veyl",
           "match": "\\b(true|false|nil)\\b"
         },
         {
           "comment": "Reserved but not implemented - flagged so it is obvious the compiler will refuse them.",
-          "name": "invalid.illegal.reserved.quartz",
+          "name": "invalid.illegal.reserved.veyl",
           "match": "\\b(defer|own|unsafe)\\b"
         }
       ]
@@ -124,35 +124,35 @@
     "types": {
       "patterns": [
         {
-          "name": "support.type.primitive.quartz",
+          "name": "support.type.primitive.veyl",
           "match": "\\b(int|float|str|bool)\\b"
         },
         {
           "comment": "A capitalised name after a colon, arrow or in a literal is a struct type.",
-          "name": "entity.name.type.quartz",
+          "name": "entity.name.type.veyl",
           "match": "(?<=:|->|\\[\\]|\\?)\\s*([A-Z][A-Za-z0-9_]*)"
         },
         {
           "comment": "The ! and ? that make a type fallible or nullable.",
-          "name": "keyword.operator.type.quartz",
+          "name": "keyword.operator.type.veyl",
           "match": "(?<=[A-Za-z0-9_\\]\\}])!(?=\\s*[=\\{\\)\\n]|$)"
         }
       ]
     },
 
     "constants": {
-      "name": "constant.language.quartz",
+      "name": "constant.language.veyl",
       "match": "\\b(E|INF|NAN|PI)\\b"
     },
 
     "numbers": {
       "patterns": [
         {
-          "name": "constant.numeric.float.quartz",
+          "name": "constant.numeric.float.veyl",
           "match": "\\b[0-9]+\\.[0-9]+\\b"
         },
         {
-          "name": "constant.numeric.integer.quartz",
+          "name": "constant.numeric.integer.veyl",
           "match": "\\b[0-9]+\\b"
         }
       ]
@@ -162,54 +162,54 @@
       "comment": "Dotted library paths: os.file.read, http.get, json.decode.",
       "match": "\\b(http|json|mem|net|os|time)\\b((?:\\.[A-Za-z_][A-Za-z0-9_]*)+)",
       "captures": {
-        "1": { "name": "support.class.library.quartz" },
-        "2": { "name": "support.function.library.quartz" }
+        "1": { "name": "support.class.library.veyl" },
+        "2": { "name": "support.function.library.veyl" }
       }
     },
 
     "builtins": {
-      "name": "support.function.builtin.quartz",
+      "name": "support.function.builtin.veyl",
       "match": "\\b(abs|acos|asin|atan2|atan|beep|cbrt|ceil|charAt|chars|clamp|clear|contains|cos|count|divf|endsWith|errorOf|exit|exp|fail|failed|find|first|float|floor|has|hideConsole|hypot|indexOf|input|insert|int|isFloat|isInt|isNan|isOk|isWin11|join|keys|last|len|lines|log10|log2|log|lower|max|messageBox|min|mod|must|openWindow|padLeft|padRight|pause|pop|pow|print|push|randomInt|random|remove|removeAt|repeat|replace|reverse|round|setTitle|sign|sin|sleep|slice|sort|split|sqrt|startsWith|str|substr|sum|tan|toFloat|toInt|trim|trunc|upper|valueOr|values|winBuild|write)\\b(?=\\s*\\()"
     },
 
     "calls": {
       "comment": "Anything else called like a function.",
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
-      "captures": { "1": { "name": "entity.name.function.call.quartz" } }
+      "captures": { "1": { "name": "entity.name.function.call.veyl" } }
     },
 
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.range.quartz",
+          "name": "keyword.operator.range.veyl",
           "match": "\\.\\.=|\\.\\."
         },
         {
-          "name": "keyword.operator.arrow.quartz",
+          "name": "keyword.operator.arrow.veyl",
           "match": "->|=>"
         },
         {
-          "name": "keyword.operator.assignment.quartz",
+          "name": "keyword.operator.assignment.veyl",
           "match": "(\\+|-|\\*|/|%|&|\\||\\^|<<|>>)?="
         },
         {
-          "name": "keyword.operator.comparison.quartz",
+          "name": "keyword.operator.comparison.veyl",
           "match": "==|!=|<=|>=|<|>"
         },
         {
-          "name": "keyword.operator.logical.quartz",
+          "name": "keyword.operator.logical.veyl",
           "match": "&&|\\|\\||!"
         },
         {
-          "name": "keyword.operator.bitwise.quartz",
+          "name": "keyword.operator.bitwise.veyl",
           "match": "<<|>>|&|\\||\\^|~"
         },
         {
-          "name": "keyword.operator.arithmetic.quartz",
+          "name": "keyword.operator.arithmetic.veyl",
           "match": "\\+|-|\\*|/|%"
         },
         {
-          "name": "keyword.operator.try.quartz",
+          "name": "keyword.operator.try.veyl",
           "match": "\\?"
         }
       ]

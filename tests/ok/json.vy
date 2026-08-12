@@ -12,7 +12,7 @@ struct Person {
     address: Address
 }
 
-// encoding uses the field names as written in Quartz
+// encoding uses the field names as written in Veyl
 let ada = Person {
     name: "ada",
     age: 36,

@@ -8,18 +8,18 @@ import (
 	"strings"
 )
 
-// The `quartz init`, `add`, `install`, `remove` and `packages` commands.
+// The `veyl init`, `add`, `install`, `remove` and `packages` commands.
 // Kept apart from pkg.go so the resolution machinery can be read
 // without the command-line handling wrapped around it.
 
 func pkgUsage() string {
-	return `quartz package commands:
+	return `veyl package commands:
 
-  quartz init [name]                 start a project here
-  quartz add <source> [as <name>]    add a dependency and fetch it
-  quartz remove <name>               drop a dependency
-  quartz install                     fetch everything the manifest lists
-  quartz packages                    list what is installed
+  veyl init [name]                 start a project here
+  veyl add <source> [as <name>]    add a dependency and fetch it
+  veyl remove <name>               drop a dependency
+  veyl install                     fetch everything the manifest lists
+  veyl packages                    list what is installed
 
 A source is a GitHub repository at a tag:
 
@@ -41,7 +41,7 @@ func projectHere() (string, *Manifest, error) {
 	root := findProjectRoot(wd)
 	if root == "" {
 		return "", nil, fmt.Errorf(
-			"no %s here or in any parent directory.\nStart a project with: quartz init", manifestName)
+			"no %s here or in any parent directory.\nStart a project with: veyl init", manifestName)
 	}
 	m, err := loadManifest(root)
 	if err != nil {
@@ -66,7 +66,7 @@ func cmdInit(args []string) error {
 	m := &Manifest{
 		Name:         name,
 		Version:      "0.1.0",
-		Main:         name + ".qz",
+		Main:         name + ".vy",
 		Dependencies: map[string]string{},
 	}
 	if err := saveManifest(wd, m); err != nil {
@@ -74,16 +74,16 @@ func cmdInit(args []string) error {
 	}
 	fmt.Printf("created %s\n", filepath.Join(wd, manifestName))
 	fmt.Printf("\nName it in imports as %q once it is published.\n", name)
-	fmt.Println("Add a dependency with: quartz add github.com/owner/repo@v1.0.0")
+	fmt.Println("Add a dependency with: veyl add github.com/owner/repo@v1.0.0")
 	return nil
 }
 
 // cmdAdd fetches a package and records it. The import name defaults to
 // the repository name, with `as` for when that would collide or read
-// badly: quartz add github.com/someone/quartz-json@v1.0.0 as json.
+// badly: veyl add github.com/someone/veyl-json@v1.0.0 as json.
 func cmdAdd(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("quartz add needs a source, e.g. github.com/owner/repo@v1.0.0")
+		return fmt.Errorf("veyl add needs a source, e.g. github.com/owner/repo@v1.0.0")
 	}
 	root, m, err := projectHere()
 	if err != nil {
@@ -109,15 +109,15 @@ func cmdAdd(args []string) error {
 	// so say so now rather than let it be mysteriously ignored.
 	if namespaces[name] {
 		return fmt.Errorf("%q is a builtin library, so a package cannot take that name.\n"+
-			"Choose another with: quartz add %s as <name>", name, spec)
+			"Choose another with: veyl add %s as <name>", name, spec)
 	}
 	// The import name is written in source as a namespace, so it has to
 	// be spellable. Repositories are routinely called things like
-	// quartz-strutil, and `quartz-strutil.titleCase` reads as a
+	// veyl-strutil, and `veyl-strutil.titleCase` reads as a
 	// subtraction - better to refuse now than to emit that later.
 	if why := badImportName(name); why != "" {
 		return fmt.Errorf("%q cannot be used as an import name: %s.\n"+
-			"Pick one with: quartz add %s as <name>", name, why, spec)
+			"Pick one with: veyl add %s as <name>", name, why, spec)
 	}
 
 	fmt.Printf("adding %s as %q\n", s, name)
@@ -160,7 +160,7 @@ func cmdAdd(args []string) error {
 
 func cmdRemove(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("quartz remove needs a package name")
+		return fmt.Errorf("veyl remove needs a package name")
 	}
 	root, m, err := projectHere()
 	if err != nil {
@@ -229,7 +229,7 @@ func cmdInstall() error {
 				"%s: the contents of %s changed since it was locked.\n"+
 					"    expected %s\n    got      %s\n"+
 					"    The tag was moved. Check what changed before trusting it;\n"+
-					"    'quartz add %s' again if the new code is what you want.",
+					"    'veyl add %s' again if the new code is what you want.",
 				name, spec, short(want.SHA256), short(sum), spec))
 			continue
 		}

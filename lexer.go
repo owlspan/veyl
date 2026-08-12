@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Lexer turns Quartz source text into a flat slice of Tokens.
+// Lexer turns Veyl source text into a flat slice of Tokens.
 type Lexer struct {
 	src  string
 	file string

@@ -37,21 +37,21 @@ import (
 // package, that is reported and the build stops. A wrong answer chosen
 // quietly is worse than an error that says what to fix.
 
-// manifestName is the file that makes a directory a Quartz project or
-// a Quartz package. Same format for both: a package is just a project
+// manifestName is the file that makes a directory a Veyl project or
+// a Veyl package. Same format for both: a package is just a project
 // somebody else depends on.
 const (
-	manifestName = "quartz.json"
-	lockName     = "quartz.lock"
+	manifestName = "veyl.json"
+	lockName     = "veyl.lock"
 )
 
-// Manifest is quartz.json.
+// Manifest is veyl.json.
 type Manifest struct {
 	Name string `json:"name"`
 	// Version is what this package calls itself. Unused for an
 	// application, required for something others will depend on.
 	Version string `json:"version,omitempty"`
-	// Main is the file an importer gets. Defaults to <name>.qz.
+	// Main is the file an importer gets. Defaults to <name>.vy.
 	Main         string            `json:"main,omitempty"`
 	Description  string            `json:"description,omitempty"`
 	Dependencies map[string]string `json:"dependencies,omitempty"`
@@ -66,7 +66,7 @@ type LockEntry struct {
 	SHA256  string `json:"sha256"`
 }
 
-// Lock is quartz.lock.
+// Lock is veyl.lock.
 type Lock struct {
 	Packages map[string]LockEntry `json:"packages"`
 }
@@ -111,7 +111,7 @@ func parseSource(spec string) (source, error) {
 // A tag is tried before a branch. Both are allowed: pinning to a tag is
 // the sane default, but refusing branches outright would block anyone
 // depending on a library that has not tagged a release yet. What
-// actually guarantees reproducibility is the hash in quartz.lock, which
+// actually guarantees reproducibility is the hash in veyl.lock, which
 // notices either kind of reference changing underneath.
 func (s source) tarballURLs() []string {
 	base := fmt.Sprintf("https://codeload.%s/%s/%s/tar.gz", s.host, s.owner, s.repo)
@@ -129,7 +129,7 @@ func (s source) cacheDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "quartz", "pkg",
+	return filepath.Join(base, "veyl", "pkg",
 		s.host, s.owner, s.repo+"@"+s.version), nil
 }
 
@@ -189,8 +189,8 @@ func saveLock(dir string, l *Lock) error {
 	return os.WriteFile(filepath.Join(dir, lockName), append(data, '\n'), 0o644)
 }
 
-// findProjectRoot walks up from a file looking for quartz.json, so
-// `quartz run src/main.qz` works from anywhere inside a project.
+// findProjectRoot walks up from a file looking for veyl.json, so
+// `veyl run src/main.vy` works from anywhere inside a project.
 func findProjectRoot(start string) string {
 	dir := start
 	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
@@ -220,7 +220,7 @@ func fetch(s source, quiet bool) (string, error) {
 			return "", err
 		}
 		if _, err := os.Stat(filepath.Join(abs, manifestName)); err != nil {
-			return "", fmt.Errorf("%s has no %s, so it is not a Quartz package", s.local, manifestName)
+			return "", fmt.Errorf("%s has no %s, so it is not a Veyl package", s.local, manifestName)
 		}
 		return abs, nil
 	}
@@ -258,7 +258,7 @@ func fetch(s source, quiet bool) (string, error) {
 	}
 	if _, err := os.Stat(filepath.Join(tmp, manifestName)); err != nil {
 		os.RemoveAll(tmp)
-		return "", fmt.Errorf("%s has no %s at its root, so it is not a Quartz package", s, manifestName)
+		return "", fmt.Errorf("%s has no %s at its root, so it is not a Veyl package", s, manifestName)
 	}
 	os.RemoveAll(dir)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
@@ -412,7 +412,7 @@ func newPackageResolver(startFile string) *packageResolver {
 	return r
 }
 
-// resolve turns `import "strutil"` into the path of the .qz file that
+// resolve turns `import "strutil"` into the path of the .vy file that
 // package exposes. The error text carries the fix, because "package not
 // found" on its own leaves someone guessing which of three things
 // went wrong.
@@ -423,13 +423,13 @@ func (r *packageResolver) resolve(name string) (string, error) {
 	if r.root == "" {
 		return "", fmt.Errorf(
 			"%q is not a file, so it is read as a package - but there is no %s here.\n"+
-				"Run 'quartz init' to start a project, then 'quartz add <package>'",
+				"Run 'veyl init' to start a project, then 'veyl add <package>'",
 			name, manifestName)
 	}
 	spec, ok := r.deps[name]
 	if !ok {
 		return "", fmt.Errorf(
-			"no package called %q in %s.\nAdd one with: quartz add github.com/owner/%s@v1.0.0",
+			"no package called %q in %s.\nAdd one with: veyl add github.com/owner/%s@v1.0.0",
 			name, manifestName, name)
 	}
 	s, err := parseSource(spec)
@@ -438,7 +438,7 @@ func (r *packageResolver) resolve(name string) (string, error) {
 	}
 	dir, err := fetch(s, true)
 	if err != nil {
-		return "", fmt.Errorf("%s\nRun 'quartz install' to fetch it", err)
+		return "", fmt.Errorf("%s\nRun 'veyl install' to fetch it", err)
 	}
 
 	m, err := loadManifest(dir)
@@ -447,7 +447,7 @@ func (r *packageResolver) resolve(name string) (string, error) {
 	}
 	main := m.Main
 	if main == "" {
-		main = m.Name + ".qz"
+		main = m.Name + ".vy"
 	}
 	entry := filepath.Join(dir, filepath.FromSlash(main))
 	if _, err := os.Stat(entry); err != nil {

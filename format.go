@@ -18,7 +18,7 @@ import "strings"
 // breaks has to be much cleverer than this one before it earns the
 // right.
 
-// Format reformats Quartz source. It returns the source unchanged if
+// Format reformats Veyl source. It returns the source unchanged if
 // the input does not lex cleanly - reformatting a file with a broken
 // string literal in it is a good way to lose work.
 func Format(file, src string) (string, bool) {

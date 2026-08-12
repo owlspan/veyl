@@ -5,7 +5,7 @@ import "strings"
 // The rand, stats, term and log libraries.
 //
 // These are the things a program reaches for constantly and that
-// Quartz previously made you write yourself: pick a random element,
+// Veyl previously made you write yourself: pick a random element,
 // average a list, print something in colour, log a line with a
 // timestamp. Python ships all of them and it is a large part of why
 // small Python programs are short.
@@ -32,7 +32,7 @@ func __toFloats[T __Num](xs []T) []float64 {
 		// when a fixed sequence is wanted, and only then.
 		code: `// math/rand rather than math/rand/v2: v2 needs Go 1.22, and the
 // generated program declares go 1.21 so that anyone on the older
-// toolchain can still build what Quartz produces.
+// toolchain can still build what Veyl produces.
 var __rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func __seed(n int) {
@@ -78,7 +78,7 @@ func __pick[T any](xs []T) T {
 	return xs[__rng.Intn(len(xs))]
 }
 
-// Shuffle returns a new list. Quartz assignment copies, so a function
+// Shuffle returns a new list. Veyl assignment copies, so a function
 // that reordered its argument in place would surprise people.
 func __shuffle[T any](xs []T) []T {
 	out := append([]T(nil), xs...)

@@ -27,7 +27,7 @@ Go. `go.mod` is still empty - no dependency was added.
 Try it:
 
 ```
-quartz run examples\tools.qz
+veyl run examples\tools.vy
 ```
 
 The roadmap through v0.7 is done, plus the libraries you asked for that
@@ -49,7 +49,7 @@ recommended.
 **2. Integer literals stay untyped.** This one is a refinement, not
 what the docs said. Strictly following rule 1 means `radius * 2` fails
 when radius is a float, and you would write `float(...)` constantly.
-Go solves this with untyped constants, so Quartz does the same: a plain
+Go solves this with untyped constants, so Veyl does the same: a plain
 integer literal adapts to a float, but a variable never does.
 
 ```qz
@@ -67,7 +67,7 @@ per loop; `keys()` and `values()` are sorted for the same reason.
 `0` or `""` rather than failing. `has(m, k)` tells the difference. This
 is the thing most worth revisiting when `T!` lands.
 
-**5. Collections print in Quartz notation.** `[1, 2, 3]` and
+**5. Collections print in Veyl notation.** `[1, 2, 3]` and
 `{"a": 1}`, not Go's `[1 2 3]` and `map[a:1]`, so a printed value is
 something you can paste back into your program.
 
@@ -109,7 +109,7 @@ the function. Predictable beats clever here, but that particular case is
 common enough that it may be worth adding.
 
 **11. `json.decode` reads its target from the annotation.**
-`let p: Point = json.decode(text)` - Quartz has no type arguments, so
+`let p: Point = json.decode(text)` - Veyl has no type arguments, so
 the binding is what tells the decoder what to build. Without an
 annotation it is a compile error that says so.
 
@@ -118,12 +118,12 @@ annotation it is a compile error that says so.
 ## Things worth your attention
 
 **Floats print without a decimal point.** `print(2.0)` shows `2`,
-because that is what Go's `%v` does. Quartz now draws a hard line
+because that is what Go's `%v` does. Veyl now draws a hard line
 between `int` and `float`, so hiding the difference when printing is
 arguably wrong - but changing it is a design decision, not a bug fix,
 so I left it. Worth a ruling.
 
-**`quartz.exe` is committed as ignored.** `.gitignore` already covered
+**`veyl.exe` is committed as ignored.** `.gitignore` already covered
 it. `tests/` is tracked; the built `examples/*.exe` are not.
 
 **GUI runtime behaviour is still unverified** beyond version detection.

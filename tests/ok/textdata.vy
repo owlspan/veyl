@@ -71,11 +71,11 @@ print("bad base64 fails {isOk(hash.fromBase64("not!valid!"))}")
 print("bad hex fails {isOk(hash.fromHex("zzzz"))}")
 
 // Hashing a file, streamed rather than read whole.
-os.file.write("qz_hash_probe.txt", "abc")
-let fileSum = must(hash.file("qz_hash_probe.txt"))
+os.file.write("vy_hash_probe.txt", "abc")
+let fileSum = must(hash.file("vy_hash_probe.txt"))
 print("file matches string {fileSum == hash.sha256("abc")}")
 print("missing file fails {isOk(hash.file("no_such_file.txt"))}")
-os.file.delete("qz_hash_probe.txt")
+os.file.delete("vy_hash_probe.txt")
 
 // ---- csv ----
 
@@ -102,8 +102,8 @@ d,e`
 print("ragged {must(csv.parse(ragged))}")
 
 // Reading and writing a file.
-csv.save("qz_table.csv", tricky)
-let fromDisk = must(csv.read("qz_table.csv"))
+csv.save("vy_table.csv", tricky)
+let fromDisk = must(csv.read("vy_table.csv"))
 print("saved and read {fromDisk == tricky}")
 print("missing csv fails {isOk(csv.read("no_such.csv"))}")
-os.file.delete("qz_table.csv")
+os.file.delete("vy_table.csv")

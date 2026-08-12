@@ -88,7 +88,7 @@ fn twice(f: fn(int) -> int, start: int) -> int {
 }
 
 print("add {add(2, 3)}")
-greet("quartz")
+greet("veyl")
 print("twice {twice(double, 3)}")
 
 // ---- lists and maps ----
@@ -155,8 +155,8 @@ if filled != nil {
 }
 
 // ---- when it goes wrong ----
-os.file.write("qz_tutorial.txt", "one two three")
-let text = os.file.read("qz_tutorial.txt")
+os.file.write("vy_tutorial.txt", "one two three")
+let text = os.file.read("vy_tutorial.txt")
 print("must {len(must(text))}")
 print("valueOr {len(valueOr(text, ""))}")
 print("isOk {isOk(text)} errorOf {errorOf(text) == ""}")
@@ -165,7 +165,7 @@ fn wordCount(path: str) -> int! {
     let body = os.file.read(path)?
     return len(split(trim(body), " "))
 }
-print("wordCount {must(wordCount("qz_tutorial.txt"))}")
+print("wordCount {must(wordCount("vy_tutorial.txt"))}")
 print("wordCount of a missing file {isOk(wordCount("nope.txt"))}")
 
 fn parsePort(t: str) -> int! {
@@ -184,5 +184,5 @@ print("findAll {re.findAll(`\d+`, "a1 b22 c333")}")
 let doubled = task.map([1, 2, 3], fn(x: int) -> int { return x * 2 })
 print("task.map {doubled}")
 
-os.file.delete("qz_tutorial.txt")
-print("cleaned up {os.file.exists("qz_tutorial.txt")}")
+os.file.delete("vy_tutorial.txt")
+print("cleaned up {os.file.exists("vy_tutorial.txt")}")

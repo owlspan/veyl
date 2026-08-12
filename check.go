@@ -12,7 +12,7 @@ import (
 // can emit explicit Go types instead of leaning on Go's inference.
 //
 // Like every other stage it accumulates errors rather than aborting, and
-// every error names Quartz types (str, float) and never Go ones.
+// every error names Veyl types (str, float) and never Go ones.
 type Checker struct {
 	file     string
 	funcs    map[string]*FnDecl
@@ -1313,7 +1313,7 @@ func nilAdvice(x *Binary) string {
 	return "put it in a variable and check that for nil first"
 }
 
-// bitwise operators bind looser than comparison in C, and Quartz copies
+// bitwise operators bind looser than comparison in C, and Veyl copies
 // that ladder. `flags & MASK == 0` therefore parses as
 // `flags & (MASK == 0)`, which is almost never what was meant. When one
 // side turns out to be a bool, say so rather than leaving the reader to

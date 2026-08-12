@@ -81,7 +81,7 @@ func (r *Resolver) pop() {
 		}
 		info.decl.Used = info.used
 		// A name that is written and never read is usually a typo or a
-		// leftover. Go refuses to compile these; Quartz allows them and
+		// leftover. Go refuses to compile these; Veyl allows them and
 		// says so, because stopping a half-written program from running
 		// is worse than the mistake.
 		if !info.used && !info.decl.Global {

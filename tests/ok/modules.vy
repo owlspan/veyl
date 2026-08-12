@@ -1,7 +1,7 @@
-import "mod/geometry.qz"
+import "mod/geometry.vy"
 
 // Importing the same file twice is harmless - it is folded in once.
-import "mod/geometry.qz"
+import "mod/geometry.vy"
 
 // A top-level const is a real global: visible inside functions, unlike
 // a top-level `let`, which stays local to the implicit main.

@@ -12,7 +12,7 @@ import (
 //
 // The generated program already does this, through the term library's
 // Windows-only helper. The compiler itself did not, which is why the
-// console banner arrived as literal <-[36m: quartz.exe was writing
+// console banner arrived as literal <-[36m: veyl.exe was writing
 // escape sequences at a console that had never been told to interpret
 // them. The two are separate programs and each has to ask.
 //

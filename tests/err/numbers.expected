@@ -1,4 +1,4 @@
-error: numbers.qz:2:9: a hex literal needs at least one digit after 0x
-error: numbers.qz:3:9: a binary literal needs at least one 0 or 1 after 0b
-error: numbers.qz:6:9: "2" is not a binary digit, in 0b1210
-quartz: 3 error(s)
+error: numbers.vy:2:9: a hex literal needs at least one digit after 0x
+error: numbers.vy:3:9: a binary literal needs at least one 0 or 1 after 0b
+error: numbers.vy:6:9: "2" is not a binary digit, in 0b1210
+veyl: 3 error(s)

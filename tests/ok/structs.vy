@@ -111,7 +111,7 @@ print("segment {seg.from.show()} to {seg.to.show()}")
 seg.to.x = 6.0
 print("after nested write {seg.to.show()}")
 
-// printing a struct uses Quartz notation, not Go's
+// printing a struct uses Veyl notation, not Go's
 print("direct {p}")
 print("in a list {people}")
 print("str() gives {str(mid)}")

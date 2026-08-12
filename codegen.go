@@ -59,7 +59,7 @@ type builtin struct {
 }
 
 // showAll builds an emitter that renders every collection argument in
-// Quartz's notation before handing them to a Go print function.
+// Veyl's notation before handing them to a Go print function.
 func showAll(goFn string) func(*Codegen, *Call, []string) string {
 	return func(c *Codegen, x *Call, a []string) string {
 		out := make([]string, len(a))
@@ -351,7 +351,7 @@ func (c *Codegen) addHelper(name string) {
 	}
 }
 
-// Generate produces a complete Go program from a resolved Quartz AST.
+// Generate produces a complete Go program from a resolved Veyl AST.
 func (c *Codegen) Generate(p *Program) string {
 	// Which user functions exist, by qualified name, so a bare call
 	// inside a package can be told from one in the program body.
@@ -385,7 +385,7 @@ func (c *Codegen) Generate(p *Program) string {
 	c.indent = 1
 	// Every program gets the crash handler. A Go panic reaching the
 	// terminal shows a goroutine dump and Go's own vocabulary, neither
-	// of which means anything to someone writing Quartz.
+	// of which means anything to someone writing Veyl.
 	c.need(nil, []string{"crash"})
 	c.raw("	defer __crash()")
 	c.stmts(p.Main)
@@ -518,7 +518,7 @@ func (c *Codegen) raw(format string, args ...any) {
 }
 
 // line emits a //line directive so errors from the Go backend and any
-// debugger point at the .qz source. It must start at column 1.
+// debugger point at the .vy source. It must start at column 1.
 func (c *Codegen) line(n Node) {
 	l, _ := n.Pos()
 	fmt.Fprintf(&c.body, "//line %s:%d\n", c.srcPath, l)
@@ -526,9 +526,9 @@ func (c *Codegen) line(n Node) {
 
 // ---- declarations ----
 
-// goField mangles a Quartz field name into an exported Go one.
+// goField mangles a Veyl field name into an exported Go one.
 //
-// Quartz field names are lower case, which in Go means unexported, and
+// Veyl field names are lower case, which in Go means unexported, and
 // unexported fields are invisible to encoding/json and unreadable
 // through reflect.Interface(). Prefixing a capital X fixes both. The
 // mapping is injective - the original name is preserved exactly after
@@ -594,7 +594,7 @@ func (c *Codegen) stmt(s Stmt) {
 		c.line(st)
 		// The checker resolved a type for every binding, written or
 		// inferred, so the Go type is always stated explicitly. That keeps
-		// Go's inference from quietly disagreeing with Quartz's.
+		// Go's inference from quietly disagreeing with Veyl's.
 		c.w("var %s %s = %s", st.Name, st.T.Go(), c.expr(st.Value))
 		// Go rejects unused locals. The resolver already worked out
 		// whether this variable is ever read, so the discard is only
@@ -606,7 +606,7 @@ func (c *Codegen) stmt(s Stmt) {
 	case *AssignStmt:
 		c.line(st)
 		// A list element is written through a bounds-checked helper, so
-		// `xs[99] = v` reports a Quartz error rather than panicking. Maps
+		// `xs[99] = v` reports a Veyl error rather than panicking. Maps
 		// and plain variables assign directly.
 		if idx, ok := st.Target.(*Index); ok && idx.T != nil && idx.T.Kind == KList {
 			value := c.expr(st.Value)
@@ -681,7 +681,7 @@ func (c *Codegen) stmt(s Stmt) {
 	case *MatchStmt:
 		c.line(st)
 		// Go's switch does not fall through, which is the behaviour
-		// Quartz wants, so this is a direct translation.
+		// Veyl wants, so this is a direct translation.
 		c.w("switch %s {", c.expr(st.Subject))
 		for _, arm := range st.Cases {
 			values := make([]string, len(arm.Values))
@@ -1048,7 +1048,7 @@ func (c *Codegen) expr(e Expr) string {
 
 	case *Binary:
 		// Go compares slices and maps by identity, or refuses outright.
-		// Quartz compares them by contents, matching what == means for
+		// Veyl compares them by contents, matching what == means for
 		// everything else in the language.
 		if (x.Op == EQ || x.Op == NEQ) && needsDeepEqual(x.OpT) {
 			c.need(nil, []string{"deepEqual"})
@@ -1093,7 +1093,7 @@ func (c *Codegen) expr(e Expr) string {
 
 	case *Index:
 		// List reads go through a bounds-checked helper so an out-of-range
-		// index produces a Quartz-level message instead of a Go panic and
+		// index produces a Veyl-level message instead of a Go panic and
 		// a stack trace full of generated code.
 		if x.T != nil && x.T.Kind == KList {
 			c.need(nil, []string{"listGet"})
@@ -1191,7 +1191,7 @@ func (c *Codegen) call(x *Call) string {
 	return fmt.Sprintf("%s(%s)", goIdent(name), strings.Join(args, ", "))
 }
 
-// show wraps a generated expression in the Quartz-formatting helper when
+// show wraps a generated expression in the Veyl-formatting helper when
 // its type needs it. Scalars print correctly with %v already, so only
 // collections pay for the helper - a program with no lists never pulls
 // reflect into its binary.
@@ -1204,7 +1204,7 @@ func (c *Codegen) show(t *Type, code string) string {
 }
 
 // funcLit emits an anonymous function. Go closures capture the same way
-// Quartz ones do, so the body needs no special handling - but the
+// Veyl ones do, so the body needs no special handling - but the
 // enclosing function's return type has to be saved and restored, or a
 // `?` inside the literal would return from the wrong place.
 func (c *Codegen) funcLit(x *FuncLit) string {
@@ -1359,10 +1359,10 @@ func (c *Codegen) interp(x *Interp) string {
 		strconv.Quote(format.String()), strings.Join(args, ", "))
 }
 
-// goIdent turns a namespaced Quartz name into a legal Go identifier.
+// goIdent turns a namespaced Veyl name into a legal Go identifier.
 // "greet.hello" cannot be emitted literally - Go would read it as a
 // package selector - so the separator becomes a double underscore,
-// which no Quartz identifier can contain.
+// which no Veyl identifier can contain.
 func goIdent(name string) string {
 	return strings.ReplaceAll(name, ".", "__")
 }

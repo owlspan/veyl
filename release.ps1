@@ -1,4 +1,4 @@
-# Cuts a Quartz release: verify, stamp the version, commit, tag, build
+# Cuts a Veyl release: verify, stamp the version, commit, tag, build
 # the installer, refresh the fallback snapshot, and optionally push.
 #
 #     powershell -ExecutionPolicy Bypass -File release.ps1 -Version 0.16
@@ -43,18 +43,18 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'mkicon failed' }
 
     Step "stamping version $Version"
-    $driver = Join-Path $repo 'quartz.go'
+    $driver = Join-Path $repo 'veyl.go'
     $text = [System.IO.File]::ReadAllText($driver)
     $stamped = [regex]::Replace($text, 'const Version = "[^"]*"', "const Version = `"$Version`"")
-    if ($stamped -eq $text) { throw "could not find the Version constant in quartz.go" }
+    if ($stamped -eq $text) { throw "could not find the Version constant in veyl.go" }
     [System.IO.File]::WriteAllText($driver, $stamped)
 
-    $iss = Join-Path $repo 'installer\quartz.iss'
+    $iss = Join-Path $repo 'installer\veyl.iss'
     $issText = [System.IO.File]::ReadAllText($iss)
     $issStamped = [regex]::Replace($issText, '#define AppVersion "[^"]*"', "#define AppVersion `"$Version`"")
-    if ($issStamped -eq $issText) { throw "could not find AppVersion in quartz.iss" }
+    if ($issStamped -eq $issText) { throw "could not find AppVersion in veyl.iss" }
     [System.IO.File]::WriteAllText($iss, $issStamped)
-    Ok "quartz.go and quartz.iss now say $Version"
+    Ok "veyl.go and veyl.iss now say $Version"
 
     # ReadAllText/WriteAllText rather than Get-Content/Set-Content: the
     # latter round-trips UTF-8 through the ANSI codepage on PowerShell
@@ -67,13 +67,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'go vet failed' }
     & go test ./...
     if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
-    & go build -o quartz.exe .
+    & go build -o veyl.exe .
     if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
     Ok 'gofmt clean, vet clean, tests pass, builds'
 
     Step "committing and tagging $tag"
     & git add -A
-    $msgFile = Join-Path $env:TEMP "quartz-release-$Version.txt"
+    $msgFile = Join-Path $env:TEMP "veyl-release-$Version.txt"
     [System.IO.File]::WriteAllText($msgFile, "Release $tag`n")
     # -F rather than -m: PowerShell 5.1 mangles quotes passed to a
     # native exe, and a commit message is the usual place that bites.
@@ -96,7 +96,7 @@ try {
     # re-encodes text, so piping a tar stream through one corrupts it -
     # tar reports "Failed to open '\\.\tape0'", which is it falling back
     # to a default device because it never saw an archive at all.
-    $tarball = Join-Path $env:TEMP "quartz-snapshot-$Version.tar"
+    $tarball = Join-Path $env:TEMP "veyl-snapshot-$Version.tar"
     & git archive -o $tarball HEAD
     if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
     & tar -x -f $tarball -C $snap
@@ -104,7 +104,7 @@ try {
     Remove-Item $tarball -Force
     Push-Location $snap
     try {
-        & go build -o quartz.exe .
+        & go build -o veyl.exe .
         if ($LASTEXITCODE -ne 0) { throw 'the snapshot does not build' }
         & go test ./... | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'the snapshot does not pass its tests' }
@@ -117,7 +117,7 @@ try {
 Taken from $tag, commit $(& git rev-parse --short HEAD).
 
 Verified when copied, not assumed: it builds, the whole test suite
-passes, and quartz.exe here was built from exactly these sources.
+passes, and veyl.exe here was built from exactly these sources.
 
 To go back to it:
 

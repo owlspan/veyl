@@ -90,13 +90,13 @@ func makeTarGz(t *testing.T, entries map[string]string) []byte {
 func TestExtractStripsWrapperDirectory(t *testing.T) {
 	dest := t.TempDir()
 	data := makeTarGz(t, map[string]string{
-		"repo-1.0.0/quartz.json":  `{"name":"x"}`,
-		"repo-1.0.0/src/thing.qz": "pub fn f() {}",
+		"repo-1.0.0/veyl.json":    `{"name":"x"}`,
+		"repo-1.0.0/src/thing.vy": "pub fn f() {}",
 	})
 	if err := extractTarGz(data, dest); err != nil {
 		t.Fatalf("extract failed: %v", err)
 	}
-	for _, want := range []string{"quartz.json", filepath.Join("src", "thing.qz")} {
+	for _, want := range []string{"veyl.json", filepath.Join("src", "thing.vy")} {
 		if _, err := os.Stat(filepath.Join(dest, want)); err != nil {
 			t.Errorf("%s was not extracted: %v", want, err)
 		}
@@ -133,7 +133,7 @@ func TestHashDirIsContentAddressed(t *testing.T) {
 	}
 
 	a, b := t.TempDir(), t.TempDir()
-	files := map[string]string{"quartz.json": `{"name":"x"}`, "x.qz": "pub fn f() {}"}
+	files := map[string]string{"veyl.json": `{"name":"x"}`, "x.vy": "pub fn f() {}"}
 	write(a, files)
 	write(b, files)
 
@@ -151,7 +151,7 @@ func TestHashDirIsContentAddressed(t *testing.T) {
 
 	// The hash is what notices a moved tag, so a one-byte edit has to
 	// change it.
-	write(b, map[string]string{"x.qz": "pub fn f() { }"})
+	write(b, map[string]string{"x.vy": "pub fn f() { }"})
 	hb2, err := hashDir(b)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestHashDirIsContentAddressed(t *testing.T) {
 
 	// So does a renamed file with the same bytes.
 	c := t.TempDir()
-	write(c, map[string]string{"quartz.json": `{"name":"x"}`, "renamed.qz": "pub fn f() {}"})
+	write(c, map[string]string{"veyl.json": `{"name":"x"}`, "renamed.vy": "pub fn f() {}"})
 	hc, err := hashDir(c)
 	if err != nil {
 		t.Fatal(err)
@@ -182,13 +182,13 @@ func TestFindProjectRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Found from a nested directory, so `quartz run src/main.qz` works
+	// Found from a nested directory, so `veyl run src/main.vy` works
 	// from anywhere inside a project.
 	if got := findProjectRoot(deep); got != root {
 		t.Errorf("from a nested dir got %q, want %q", got, root)
 	}
 	// And from a file rather than a directory.
-	f := filepath.Join(deep, "main.qz")
+	f := filepath.Join(deep, "main.vy")
 	if err := os.WriteFile(f, []byte("print(1)"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -213,11 +213,11 @@ func writeProject(t *testing.T) string {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		manifest := `{"name":"` + name + `","version":"1.0.0","main":"` + name + `.qz"}`
+		manifest := `{"name":"` + name + `","version":"1.0.0","main":"` + name + `.vy"}`
 		if err := os.WriteFile(filepath.Join(dir, manifestName), []byte(manifest), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, name+".qz"), []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name+".vy"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -256,24 +256,24 @@ fn secret() -> str {
 	return app
 }
 
-func runQuartz(t *testing.T, quartz, dir, src string) (string, error) {
+func runVeyl(t *testing.T, veyl, dir, src string) (string, error) {
 	t.Helper()
-	path := filepath.Join(dir, "main.qz")
+	path := filepath.Join(dir, "main.vy")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(quartz, "run", path)
+	cmd := exec.Command(veyl, "run", path)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return strings.ReplaceAll(string(out), "\r\n", "\n"), err
 }
 
 func TestPackagesAreNamespaced(t *testing.T) {
-	quartz := buildCompiler(t)
+	veyl := buildCompiler(t)
 	app := writeProject(t)
 
 	// The whole point: two packages exporting the same name, both usable.
-	out, err := runQuartz(t, quartz, app, `import "greet"
+	out, err := runVeyl(t, veyl, app, `import "greet"
 import "loud"
 
 print(greet.hello("a"))
@@ -289,7 +289,7 @@ print(greet.shout("c"))
 }
 
 func TestPackageNamesDoNotLeak(t *testing.T) {
-	quartz := buildCompiler(t)
+	veyl := buildCompiler(t)
 	app := writeProject(t)
 
 	cases := []struct {
@@ -319,7 +319,7 @@ func TestPackageNamesDoNotLeak(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			out, err := runQuartz(t, quartz, app, c.src)
+			out, err := runVeyl(t, veyl, app, c.src)
 			if err == nil {
 				t.Fatalf("expected a compile error, got success:\n%s", out)
 			}

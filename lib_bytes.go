@@ -61,7 +61,7 @@ func __bytesSlice(b []byte, start, end int) []byte {
 	return append([]byte(nil), b[start:end]...)
 }
 
-// A copy, not a view. Quartz assignment copies, and returning a slice
+// A copy, not a view. Veyl assignment copies, and returning a slice
 // that aliases its argument would let a later write reach backwards
 // into something the caller thought was theirs.
 func __bytesConcat(parts ...[]byte) []byte {

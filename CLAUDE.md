@@ -6,11 +6,11 @@ Context for an AI assistant working on this repository. Read this first.
 
 ## What this project is
 
-**Quartz** is a programming language. Source files (`.qz`) are compiled
+**Veyl** is a programming language. Source files (`.vy`) are compiled
 to Go source, which the Go toolchain compiles to a native executable.
 
 ```
-hello.qz  ->  [Quartz compiler]  ->  main.go  ->  [go build]  ->  hello.exe
+hello.vy  ->  [Veyl compiler]  ->  main.go  ->  [go build]  ->  hello.exe
 ```
 
 The compiler itself is written in Go, is a single package `main` in the
@@ -34,7 +34,7 @@ Linux or a VM. They know Git basics only (`add`, `commit`, `log`,
    no manual memory management. Closer to Python than to C++.
 3. **Batteries included.** Math, strings, I/O, and native Windows GUI
    are all builtins requiring no imports.
-4. **Honest errors.** Every error points at a `.qz` file, line, and
+4. **Honest errors.** Every error points at a `.vy` file, line, and
    column. Never claim something worked when it might not have.
 
 ---
@@ -42,7 +42,7 @@ Linux or a VM. They know Git basics only (`add`, `commit`, `log`,
 ## Repository layout
 
 ```
-quartz/
+veyl/
   token.go          Token kinds, keyword table, Token struct
   lexer.go          source text -> []Token
   ast.go            AST node type definitions
@@ -51,8 +51,8 @@ quartz/
   codegen.go        *Program -> Go source (+ core builtin table)
   stdlib.go         math and string builtins
   runtime_win.go    Win32 builtins and injected Go helpers
-  quartz.go         CLI driver, temp build dir, shells out to `go build`
-  examples/*.qz     sample programs (also the de facto test suite)
+  veyl.go         CLI driver, temp build dir, shells out to `go build`
+  examples/*.vy     sample programs (also the de facto test suite)
   README.md         user-facing overview
   SYNTAX.md         full language reference
   CLAUDE.md         this file
@@ -72,7 +72,7 @@ driver reports them and stops.
 | Parse | `parser.go` | `[]Token` | `*Program` |
 | Resolve | `resolve.go` | `*Program` | same, annotated |
 | Codegen | `codegen.go` | `*Program` | Go source string |
-| Build | `quartz.go` | Go source | `.exe` |
+| Build | `veyl.go` | Go source | `.exe` |
 
 ### Key invariants - do not break these
 
@@ -82,7 +82,7 @@ directives depend on this. Any new AST node must embed `pos`.
 
 **Errors accumulate, they do not abort.** Each stage collects a
 `[]string` of `file:line:col: message` and keeps going. The driver
-sorts them into source order (`sortByPosition` in `quartz.go`) and
+sorts them into source order (`sortByPosition` in `veyl.go`) and
 prints them all. Never `return` on the first error inside a stage.
 
 **Forward progress is guaranteed.** Parser loops compare `p.i` before
@@ -92,7 +92,7 @@ loop over statements.
 
 **`//line` directives are emitted before every statement.** Format:
 `//line <abs-path>:<line>` starting at column 1, no indentation. This is
-what makes Go's own errors point at `.qz` files. `codegen.line(node)`
+what makes Go's own errors point at `.vy` files. `codegen.line(node)`
 does it. Call it at the top of every statement case.
 
 **Codegen fully parenthesises binary expressions.** The parser already
@@ -165,7 +165,7 @@ positions and appear alongside other resolver errors.
 These cost real debugging time. Do not reintroduce them.
 
 **Go rejects unused local variables.** `let x = 5` with no read is valid
-Quartz but invalid Go. The resolver tracks `LetStmt.Used`; codegen emits
+Veyl but invalid Go. The resolver tracks `LetStmt.Used`; codegen emits
 `_ = x` only when false. Any new binding form needs the same treatment.
 
 **`syscall.NewCallback` has a small fixed pool.** The Win32 window
@@ -234,9 +234,9 @@ Always run all four. The examples are the test suite.
 gofmt -l $(git ls-files '*.go')   # must print nothing
 go vet ./...                      # must be clean
 go test ./...                     # must pass
-go build -o quartz.exe .
-./quartz.exe run examples/logic.qz
-./quartz.exe run examples/demo.qz
+go build -o veyl.exe .
+./veyl.exe run examples/logic.vy
+./veyl.exe run examples/demo.vy
 ```
 
 **Use `git ls-files`, not `gofmt -l .`.** The latter walks into
@@ -249,13 +249,13 @@ treats it as a separate module and skips it.
 For Windows code, cross-compile and vet the *generated* output:
 
 ```bash
-QUARTZ_TARGET=windows ./quartz build examples/window.qz
-mkdir -p /tmp/vw && QUARTZ_TARGET=windows ./quartz emit examples/window.qz > /tmp/vw/main.go
-printf 'module qzprog\n\ngo 1.21\n' > /tmp/vw/go.mod
+VEYL_TARGET=windows ./veyl build examples/window.vy
+mkdir -p /tmp/vw && VEYL_TARGET=windows ./veyl emit examples/window.vy > /tmp/vw/main.go
+printf 'module vyprog\n\ngo 1.21\n' > /tmp/vw/go.mod
 cd /tmp/vw && GOOS=windows go vet ./...
 ```
 
-`quartz emit <file>` prints the generated Go. It is the single most
+`veyl emit <file>` prints the generated Go. It is the single most
 useful debugging tool here - when behaviour is wrong, read the output.
 
 **One known vet exception.** `go vet` on the compiler is clean and must
@@ -281,7 +281,7 @@ certain way.
   returning `0` issue and the rounded-corners lie were both surfaced as
   problems, not hidden.
 - **Be explicit about which files replace which.** They copy files by
-  hand into `C:\Users\john linux\Desktop\quartz`. Note when a browser
+  hand into `C:\Users\john linux\Desktop\veyl`. Note when a browser
   might mangle a filename (`.gitignore` -> `gitignore.txt`).
 - **Their path contains a space.** Quote paths in commands.
 - Conversational, direct, no filler. Short prose over long bullet lists.
@@ -303,14 +303,14 @@ certain way.
 - `if` / `while` / `for i in a..b` with `step`, `break`, `continue`
 - Multi-file programs via `import` and `pub`
 - Structured concurrency through `task` - no raw goroutines exposed
-- Cross-compilation via `QUARTZ_TARGET`
+- Cross-compilation via `VEYL_TARGET`
 
 **The library** - all failures reported as `T!`, never a panic:
 `os`, `http`, `net`, `json`, `time`, `mem`, `task`, `re`, `hash`,
 `csv`, plus `win` for the Windows-only parts.
 
-**Tooling:** `quartz fmt`, `quartz doctor`, `quartz builtins`,
-`quartz emit`, warnings for unused variables and unreachable code, a
+**Tooling:** `veyl fmt`, `veyl doctor`, `veyl builtins`,
+`veyl emit`, warnings for unused variables and unreachable code, a
 VS Code extension in `editors/vscode`, and a verified Windows installer.
 
 **Not implemented**
@@ -327,21 +327,21 @@ VS Code extension in `editors/vscode`, and a verified Windows installer.
 
 ## Finding the Go toolchain
 
-Quartz compiles to Go source and shells out to the Go toolchain, so one
+Veyl compiles to Go source and shells out to the Go toolchain, so one
 has to exist. `findGo` in `toolchain.go` looks in three places, in this
 order:
 
-1. `$QUARTZ_GO`, to force a specific one
-2. `go\bin\go.exe` next to `quartz.exe` - the installer's private copy
+1. `$VEYL_GO`, to force a specific one
+2. `go\bin\go.exe` next to `veyl.exe` - the installer's private copy
 3. `PATH`
 
-The bundled copy beats `PATH` on purpose, so an installed Quartz keeps
+The bundled copy beats `PATH` on purpose, so an installed Veyl keeps
 working the same way whatever else the machine picks up later. It is
 also kept **off** `PATH` on purpose, so a developer's own Go is never
 shadowed. When a bundled toolchain is used, codegen sets `GOROOT` for
 the child process, since nothing else will have.
 
-`quartz doctor` prints which one was found and where. That is the first
+`veyl doctor` prints which one was found and where. That is the first
 thing to ask for when someone says it does not work.
 
 ---
@@ -352,10 +352,10 @@ thing to ask for when someone says it does not work.
 powershell -ExecutionPolicy Bypass -File installer\build.ps1
 ```
 
-That builds `quartz.exe`, stages a trimmed GOROOT into `dist\stage\go`,
-proves the staged toolchain can compile `hello.qz` with `PATH` stripped,
+That builds `veyl.exe`, stages a trimmed GOROOT into `dist\stage\go`,
+proves the staged toolchain can compile `hello.vy` with `PATH` stripped,
 and only then spends two minutes on LZMA2. Output is
-`dist\quartz-<version>-setup.exe`.
+`dist\veyl-<version>-setup.exe`.
 
 Things learned doing it, worth not rediscovering:
 
@@ -385,7 +385,7 @@ Go behind the same AST, because it is the prerequisite for everything
 low-level: `own T`, `defer`, `alloc`/`free`, pointers, and `unsafe`.
 
 Design the IR boundary so it is one module swapped and not a rewrite.
-Keep the Go backend as the default; put C behind `QUARTZ_TARGET=c`.
+Keep the Go backend as the default; put C behind `VEYL_TARGET=c`.
 Concurrency is the hard part - `task` maps almost directly onto
 goroutines and not at all onto C, which is an argument for pinning the
 API down before the backend exists rather than after.

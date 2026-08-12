@@ -1,4 +1,4 @@
-import "loop_a.qz"
+import "loop_a.vy"
 
 pub fn b() -> int {
     return 2

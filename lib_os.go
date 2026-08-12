@@ -101,7 +101,7 @@ var osHelperDefs = map[string]helperDef{
 		deps:    []string{"try"},
 	},
 
-	// __try turns Go's error convention into Quartz's. Every fallible
+	// __try turns Go's error convention into Veyl's. Every fallible
 	// action that produces no value goes through it, so the reason a
 	// write failed -- permission denied, no such directory, disk full --
 	// reaches the program instead of collapsing into false.
@@ -166,7 +166,7 @@ var osHelperDefs = map[string]helperDef{
 	},
 	"runCmd": {
 		// Output and exit status are separate calls rather than a pair,
-		// since Quartz has no multiple returns yet. Both capture stdout
+		// since Veyl has no multiple returns yet. Both capture stdout
 		// and stderr together, which is what a script usually wants.
 		//
 		// A non-zero exit is a failure, and the captured output is put in

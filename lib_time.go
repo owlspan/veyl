@@ -139,7 +139,7 @@ func buildTimeBuiltins() {
 
 		// ---- mem ----
 		//
-		// Quartz is garbage collected, so these report and nudge rather
+		// Veyl is garbage collected, so these report and nudge rather
 		// than allocate and free. Manual memory needs the C backend.
 
 		"mem.used": {

@@ -4,9 +4,9 @@ package main
 //
 // Two ways to use it, because two things are actually wanted:
 //
-//   - Whole-value conversion. json.encode turns any Quartz value into
+//   - Whole-value conversion. json.encode turns any Veyl value into
 //     text, and json.decode turns text back into a declared type. The
-//     type comes from the annotation on the binding, since Quartz has no
+//     type comes from the annotation on the binding, since Veyl has no
 //     type arguments:
 //
 //         let p: Point = json.decode(text)
@@ -16,13 +16,13 @@ package main
 //
 //         let name = json.get(body, "user.name")
 //
-// Struct fields carry a json tag holding the name as written in Quartz,
+// Struct fields carry a json tag holding the name as written in Veyl,
 // so encoding round-trips through the spelling the user chose rather
 // than the exported one the Go backend needs.
 
 var jsonHelperDefs = map[string]helperDef{
 	"jsonEncode": {
-		// Encoding a Quartz value cannot actually fail - every type the
+		// Encoding a Veyl value cannot actually fail - every type the
 		// language has is representable - so this stays plain rather than
 		// making every caller unwrap a result that is always ok.
 		code: `func __jsonEncode(v any, indent bool) string {

@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// The interactive console: `quartz console`.
+// The interactive console: `veyl console`.
 //
-// Quartz is compiled, so there is no interpreter to feed one line at a
+// Veyl is compiled, so there is no interpreter to feed one line at a
 // time. The console works the way compiled-language REPLs generally
 // have to: it keeps every line you have typed, and on each new one
 // rebuilds and reruns the whole program.
@@ -68,7 +68,7 @@ func runConsole() error {
 // read collects one input, continuing across lines while brackets are
 // open so a function or a loop can be typed the way it is written.
 func (c *console) read() (string, bool) {
-	fmt.Print(paint("qz> ", "36"))
+	fmt.Print(paint("vy> ", "36"))
 	if !c.in.Scan() {
 		return "", false
 	}
@@ -174,11 +174,11 @@ func (c *console) command(line string) bool {
 
 	case ":save":
 		if rest == "" {
-			fmt.Println("  usage: :save <file.qz>")
+			fmt.Println("  usage: :save <file.vy>")
 			break
 		}
-		if !strings.HasSuffix(rest, ".qz") {
-			rest += ".qz"
+		if !strings.HasSuffix(rest, ".vy") {
+			rest += ".vy"
 		}
 		if err := os.WriteFile(rest, []byte(c.program()), 0o644); err != nil {
 			fmt.Printf("  could not save: %v\n", err)
@@ -210,7 +210,7 @@ func (c *console) help() {
   :list            every line in the session
   :undo            drop the last line
   :clear           start over
-  :save <file>     write the session out as a .qz program
+  :save <file>     write the session out as a .vy program
   :emit            show the Go the session compiles to
   :quit            leave
 
@@ -222,7 +222,7 @@ func (c *console) help() {
 `)
 }
 
-// program is the whole session as one Quartz source file.
+// program is the whole session as one Veyl source file.
 func (c *console) program() string {
 	return strings.Join(c.lines, "\n") + "\n"
 }
@@ -329,13 +329,13 @@ func newOutput(previous, current string) string {
 // stderr and the driver exits on failure, so running it as a child is
 // what keeps a broken line from taking the console down with it.
 func (c *console) build(src string) (out, goSrc, errs string) {
-	dir, err := os.MkdirTemp("", "quartz-console-")
+	dir, err := os.MkdirTemp("", "veyl-console-")
 	if err != nil {
 		return "", "", fmt.Sprintf("  %v\n", err)
 	}
 	defer os.RemoveAll(dir)
 
-	path := filepath.Join(dir, "session.qz")
+	path := filepath.Join(dir, "session.vy")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		return "", "", fmt.Sprintf("  %v\n", err)
 	}
@@ -367,7 +367,7 @@ func (c *console) build(src string) (out, goSrc, errs string) {
 		if _, ok := runErr.(*exec.ExitError); !ok {
 			return "", "", fmt.Sprintf("  %v\n", runErr)
 		}
-		// A few things pass Quartz's checker and are still rejected by
+		// A few things pass Veyl's checker and are still rejected by
 		// Go - a constant `1 / 0` is caught there, not here. That is a
 		// refused line, not output: accepting it would leave a session
 		// that can never compile again.
@@ -387,7 +387,7 @@ func (c *console) build(src string) (out, goSrc, errs string) {
 // declared but never used" about a variable you are about to use on
 // the next line is pure noise in a console.
 func quietEnv() []string {
-	return append(os.Environ(), "QUARTZ_QUIET=1")
+	return append(os.Environ(), "VEYL_QUIET=1")
 }
 
 // tidyErrors strips the parts of compiler output that only make sense
@@ -395,20 +395,20 @@ func quietEnv() []string {
 func tidyErrors(s string) string {
 	var kept []string
 	for _, line := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
-		if line == "" || strings.HasPrefix(line, "quartz: ") ||
-			line == "# qzprog" || strings.HasPrefix(line, "# [") {
+		if line == "" || strings.HasPrefix(line, "veyl: ") ||
+			line == "# vyprog" || strings.HasPrefix(line, "# [") {
 			continue
 		}
 		// A Go backend error names the temporary file it was compiling.
 		// That path is an implementation detail of the console.
-		if i := strings.Index(line, "session.qz:"); i > 0 {
+		if i := strings.Index(line, "session.vy:"); i > 0 {
 			line = line[i:]
 		}
 		line = strings.TrimPrefix(line, "error: ")
-		// "session.qz:12:5: message" -> "message", since neither the
+		// "session.vy:12:5: message" -> "message", since neither the
 		// file nor the line number of a synthesised session means
 		// anything to the person typing.
-		if i := strings.Index(line, "session.qz:"); i == 0 {
+		if i := strings.Index(line, "session.vy:"); i == 0 {
 			if rest := strings.SplitN(line, ": ", 2); len(rest) == 2 {
 				line = rest[1]
 			}

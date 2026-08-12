@@ -1,20 +1,20 @@
-error: collections.qz:2:9: cannot tell what kind of list this is - annotate it, as in: let xs: []int = []
-error: collections.qz:3:9: cannot tell what kind of map this is - annotate it, as in: let m: {str: int} = {}
-error: collections.qz:6:13: this list holds int, but element 2 is str
-error: collections.qz:7:23: this map holds int, but value 2 is str
-error: collections.qz:10:10: a map key must be str or int, got bool
-error: collections.qz:14:12: a list index must be int, got str
-error: collections.qz:16:9: this map has str keys, got int
-error: collections.qz:17:14: cannot index a str - use charAt(s, i) or substr(s, a, b)
-error: collections.qz:20:17: this list holds str, but element 1 is int
-error: collections.qz:23:12: push expects int here, got str
-error: collections.qz:26:6: push changes the list, so its first argument must be a variable, a field, or an element
-error: collections.qz:29:11: sum needs a list of numbers, got []str
-error: collections.qz:30:12: sort needs a list of numbers or strings, got [][]int
-error: collections.qz:31:13: first expects a list, got str
-error: collections.qz:32:12: keys expects a map, got []int
-error: collections.qz:33:11: has expects a map, got []int
-error: collections.qz:36:1: cannot iterate int
-error: collections.qz:39:1: iterating a map binds two names, as in: for key, value in m { ... }
-error: collections.qz:42:1: cannot iterate a str directly - use chars(...) or split(...)
-quartz: 19 error(s)
+error: collections.vy:2:9: cannot tell what kind of list this is - annotate it, as in: let xs: []int = []
+error: collections.vy:3:9: cannot tell what kind of map this is - annotate it, as in: let m: {str: int} = {}
+error: collections.vy:6:13: this list holds int, but element 2 is str
+error: collections.vy:7:23: this map holds int, but value 2 is str
+error: collections.vy:10:10: a map key must be str or int, got bool
+error: collections.vy:14:12: a list index must be int, got str
+error: collections.vy:16:9: this map has str keys, got int
+error: collections.vy:17:14: cannot index a str - use charAt(s, i) or substr(s, a, b)
+error: collections.vy:20:17: this list holds str, but element 1 is int
+error: collections.vy:23:12: push expects int here, got str
+error: collections.vy:26:6: push changes the list, so its first argument must be a variable, a field, or an element
+error: collections.vy:29:11: sum needs a list of numbers, got []str
+error: collections.vy:30:12: sort needs a list of numbers or strings, got [][]int
+error: collections.vy:31:13: first expects a list, got str
+error: collections.vy:32:12: keys expects a map, got []int
+error: collections.vy:33:11: has expects a map, got []int
+error: collections.vy:36:1: cannot iterate int
+error: collections.vy:39:1: iterating a map binds two names, as in: for key, value in m { ... }
+error: collections.vy:42:1: cannot iterate a str directly - use chars(...) or split(...)
+veyl: 19 error(s)
