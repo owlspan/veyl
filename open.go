@@ -36,6 +36,10 @@ func runOpen(args []string) error {
 			action = "run"
 		case "--build", "-build":
 			action = "build"
+		case "--fmt", "-fmt":
+			action = "fmt"
+		case "--emit", "-emit":
+			action = "emit"
 		}
 	}
 
@@ -67,6 +71,10 @@ func runOpen(args []string) error {
 		doRun(abs)
 	case "build":
 		doBuild(abs)
+	case "fmt":
+		doSimple(abs, "fmt", "formatting", "formatted")
+	case "emit":
+		doSimple(abs, "emit", "generating Go", "done")
 	case "folder":
 		openFolder(filepath.Dir(abs))
 		return nil
@@ -128,6 +136,18 @@ func doBuild(abs string) {
 	}
 	fmt.Printf("\n%s\n", paint("-- done --------------------------------", "90"))
 	fmt.Println("\n  That .exe is standalone. It needs neither Veyl nor Go\n  on the machine you copy it to.")
+}
+
+// doSimple runs one of the commands that needs no explanation beyond
+// what it printed: fmt and emit.
+func doSimple(abs, cmd, doing, done string) {
+	fmt.Printf("\n%s\n\n", paint("-- "+doing, "90"))
+	if err := run(cmd, abs, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "\nveyl: %v\n", err)
+		fmt.Printf("\n%s\n", paint("-- failed", "90"))
+		return
+	}
+	fmt.Printf("\n%s\n", paint("-- "+done, "90"))
 }
 
 // openFolder shows the file's directory in Explorer. Best-effort: if

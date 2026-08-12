@@ -62,8 +62,16 @@ Name: "core"; Description: "Veyl compiler, examples and documentation"; \
     Types: full compact custom; Flags: fixed
 Name: "gotoolchain"; Description: "Go toolchain (required to compile - leave ticked unless you already have Go)"; \
     Types: full custom; ExtraDiskSpaceRequired: 185000000
-Name: "vscode"; Description: "VS Code syntax highlighting"; Types: full custom
 Name: "docs"; Description: "Tutorial, language reference and examples"; Types: full custom
+
+; Editor support. Each writes into that editor's own config folder, so
+; ticking one for an editor you do not have is harmless: the folder is
+; created and simply never read.
+Name: "editors"; Description: "Editor syntax highlighting"; Types: full custom
+Name: "editors\vscode"; Description: "Visual Studio Code"; Types: full custom
+Name: "editors\npp"; Description: "Notepad++"; Types: full custom
+Name: "editors\sublime"; Description: "Sublime Text"; Types: custom
+Name: "editors\vim"; Description: "Vim and Neovim"; Types: custom
 
 [Tasks]
 Name: "addtopath"; Description: "Add Veyl to PATH so 'veyl' works in any terminal"; \
@@ -88,7 +96,26 @@ Source: "..\examples\*.vy";   DestDir: "{app}\examples"; Components: docs; Flags
 ; directory at startup, so there is no marketplace step and nothing to
 ; sideload by hand.
 Source: "..\editors\vscode\*"; DestDir: "{%USERPROFILE}\.vscode\extensions\veyl-lang"; \
-    Components: vscode; Flags: ignoreversion recursesubdirs createallsubdirs
+    Components: editors\vscode; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Notepad++ reads every XML in userDefineLangs at startup.
+Source: "..\editors\notepad++\veyl.xml"; DestDir: "{userappdata}\Notepad++\userDefineLangs"; \
+    Components: editors\npp; Flags: ignoreversion
+
+; Sublime scans Packages\User.
+Source: "..\editors\sublime\Veyl.sublime-syntax"; DestDir: "{userappdata}\Sublime Text\Packages\User"; \
+    Components: editors\sublime; Flags: ignoreversion
+
+; Vim and Neovim look in different places, so both get a copy rather
+; than the installer trying to guess which one is in use.
+Source: "..\editors\vim\syntax\veyl.vim"; DestDir: "{userdocs}\vimfiles\syntax"; \
+    Components: editors\vim; Flags: ignoreversion
+Source: "..\editors\vim\ftdetect\veyl.vim"; DestDir: "{userdocs}\vimfiles\ftdetect"; \
+    Components: editors\vim; Flags: ignoreversion
+Source: "..\editors\vim\syntax\veyl.vim"; DestDir: "{localappdata}\nvim\syntax"; \
+    Components: editors\vim; Flags: ignoreversion
+Source: "..\editors\vim\ftdetect\veyl.vim"; DestDir: "{localappdata}\nvim\ftdetect"; \
+    Components: editors\vim; Flags: ignoreversion
 
 ; The private Go toolchain. It lives under {app}\go and is deliberately
 ; kept off PATH: findGo in toolchain.go locates it by position, so a
@@ -162,12 +189,52 @@ Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\run"; ValueType: string; 
 Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\run\command"; ValueType: string; ValueName: ""; \
     ValueData: """{app}\{#AppExeName}"" open ""%1"" --run"; Tasks: associate
 
-Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\build"; ValueType: string; ValueName: ""; \
-    ValueData: "Build .exe with Veyl"; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\build"; ValueType: string; ValueName: "Icon"; \
+; Everything else goes under one cascading "Veyl" entry rather than
+; scattering four verbs across the context menu. Windows builds the
+; submenu from a second key named by ExtendedSubCommandsKey, and the
+; parent entry deliberately has no command of its own.
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Veyl"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl"; ValueType: string; ValueName: "Icon"; \
     ValueData: "{app}\veyl.ico"; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\build\command"; ValueType: string; ValueName: ""; \
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl"; ValueType: string; ValueName: "ExtendedSubCommandsKey"; \
+    ValueData: "Veyl.Source\shell\veyl\sub"; Tasks: associate
+
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\01compile"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Compile to .exe"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\01compile\command"; ValueType: string; ValueName: ""; \
     ValueData: """{app}\{#AppExeName}"" open ""%1"" --build"; Tasks: associate
+
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\02run"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Run"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\02run\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" open ""%1"" --run"; Tasks: associate
+
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\03format"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Format"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\03format\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" open ""%1"" --fmt"; Tasks: associate
+
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\04emit"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Show the generated Go"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veyl\sub\shell\04emit\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" open ""%1"" --emit"; Tasks: associate
+
+; Right-clicking a folder, or its empty background, opens a console
+; already sitting in that directory. This is the one people reach for
+; most and it costs two keys.
+Root: HKA; Subkey: "Software\Classes\Directory\shell\veylconsole"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Open Veyl console here"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Directory\shell\veylconsole"; ValueType: string; ValueName: "Icon"; \
+    ValueData: "{app}\veyl.ico"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Directory\shell\veylconsole\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" console"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\veylconsole"; ValueType: string; ValueName: "MUIVerb"; \
+    ValueData: "Open Veyl console here"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\veylconsole"; ValueType: string; ValueName: "Icon"; \
+    ValueData: "{app}\veyl.ico"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\veylconsole\command"; ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#AppExeName}"" console"; Tasks: associate
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Parameters: "doctor"; \

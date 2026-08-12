@@ -25,6 +25,7 @@ usage:
   veyl console             an interactive console
   veyl open   <file.vy>    ask whether to run it or build an .exe
   veyl builtins            list every builtin, for editor tooling
+  veyl editors [dir]       regenerate the editor syntax files
   veyl doctor              check that everything Veyl needs is present
   veyl version             print the version
   veyl help                print this
@@ -113,6 +114,12 @@ func main() {
 		// answered without guessing at the environment.
 		if err := doctor(); err != nil {
 			fmt.Fprintf(os.Stderr, "\n%v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "editors":
+		if err := runEditors(args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "veyl: %v\n", err)
 			os.Exit(1)
 		}
 		return
