@@ -1730,6 +1730,100 @@ These write to **standard error**, not standard output, so logging does
 not contaminate output being piped somewhere. `print` is still the way
 to produce a program's actual results.
 
+### `url` — taking a URL apart
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `url.scheme(u)` `host` `port` `path` `fragment` | `str!` | one piece of it |
+| `url.query(u)` | `{str: str}!` | the query string as a map |
+| `url.build(base, params)` | `str` | append an encoded query |
+| `url.join(base, ref)` | `str!` | resolve a relative reference |
+
+```qz
+let u = "https://api.example.com:8443/v2/items?limit=10"
+print(must(url.host(u)))               // api.example.com
+print(must(url.port(u)))               // 8443
+print(must(url.query(u))["limit"])     // 10
+print(url.build("https://x.dev/s", {"q": "quartz"}))
+```
+
+A missing piece is an empty string, not a failure — a URL with no port
+is perfectly valid. Failure is reserved for a URL that will not parse.
+`url.build` sorts its parameters, so the same map always produces the
+same URL; that matters for caching and for tests. A repeated query key
+keeps its first value, since a map cannot hold both.
+
+### `zip` — archives
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `zip.make(dest, paths)` | `bool!` | create an archive |
+| `zip.list(src)` | `[]str!` | the names inside, without unpacking |
+| `zip.extract(src, dir)` | `int!` | unpack, returning how many files |
+
+```qz
+must(zip.make("backup.zip", ["notes.txt", "src"]))
+print(must(zip.list("backup.zip")))
+print(must(zip.extract("backup.zip", "restored")))
+```
+
+A directory is added whole, with paths relative to it, so unpacking does
+not recreate your machine's whole tree. **Extraction refuses any entry
+whose path climbs out of the destination** and names it:
+
+```
+archive contains an unsafe path: ../../escaped.txt
+```
+
+An archive that could write outside its own folder could overwrite
+anything you can, so this is a refusal rather than a warning.
+
+### `args` — the command line
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `args.flag(name)` | `bool` | was `--name` given |
+| `args.value(name, fallback)` | `str` | the value after `--name` |
+| `args.rest()` | `[]str` | everything that is not a flag |
+
+```qz
+if args.flag("verbose") {
+    log.info("starting")
+}
+for file in args.rest() {
+    print(must(os.file.read(file)))
+}
+```
+
+```
+quartz run tool.qz --verbose --out=result.txt notes.txt
+```
+
+Both `--name=value` and `--name value` work, and one dash or two are
+the same. `args.rest()` skips a flag's value, so the list is only the
+positional arguments. `os.args()` is still there for the raw list.
+
+### `bits` — bit twiddling and bases
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `bits.count(n)` | `int` | how many bits are set |
+| `bits.length(n)` | `int` | bits needed to represent it |
+| `bits.leading(n)` / `trailing(n)` | `int` | zeros at each end |
+| `bits.reverse(n)` | `int` | reverse the low 32 bits |
+| `bits.rotate(n, by)` | `int` | rotate the low 32 bits left |
+| `bits.toBase(n, base)` | `str` | 2 to 36; `""` if out of range |
+| `bits.fromBase(s, base)` | `int!` | parse in that base |
+
+```qz
+print(bits.count(255))            // 8
+print(bits.toBase(255, 16))       // ff
+print(must(bits.fromBase("1010", 2)))  // 10
+```
+
+`& | ^ ~ << >>` are operators in the language already; these are the
+operations that need a function.
+
 ---
 
 ## Windows library

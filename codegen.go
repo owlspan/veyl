@@ -290,6 +290,7 @@ func init() {
 	registerRe()
 	registerData()
 	registerExtra()
+	registerMore()
 	registerWindowsRuntime()
 }
 
@@ -381,6 +382,11 @@ func (c *Codegen) Generate(p *Program) string {
 
 	c.raw("func main() {")
 	c.indent = 1
+	// Every program gets the crash handler. A Go panic reaching the
+	// terminal shows a goroutine dump and Go's own vocabulary, neither
+	// of which means anything to someone writing Quartz.
+	c.need(nil, []string{"crash"})
+	c.raw("	defer __crash()")
 	c.stmts(p.Main)
 	c.indent = 0
 	c.raw("}")

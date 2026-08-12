@@ -233,3 +233,56 @@ func normalize(s, src string) string {
 func normalizeNewlines(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
+
+// A runtime failure used to reach the terminal as a Go panic: a
+// goroutine dump, hex offsets, and Go's vocabulary rather than Quartz's.
+// The //line directives mean the stack already carries .qz paths, so it
+// can be filtered into a traceback naming the program's own lines.
+func TestRuntimeErrorsAreQuartzShaped(t *testing.T) {
+	quartz := buildCompiler(t)
+	dir := t.TempDir()
+
+	src := filepath.Join(dir, "boom.qz")
+	prog := `fn inner(n: int) -> int {
+    return 100 / n
+}
+
+fn outer() -> int {
+    return inner(0)
+}
+
+print(outer())
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command(quartz, "run", src).CombinedOutput()
+	if err == nil {
+		t.Fatal("dividing by zero should fail")
+	}
+	got := strings.ReplaceAll(string(out), "\r\n", "\n")
+
+	// Go's wording, translated.
+	if !strings.Contains(got, "error: divided by zero") {
+		t.Errorf("missing the explained message, got:\n%s", got)
+	}
+	// Innermost frame first, then the caller: a real traceback.
+	if !strings.Contains(got, "at boom.qz:2") || !strings.Contains(got, "at boom.qz:6") {
+		t.Errorf("missing the Quartz traceback, got:\n%s", got)
+	}
+	// None of Go's internals should survive.
+	for _, leak := range []string{"goroutine", "runtime.", "0x"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("Go internals leaked (%q) into:\n%s", leak, got)
+		}
+	}
+
+	// The full Go stack stays available for debugging the compiler.
+	cmd := exec.Command(quartz, "run", src)
+	cmd.Env = append(os.Environ(), "QUARTZ_TRACE=1")
+	traced, _ := cmd.CombinedOutput()
+	if !strings.Contains(string(traced), "goroutine") {
+		t.Errorf("QUARTZ_TRACE=1 should show the Go stack, got:\n%s", traced)
+	}
+}

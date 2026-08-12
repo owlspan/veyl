@@ -1093,6 +1093,9 @@ func overloadForCollections() {
 // tables. Called from codegen's init(), after the stdlib, because it
 // deliberately overwrites contains, indexOf and len.
 func registerCollections() {
+	for k, v := range crashHelperDefs {
+		helperDefs[k] = v
+	}
 	buildCollectionBuiltins()
 	for k, v := range collectionHelperDefs {
 		helperDefs[k] = v
@@ -1104,4 +1107,85 @@ func registerCollections() {
 		builtins[k] = v
 	}
 	overloadForCollections()
+}
+
+// The crash handler. Deferred at the top of every generated main.
+//
+// Without it a runtime failure reaches the terminal as a Go panic:
+// a goroutine dump, hexadecimal offsets, and words like "interface
+// conversion" that describe the backend rather than the program. The
+// //line directives mean the frames already carry .qz paths, so the
+// stack can be filtered down to the Quartz ones and printed as a
+// traceback the person who wrote the program can act on.
+var crashHelperDefs = map[string]helperDef{
+	"crash": {
+		code: `func __crash() {
+	r := recover()
+	if r == nil {
+		return
+	}
+
+	// QUARTZ_TRACE is for debugging the compiler itself, where the Go
+	// frames are the interesting ones.
+	if os.Getenv("QUARTZ_TRACE") != "" {
+		fmt.Fprintf(os.Stderr, "%v\n\n%s", r, debug.Stack())
+		os.Exit(1)
+	}
+
+	fmt.Fprintf(os.Stderr, "error: %s\n", __explain(fmt.Sprint(r)))
+	for _, frame := range __qzFrames(string(debug.Stack())) {
+		fmt.Fprintf(os.Stderr, "  at %s\n", frame)
+	}
+	fmt.Fprintln(os.Stderr, "\nRun with QUARTZ_TRACE=1 to see the underlying Go stack.")
+	os.Exit(1)
+}
+
+// __explain restates Go's runtime vocabulary in Quartz's.
+func __explain(msg string) string {
+	msg = strings.TrimPrefix(msg, "runtime error: ")
+	switch {
+	case strings.Contains(msg, "integer divide by zero"):
+		return "divided by zero"
+	case strings.Contains(msg, "index out of range"):
+		return msg + " — check the length before indexing"
+	case strings.Contains(msg, "nil pointer dereference"),
+		strings.Contains(msg, "invalid memory address"):
+		return "used a value that was nil — narrow it with 'if x != nil' first"
+	case strings.Contains(msg, "slice bounds out of range"):
+		return msg + " — the start or end is outside the list"
+	}
+	return msg
+}
+
+// __qzFrames pulls the .qz locations out of a Go stack, innermost
+// first. Frame lines look like "\tC:/path/thing.qz:12 +0x1d".
+func __qzFrames(stack string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(stack, "\n") {
+		line = strings.TrimSpace(line)
+		i := strings.Index(line, ".qz:")
+		if i < 0 {
+			continue
+		}
+		loc := line[:i+4]
+		rest := line[i+4:]
+		if sp := strings.IndexAny(rest, " \t"); sp >= 0 {
+			rest = rest[:sp]
+		}
+		loc += rest
+		// Only the file name: the absolute path is noise, and it makes
+		// output differ between machines for no reason.
+		if slash := strings.LastIndexAny(loc, "/\\"); slash >= 0 {
+			loc = loc[slash+1:]
+		}
+		if !seen[loc] {
+			seen[loc] = true
+			out = append(out, loc)
+		}
+	}
+	return out
+}`,
+		imports: []string{"fmt", "os", "runtime/debug", "strings"},
+	},
 }
