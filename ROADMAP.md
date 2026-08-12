@@ -10,10 +10,43 @@ thing exists and has tests, not that it is planned.
 
 ## The honest summary
 
-**Level 1, basic language: done.**
-**Level 2, real programming language: done except generics.**
+**238 items on the checklist. 104 done, 11 partial, 123 absent. 46%.**
+
+An earlier version of this file said "level 1 complete, level 2
+complete except generics", which sounded much better and was measured
+at the wrong granularity. Counted item by item:
+
+| Section | have | partial | missing | |
+| --- | ---: | ---: | ---: | ---: |
+| 1 Core semantics | 12 | 2 | 8 | 59% |
+| 2 Functions | 6 | 1 | 5 | 54% |
+| 3 Type system | 7 | 2 | 10 | 42% |
+| 4 Memory model | 2 | 0 | 17 | 11% |
+| 5 Object model | 5 | 0 | 9 | 36% |
+| 6 Control flow | 8 | 1 | 3 | 71% |
+| 7 Error handling | 8 | 0 | 1 | **89%** |
+| 8 Modules and packages | 9 | 0 | 2 | **82%** |
+| 9 Compilation | 10 | 0 | 9 | 53% |
+| 10 Native interop | 0 | 0 | 15 | **0%** |
+| 11 Concurrency | 1 | 2 | 10 | 15% |
+| 12 Standard library | 20 | 0 | 5 | **80%** |
+| 13 Compile-time | 1 | 1 | 8 | 15% |
+| 14 Tooling | 5 | 1 | 7 | 42% |
+| 15 Testing | 7 | 0 | 5 | 58% |
+| 16 Low-level | 3 | 1 | 9 | 27% |
+
+**Strong:** error handling, modules and packages, the standard library.
+**Absent:** native interoperability, and nearly all of the memory
+model, concurrency primitives and compile-time capability.
+
+By level, and the level view is the flattering one, so read it after
+the table rather than instead of it:
+
+**Level 1, basic language: mostly, with real gaps.** Enums, tuples,
+unions, type aliases and a character type are all missing.
+**Level 2, real programming language: mostly, minus generics.**
 **Level 3, systems-capable: not started. Blocked on the C backend.**
-**Level 4, production tooling: about half.**
+**Level 4, production tooling: under half.**
 **Level 5, C++ class: not started, and correctly so.**
 
 The single most important sentence about Veyl's position: **it is a
