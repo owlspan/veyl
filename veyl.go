@@ -12,7 +12,7 @@ import (
 )
 
 // Version is stamped into `veyl version`. Bump it with the tag.
-const Version = "0.17"
+const Version = "0.17.02"
 
 const usage = `Veyl ` + Version + ` - a small language that compiles to native executables
 

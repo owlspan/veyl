@@ -15,7 +15,7 @@
 ; behaviour: a bundled installer missing its bundle is worse than none.
 
 #define AppName "Veyl"
-#define AppVersion "0.17"
+#define AppVersion "0.17.02"
 #define AppPublisher "Veyl"
 #define AppExeName "veyl.exe"
 ; Kept in step with editors/vscode/package.json by hand; the
