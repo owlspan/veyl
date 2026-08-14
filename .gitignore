@@ -35,3 +35,14 @@ dist/
 *.swp
 Thumbs.db
 desktop.ini
+
+# personal notes and scripts (not for the public repo)
+CLAUDE.md
+ROADMAP.md
+NIGHT-LOG.md
+ARCHITECTURE.md
+HOW-IT-WORKS.md
+PACKAGES.md
+INTERVIEW-PREP.md
+PRACTICE.md
+push.bat
