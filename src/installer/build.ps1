@@ -22,7 +22,7 @@ Push-Location $repo
 try {
     # 1. The compiler itself.
     Write-Host '==> building veyl.exe' -ForegroundColor Cyan
-    & go build -o veyl.exe .
+    & go build -o veyl.exe ./compiler
     if ($LASTEXITCODE -ne 0) { throw "go build failed" }
 
     # 2. The toolchain to bundle. GOROOT is asked of the Go that is

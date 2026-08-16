@@ -91,8 +91,8 @@ Source: "..\veyl.exe";      DestDir: "{app}"; Components: core; Flags: ignorever
 Source: "..\icons\veyl.ico"; DestDir: "{app}"; Components: core; Flags: ignoreversion
 Source: "..\README.md";       DestDir: "{app}"; Components: core; Flags: ignoreversion
 
-Source: "..\SYNTAX.md";       DestDir: "{app}"; Components: docs; Flags: ignoreversion
-Source: "..\TUTORIAL.md";     DestDir: "{app}"; Components: docs; Flags: ignoreversion
+Source: "..\docs\SYNTAX.md";       DestDir: "{app}"; Components: docs; Flags: ignoreversion
+Source: "..\docs\TUTORIAL.md";     DestDir: "{app}"; Components: docs; Flags: ignoreversion
 Source: "..\examples\*.vy";   DestDir: "{app}\examples"; Components: docs; Flags: ignoreversion
 
 ; Dropped straight into the extensions folder. VS Code scans that

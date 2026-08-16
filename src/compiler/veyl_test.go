@@ -41,7 +41,7 @@ func buildCompiler(t *testing.T) string {
 }
 
 func TestVeylOK(t *testing.T) {
-	runSuite(t, "tests/ok", false)
+	runSuite(t, "../tests/ok", false)
 }
 
 // The golden suite runs every program without arguments, so it cannot
@@ -68,7 +68,7 @@ func TestRunForwardsArguments(t *testing.T) {
 }
 
 func TestVeylErrors(t *testing.T) {
-	runSuite(t, "tests/err", true)
+	runSuite(t, "../tests/err", true)
 }
 
 // TestFormatPreservesBehaviour is the test that matters for a
@@ -83,7 +83,7 @@ func TestFormatPreservesBehaviour(t *testing.T) {
 	veyl := buildCompiler(t)
 
 	work := t.TempDir()
-	if err := copyTree("tests/ok", work); err != nil {
+	if err := copyTree("../tests/ok", work); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,7 +137,7 @@ func TestFormatPreservesBehaviour(t *testing.T) {
 			}
 			got := normalize(string(raw), src)
 
-			wantBytes, err := os.ReadFile(filepath.Join("tests/ok", name+".expected"))
+			wantBytes, err := os.ReadFile(filepath.Join("../tests/ok", name+".expected"))
 			if err != nil {
 				t.Fatal(err)
 			}

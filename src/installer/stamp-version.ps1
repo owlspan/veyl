@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 
-$driver = Join-Path $root 'veyl.go'
+$driver = Join-Path $root 'compiler\veyl.go'
 $text = [System.IO.File]::ReadAllText($driver)
 $stamped = [regex]::Replace($text, 'const Version = "[^"]*"', "const Version = `"$Version`"")
 if ($stamped -eq $text) { throw "could not find Version constant in veyl.go" }

@@ -18,7 +18,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repo = $PSScriptRoot
+# The script lives in src\scripts, so $repo is src\ itself: the
+# module root every go command below expects to run from.
+$repo = Split-Path -Parent $PSScriptRoot
 
 function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Ok($msg) { Write-Host "    $msg" -ForegroundColor Green }
@@ -43,7 +45,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'mkicon failed' }
 
     Step "stamping version $Version"
-    $driver = Join-Path $repo 'veyl.go'
+    $driver = Join-Path $repo 'compiler\veyl.go'
     $text = [System.IO.File]::ReadAllText($driver)
     $stamped = [regex]::Replace($text, 'const Version = "[^"]*"', "const Version = `"$Version`"")
     if ($stamped -eq $text) { throw "could not find the Version constant in veyl.go" }
@@ -67,7 +69,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'go vet failed' }
     & go test ./...
     if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
-    & go build -o veyl.exe .
+    & go build -o veyl.exe ./compiler
     if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
     Ok 'gofmt clean, vet clean, tests pass, builds'
 
@@ -104,9 +106,11 @@ try {
     & tar -x -f $tarball -C $snap
     if ($LASTEXITCODE -ne 0) { throw 'unpacking the snapshot failed' }
     Remove-Item $tarball -Force
-    Push-Location $snap
+    # git archive preserves the repository layout, so the module root
+    # inside the snapshot is its src\, not the snapshot folder.
+    Push-Location (Join-Path $snap 'src')
     try {
-        & go build -o veyl.exe .
+        & go build -o veyl.exe ./compiler
         if ($LASTEXITCODE -ne 0) { throw 'the snapshot does not build' }
         & go test ./... | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'the snapshot does not pass its tests' }
