@@ -237,7 +237,7 @@ func mergeable(c byte) bool {
 	case '=', '!', '<', '>', '&', '|', '+', '-', '*', '/', '%', '^', '.', '?', ':':
 		return true
 	}
-	return isAlpha(c) || isDigit(c)
+	return IsAlpha(c) || IsDigit(c)
 }
 
 func last(s string) byte { return s[len(s)-1] }

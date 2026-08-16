@@ -358,7 +358,7 @@ func (c *Codegen) Generate(p *Program) string {
 	c.funcs = map[string]bool{}
 	for _, f := range p.Funcs {
 		if f.Recv == "" {
-			c.funcs[qual(f.Pkg, f.Name)] = true
+			c.funcs[Qual(f.Pkg, f.Name)] = true
 		}
 	}
 
@@ -571,7 +571,7 @@ func (c *Codegen) fnDecl(f *FnDecl) {
 	}
 
 	c.line(f)
-	c.raw("func %s%s(%s)%s {", recv, goIdent(qual(f.Pkg, f.Name)), strings.Join(goParams, ", "), ret)
+	c.raw("func %s%s(%s)%s {", recv, goIdent(Qual(f.Pkg, f.Name)), strings.Join(goParams, ", "), ret)
 	prevPkg := c.curPkg
 	c.curPkg = f.Pkg
 	prevRet := c.curFnRet
@@ -1184,7 +1184,7 @@ func (c *Codegen) call(x *Call) string {
 	// name inside a package refers to that package's own function, and
 	// a dotted one already carries its namespace.
 	if _, ok := c.funcs[name]; !ok {
-		if q := qual(c.curPkg, name); c.funcs[q] {
+		if q := Qual(c.curPkg, name); c.funcs[q] {
 			name = q
 		}
 	}

@@ -13,7 +13,7 @@ import (
 // supports.
 //
 // They are generated rather than written by hand for the same reason
-// `veyl builtins` exists: there are 300-odd builtins and 24 keywords,
+// `veyl builtins` exists: there are 300-odd builtins and 24 Keywords,
 // and a list transcribed into four different file formats would be
 // wrong within a week. Here the compiler's own tables are the source,
 // so a builtin added to lib_bytes.go is highlighted everywhere as soon
@@ -58,8 +58,8 @@ func runEditors(args []string) error {
 // keywordList is every reserved word, sorted so the generated files do
 // not churn between runs over Go's random map order.
 func keywordList() []string {
-	out := make([]string, 0, len(keywords))
-	for k := range keywords {
+	out := make([]string, 0, len(Keywords))
+	for k := range Keywords {
 		out = append(out, k)
 	}
 	sort.Strings(out)
@@ -194,7 +194,7 @@ contexts:
     - include: comments
     - include: strings
     - include: numbers
-    - include: keywords
+    - include: Keywords
     - include: types
     - include: builtins
 
@@ -255,7 +255,7 @@ contexts:
       scope: constant.numeric.veyl
 
 `)
-	fmt.Fprintf(&b, "  keywords:\n    - match: '\\b(%s)\\b'\n      scope: keyword.control.veyl\n\n",
+	fmt.Fprintf(&b, "  Keywords:\n    - match: '\\b(%s)\\b'\n      scope: keyword.control.veyl\n\n",
 		strings.Join(keywordList(), "|"))
 	fmt.Fprintf(&b, "  types:\n    - match: '\\b(%s)\\b'\n      scope: storage.type.veyl\n\n",
 		strings.Join(strings.Fields(typeWords), "|"))

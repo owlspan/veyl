@@ -188,7 +188,7 @@ func (c *Checker) coerce(slot *Expr, want *Type, got *Type) bool {
 		c.coerce(slot, want.Elem, got)
 	}
 	line, col := (*slot).Pos()
-	*slot = &Widen{pos: pos{Line: line, Col: col}, X: *slot, T: want}
+	*slot = &Widen{Span: Span{Line: line, Col: col}, X: *slot, T: want}
 	return true
 }
 
@@ -318,7 +318,7 @@ func (c *Checker) Check(p *Program) {
 			f.RetT = c.resolveAnnotation(f.Ret, f)
 		}
 		if f.Recv == "" {
-			c.funcs[qual(f.Pkg, f.Name)] = f
+			c.funcs[Qual(f.Pkg, f.Name)] = f
 		}
 	}
 
@@ -1402,7 +1402,7 @@ func (c *Checker) call(x *Call) *Type {
 
 	f, isUser := c.funcs[name]
 	if !isUser {
-		f, isUser = c.funcs[qual(c.pkg(), name)]
+		f, isUser = c.funcs[Qual(c.pkg(), name)]
 	}
 	if !isUser {
 		return Unknown // the resolver reported it
@@ -1473,7 +1473,7 @@ func (c *Checker) paramHints(x *Call) []*Type {
 	}
 	f, isUser := c.funcs[name]
 	if !isUser {
-		f, isUser = c.funcs[qual(c.pkg(), name)]
+		f, isUser = c.funcs[Qual(c.pkg(), name)]
 	}
 	if isUser {
 		out := make([]*Type, len(f.Params))

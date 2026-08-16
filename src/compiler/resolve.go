@@ -152,7 +152,7 @@ func (r *Resolver) Resolve(p *Program) {
 		r.curFile = g.File
 		r.curPkg = g.Pkg
 		r.expr(g.Value)
-		r.declare(qual(g.Pkg, g.Name), &varInfo{isConst: true, decl: g, used: true}, g)
+		r.declare(Qual(g.Pkg, g.Name), &varInfo{isConst: true, decl: g, used: true}, g)
 	}
 	r.inGlobal = false
 	r.curFile = r.mainFile
@@ -173,7 +173,7 @@ func (r *Resolver) Resolve(p *Program) {
 			}
 			seen[f.Name] = true
 		}
-		r.structs[qual(d.Pkg, d.Name)] = d
+		r.structs[Qual(d.Pkg, d.Name)] = d
 	}
 
 	// Pass 1: collect every signature first, so functions can call each
@@ -187,17 +187,17 @@ func (r *Resolver) Resolve(p *Program) {
 			r.errorAt(f, "%q is a builtin and cannot be redefined", f.Name)
 			continue
 		}
-		if _, isStruct := r.structs[qual(f.Pkg, f.Name)]; isStruct {
+		if _, isStruct := r.structs[Qual(f.Pkg, f.Name)]; isStruct {
 			r.errorAt(f, "%q is already a struct, so it cannot also be a function", f.Name)
 			continue
 		}
-		if prev, dup := r.funcs[qual(f.Pkg, f.Name)]; dup {
+		if prev, dup := r.funcs[Qual(f.Pkg, f.Name)]; dup {
 			line, _ := prev.Pos()
 			r.errorAt(f, "function %q is already defined on line %d (in %s)",
 				f.Name, line, filepath.Base(prev.File))
 			continue
 		}
-		r.funcs[qual(f.Pkg, f.Name)] = f
+		r.funcs[Qual(f.Pkg, f.Name)] = f
 	}
 
 	// Pass 2: walk each body, remembering which file it came from so a
@@ -658,7 +658,7 @@ func (r *Resolver) call(x *Call) {
 	// Looking there first is what lets a library call its own helpers
 	// without qualifying them, and what stops it reaching into the
 	// program that imported it.
-	key := qual(r.curPkg, name)
+	key := Qual(r.curPkg, name)
 	f, isUser := r.funcs[key]
 	if !isUser && r.curPkg != "" {
 		// Not the package's own, so it can only be a builtin, which was

@@ -1,4 +1,4 @@
-package main
+package frontend
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 type Lexer struct {
 	src  string
 	file string
-	pos  int // byte offset into src
+	Span int // byte offset into src
 	line int
 	col  int
 
@@ -56,9 +56,9 @@ func (l *Lexer) Scan() []Token {
 		case c == '\n':
 			l.advance()
 			l.emit(NEWLINE, "\n", line, col)
-		case isAlpha(c):
+		case IsAlpha(c):
 			l.ident(line, col)
-		case isDigit(c):
+		case IsDigit(c):
 			l.number(line, col)
 		case c == '"':
 			l.str(line, col)
@@ -75,12 +75,12 @@ func (l *Lexer) Scan() []Token {
 // ---- scanners for each token shape ----
 
 func (l *Lexer) ident(line, col int) {
-	start := l.pos
-	for !l.atEnd() && (isAlpha(l.peek()) || isDigit(l.peek())) {
+	start := l.Span
+	for !l.atEnd() && (IsAlpha(l.peek()) || IsDigit(l.peek())) {
 		l.advance()
 	}
-	text := l.src[start:l.pos]
-	if kind, ok := keywords[text]; ok {
+	text := l.src[start:l.Span]
+	if kind, ok := Keywords[text]; ok {
 		l.emit(kind, text, line, col)
 		return
 	}
@@ -88,7 +88,7 @@ func (l *Lexer) ident(line, col int) {
 }
 
 func (l *Lexer) number(line, col int) {
-	start := l.pos
+	start := l.Span
 
 	// 0x and 0b bases. A language with & | ^ << >> in it needs a way to
 	// write a mask that looks like one. Go accepts the same spellings,
@@ -98,10 +98,10 @@ func (l *Lexer) number(line, col int) {
 		case 'x', 'X':
 			l.advance()
 			l.advance()
-			if !isHexDigit(l.peek()) {
+			if !IsHexDigit(l.peek()) {
 				l.errorf(line, col, "a hex literal needs at least one digit after 0x")
 			}
-			for !l.atEnd() && (isHexDigit(l.peek()) || l.peek() == '_') {
+			for !l.atEnd() && (IsHexDigit(l.peek()) || l.peek() == '_') {
 				l.advance()
 			}
 			l.endNumber(start, line, col, "hex")
@@ -121,14 +121,14 @@ func (l *Lexer) number(line, col int) {
 	}
 
 	// Underscores group digits - 1_000_000 - and are ignored by Go too.
-	for !l.atEnd() && (isDigit(l.peek()) || l.peek() == '_') {
+	for !l.atEnd() && (IsDigit(l.peek()) || l.peek() == '_') {
 		l.advance()
 	}
 	// a fractional part, but only if a digit actually follows the dot,
 	// so that `1.method()` still lexes as NUMBER DOT IDENT later on
-	if !l.atEnd() && l.peek() == '.' && isDigit(l.peekNext()) {
+	if !l.atEnd() && l.peek() == '.' && IsDigit(l.peekNext()) {
 		l.advance() // consume '.'
-		for !l.atEnd() && (isDigit(l.peek()) || l.peek() == '_') {
+		for !l.atEnd() && (IsDigit(l.peek()) || l.peek() == '_') {
 			l.advance()
 		}
 	}
@@ -142,20 +142,20 @@ func (l *Lexer) number(line, col int) {
 // numbers where the author wrote one. A malformed literal should say so
 // rather than parse as something else entirely.
 func (l *Lexer) endNumber(start, line, col int, base string) {
-	if !l.atEnd() && (isAlpha(l.peek()) || isDigit(l.peek())) {
+	if !l.atEnd() && (IsAlpha(l.peek()) || IsDigit(l.peek())) {
 		bad := l.peek()
-		for !l.atEnd() && (isAlpha(l.peek()) || isDigit(l.peek()) || l.peek() == '_') {
+		for !l.atEnd() && (IsAlpha(l.peek()) || IsDigit(l.peek()) || l.peek() == '_') {
 			l.advance()
 		}
-		l.errorf(line, col, "%q is not a %s digit, in %s", string(bad), base, l.src[start:l.pos])
-		l.emit(ILLEGAL, l.src[start:l.pos], line, col)
+		l.errorf(line, col, "%q is not a %s digit, in %s", string(bad), base, l.src[start:l.Span])
+		l.emit(ILLEGAL, l.src[start:l.Span], line, col)
 		return
 	}
-	l.emit(NUMBER, l.src[start:l.pos], line, col)
+	l.emit(NUMBER, l.src[start:l.Span], line, col)
 }
 
-func isHexDigit(c byte) bool {
-	return isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+func IsHexDigit(c byte) bool {
+	return IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 // rawStr reads a backtick string: everything up to the closing
@@ -164,23 +164,23 @@ func isHexDigit(c byte) bool {
 // braces - a regular expression, a block of CSV, some JSON - quoting it
 // twice is the thing that goes wrong.
 func (l *Lexer) rawStr(line, col int) {
-	rawStart := l.pos
+	rawStart := l.Span
 	l.advance() // opening backtick
-	start := l.pos
+	start := l.Span
 
 	for {
 		if l.atEnd() {
 			l.errorf(line, col, "unterminated `...` string")
-			l.emit(ILLEGAL, l.src[start:l.pos], line, col)
+			l.emit(ILLEGAL, l.src[start:l.Span], line, col)
 			return
 		}
 		if l.peek() == '`' {
-			text := l.src[start:l.pos]
+			text := l.src[start:l.Span]
 			l.advance() // closing backtick
 			// Carriage returns are dropped so a file saved on Windows
 			// behaves the same as one saved anywhere else.
 			l.emitRaw(RAWSTRING, strings.ReplaceAll(text, "\r\n", "\n"),
-				l.src[rawStart:l.pos], line, col)
+				l.src[rawStart:l.Span], line, col)
 			return
 		}
 		l.advance()
@@ -188,7 +188,7 @@ func (l *Lexer) rawStr(line, col int) {
 }
 
 func (l *Lexer) str(line, col int) {
-	rawStart := l.pos
+	rawStart := l.Span
 	l.advance() // opening quote
 
 	var sb strings.Builder
@@ -246,7 +246,7 @@ func (l *Lexer) str(line, col int) {
 		case c == '"' && depth == 0:
 			// Only a quote at brace-depth zero ends the literal, which is
 			// what lets "{f("x")}" nest a string inside an interpolation.
-			l.emitRaw(STRING, sb.String(), l.src[rawStart:l.pos], line, col)
+			l.emitRaw(STRING, sb.String(), l.src[rawStart:l.Span], line, col)
 			return
 
 		case c == '"':
@@ -406,17 +406,17 @@ func (l *Lexer) skipSpaceAndComments() {
 
 		case c == '/' && l.peekNext() == '/':
 			line, col := l.line, l.col
-			start := l.pos
+			start := l.Span
 			for !l.atEnd() && l.peek() != '\n' {
 				l.advance()
 			}
 			if l.KeepComments {
-				l.emit(COMMENT, l.src[start:l.pos], line, col)
+				l.emit(COMMENT, l.src[start:l.Span], line, col)
 			}
 
 		case c == '/' && l.peekNext() == '*':
 			line, col := l.line, l.col
-			start := l.pos
+			start := l.Span
 			l.advance() // '/'
 			l.advance() // '*'
 			depth := 1
@@ -439,7 +439,7 @@ func (l *Lexer) skipSpaceAndComments() {
 				}
 			}
 			if l.KeepComments {
-				l.emit(COMMENT, l.src[start:l.pos], line, col)
+				l.emit(COMMENT, l.src[start:l.Span], line, col)
 			}
 
 		default:
@@ -450,25 +450,25 @@ func (l *Lexer) skipSpaceAndComments() {
 
 // ---- low-level cursor helpers ----
 
-func (l *Lexer) atEnd() bool { return l.pos >= len(l.src) }
+func (l *Lexer) atEnd() bool { return l.Span >= len(l.src) }
 
 func (l *Lexer) peek() byte {
 	if l.atEnd() {
 		return 0
 	}
-	return l.src[l.pos]
+	return l.src[l.Span]
 }
 
 func (l *Lexer) peekNext() byte {
-	if l.pos+1 >= len(l.src) {
+	if l.Span+1 >= len(l.src) {
 		return 0
 	}
-	return l.src[l.pos+1]
+	return l.src[l.Span+1]
 }
 
 func (l *Lexer) advance() byte {
-	c := l.src[l.pos]
-	l.pos++
+	c := l.src[l.Span]
+	l.Span++
 	if c == '\n' {
 		l.line++
 		l.col = 1
@@ -479,7 +479,7 @@ func (l *Lexer) advance() byte {
 }
 
 func (l *Lexer) match(expected byte) bool {
-	if l.atEnd() || l.src[l.pos] != expected {
+	if l.atEnd() || l.src[l.Span] != expected {
 		return false
 	}
 	l.advance()
@@ -510,8 +510,8 @@ func (l *Lexer) errorf(line, col int, format string, args ...any) {
 		fmt.Sprintf("%s:%d:%d: %s", l.file, line, col, fmt.Sprintf(format, args...)))
 }
 
-func isAlpha(c byte) bool {
+func IsAlpha(c byte) bool {
 	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+func IsDigit(c byte) bool { return c >= '0' && c <= '9' }

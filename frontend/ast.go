@@ -1,4 +1,4 @@
-package main
+package frontend
 
 // Every node knows where it came from. This is what makes error
 // messages and //line directives possible.
@@ -6,19 +6,19 @@ type Node interface {
 	Pos() (line, col int)
 }
 
-type pos struct {
+type Span struct {
 	Line int
 	Col  int
 }
 
-func (p pos) Pos() (int, int) { return p.Line, p.Col }
+func (p Span) Pos() (int, int) { return p.Line, p.Col }
 
 // setPos lets the parser move a whole subtree, which it needs for
 // expressions parsed out of a string interpolation by a nested lexer
 // that counted lines from one.
-func (p *pos) setPos(q pos) { *p = q }
+func (p *Span) setPos(q Span) { *p = q }
 
-func at(t Token) pos { return pos{Line: t.Line, Col: t.Col} }
+func at(t Token) Span { return Span{Line: t.Line, Col: t.Col} }
 
 type Expr interface {
 	Node
@@ -50,7 +50,7 @@ type Program struct {
 // ImportDecl is `import "helpers.vy"`. The path is relative to the file
 // containing the import.
 type ImportDecl struct {
-	pos
+	Span
 	Path string
 	File string // the file this import was written in
 }
@@ -58,27 +58,27 @@ type ImportDecl struct {
 // ---- expressions ----
 
 type IntLit struct {
-	pos
+	Span
 	Val string // kept as text; Go parses it identically
 }
 
 type FloatLit struct {
-	pos
+	Span
 	Val string
 }
 
 type StrLit struct {
-	pos
+	Span
 	Val string // already decoded by the lexer
 }
 
 type BoolLit struct {
-	pos
+	Span
 	Val bool
 }
 
 type Ident struct {
-	pos
+	Span
 	Name string
 
 	// Narrowed is set by the checker where an `if x != nil` has proved
@@ -87,7 +87,7 @@ type Ident struct {
 }
 
 // NilLit is the bare `nil`.
-type NilLit struct{ pos }
+type NilLit struct{ Span }
 
 // FuncLit is an anonymous function used as a value:
 //
@@ -96,7 +96,7 @@ type NilLit struct{ pos }
 // It shares FnDecl so that resolve, check and codegen can treat a
 // literal and a declaration the same way.
 type FuncLit struct {
-	pos
+	Span
 	Decl *FnDecl
 	T    *Type // resolved by the checker
 }
@@ -107,7 +107,7 @@ func (*FuncLit) exprNode() {}
 // the enclosing function. It replaces Go's four-line err check with one
 // character, which is the whole reason the error type exists.
 type Try struct {
-	pos
+	Span
 	X Expr
 	T *Type // the unwrapped type, filled in by the checker
 }
@@ -118,19 +118,19 @@ func (*Try) exprNode() {}
 // these wherever a T is used as a ?T, so codegen never has to work out
 // on its own where a pointer is needed.
 type Widen struct {
-	pos
+	Span
 	X Expr
 	T *Type // the nullable type produced
 }
 
 type Unary struct {
-	pos
+	Span
 	Op Kind // BANG or MINUS
 	X  Expr
 }
 
 type Binary struct {
-	pos
+	Span
 	Op   Kind
 	L, R Expr
 
@@ -145,7 +145,7 @@ type Binary struct {
 }
 
 type Call struct {
-	pos
+	Span
 	Callee Expr
 	Args   []Expr
 
@@ -176,14 +176,14 @@ type Call struct {
 // ListLit is `[1, 2, 3]`. An empty literal carries no element type of
 // its own, so it needs an annotation on the binding.
 type ListLit struct {
-	pos
+	Span
 	Elems []Expr
 	T     *Type // the list type, filled in by the checker
 }
 
 // MapLit is `{"a": 1, "b": 2}`.
 type MapLit struct {
-	pos
+	Span
 	Keys []Expr
 	Vals []Expr
 	T    *Type // the map type, filled in by the checker
@@ -192,7 +192,7 @@ type MapLit struct {
 // Field is `a.b`. Today it only ever forms a dotted builtin path such
 // as os.file.read; when structs arrive it becomes field access too.
 type Field struct {
-	pos
+	Span
 	X    Expr
 	Name string
 }
@@ -216,7 +216,7 @@ func DottedName(e Expr) (string, bool) {
 
 // Index is `xs[i]` for a list or `m[k]` for a map.
 type Index struct {
-	pos
+	Span
 	X   Expr
 	Idx Expr
 	T   *Type // the type of X, filled in by the checker
@@ -232,7 +232,7 @@ type InterpPart struct {
 
 // Interp is a string literal containing {expr} holes.
 type Interp struct {
-	pos
+	Span
 	Parts []InterpPart
 }
 
@@ -255,7 +255,7 @@ func (*Index) exprNode()    {}
 // StructLit is `User{name: "ada", age: 36}`. Fields may be given in any
 // order; any left out take their zero value.
 type StructLit struct {
-	pos
+	Span
 	Name   string
 	Fields []string
 	Vals   []Expr
@@ -268,7 +268,7 @@ func (*StructLit) exprNode() {}
 
 // StructField is one `name: type` line in a struct declaration.
 type StructField struct {
-	pos
+	Span
 	Name string
 	Type string // as written
 	T    *Type  // resolved by the checker
@@ -276,7 +276,7 @@ type StructField struct {
 
 // StructDecl is `struct User { ... }`.
 type StructDecl struct {
-	pos
+	Span
 	Name   string
 	Fields []StructField
 	Pub    bool
@@ -288,20 +288,20 @@ type StructDecl struct {
 // program's function list with a receiver attached, so most of the
 // compiler never has to know impl blocks exist.
 type ImplBlock struct {
-	pos
+	Span
 	Type    string
 	Methods []*FnDecl
 }
 
 type Param struct {
-	pos
+	Span
 	Name string
 	Type string // as written in the source
 	T    *Type  // resolved by the checker
 }
 
 type FnDecl struct {
-	pos
+	Span
 	Name   string
 	Params []Param
 	Ret    string // "" means the function returns nothing
@@ -326,12 +326,12 @@ type FnDecl struct {
 // ---- statements ----
 
 type Block struct {
-	pos
+	Span
 	Stmts []Stmt
 }
 
 type LetStmt struct {
-	pos
+	Span
 	Name  string
 	Const bool
 	Type  string // as written; "" when inferred
@@ -353,7 +353,7 @@ type LetStmt struct {
 // AssignStmt covers `x = v`, `x += v`, and `xs[i] = v`. Target is an
 // *Ident or an *Index; nothing else is assignable.
 type AssignStmt struct {
-	pos
+	Span
 	Target Expr
 	Op     Kind // ASSIGN, PLUSEQ, MINUSEQ, STAREQ, SLASHEQ
 	Value  Expr
@@ -379,25 +379,25 @@ func (a *AssignStmt) TargetName() string {
 }
 
 type ExprStmt struct {
-	pos
+	Span
 	X Expr
 }
 
 type IfStmt struct {
-	pos
+	Span
 	Cond Expr
 	Then *Block
 	Else Stmt // *Block, *IfStmt, or nil
 }
 
 type WhileStmt struct {
-	pos
+	Span
 	Cond Expr
 	Body *Block
 }
 
 type ReturnStmt struct {
-	pos
+	Span
 	Value Expr // nil for a bare `return`
 }
 
@@ -412,7 +412,7 @@ type ReturnStmt struct {
 //
 // Coll distinguishes them: nil means the range form.
 type ForStmt struct {
-	pos
+	Span
 	Var  string
 	Var2 string // the value variable in `for k, v in map`; "" otherwise
 	Body *Block
@@ -430,7 +430,7 @@ type ForStmt struct {
 
 // MatchCase is one arm: `1, 2 => body`.
 type MatchCase struct {
-	pos
+	Span
 	Values []Expr
 	Body   Stmt
 }
@@ -443,15 +443,15 @@ type MatchCase struct {
 //	    else     => print("something else")
 //	}
 type MatchStmt struct {
-	pos
+	Span
 	Subject Expr
 	Cases   []MatchCase
 	Else    Stmt // nil when there is no else arm
 }
 
-type BreakStmt struct{ pos }
+type BreakStmt struct{ Span }
 
-type ContinueStmt struct{ pos }
+type ContinueStmt struct{ Span }
 
 func (*Block) stmtNode()        {}
 func (*LetStmt) stmtNode()      {}

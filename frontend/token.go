@@ -1,4 +1,4 @@
-package main
+package frontend
 
 import "fmt"
 
@@ -13,7 +13,7 @@ const (
 	STRING
 	RAWSTRING
 
-	// keywords
+	// Keywords
 	LET
 	FN
 	IF
@@ -193,8 +193,8 @@ func (k Kind) String() string {
 	return fmt.Sprintf("Kind(%d)", int(k))
 }
 
-// keywords maps source text to its keyword Kind.
-var keywords = map[string]Kind{
+// Keywords maps source text to its keyword Kind.
+var Keywords = map[string]Kind{
 	"let":      LET,
 	"fn":       FN,
 	"if":       IF,

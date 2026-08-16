@@ -1,4 +1,4 @@
-package main
+package frontend
 
 import "strings"
 
@@ -536,11 +536,11 @@ func isTypeName(s string) bool {
 	return true
 }
 
-// qual is how a declaration is keyed once packages exist: "greet.hello"
+// Qual is how a declaration is keyed once packages exist: "greet.hello"
 // for something imported, and the bare name for the program's own code.
 // Two packages exporting the same name therefore cannot collide, which
 // was the whole reason for namespacing imports.
-func qual(pkg, name string) string {
+func Qual(pkg, name string) string {
 	if pkg == "" {
 		return name
 	}

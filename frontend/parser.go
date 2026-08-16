@@ -1,4 +1,4 @@
-package main
+package frontend
 
 import (
 	"fmt"
@@ -218,7 +218,7 @@ func (p *Parser) parseImport() *ImportDecl {
 	if pathTok.Kind != STRING {
 		return nil
 	}
-	return &ImportDecl{pos: at(kw), Path: pathTok.Lex, File: p.file}
+	return &ImportDecl{Span: at(kw), Path: pathTok.Lex, File: p.file}
 }
 
 // parseStruct reads `struct User { name: str, age: int }`. Fields are
@@ -226,7 +226,7 @@ func (p *Parser) parseImport() *ImportDecl {
 func (p *Parser) parseStruct() *StructDecl {
 	kw := p.advance() // 'struct'
 	name := p.expect(IDENT, "a struct name")
-	d := &StructDecl{pos: at(kw), Name: name.Lex}
+	d := &StructDecl{Span: at(kw), Name: name.Lex}
 
 	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
@@ -235,7 +235,7 @@ func (p *Parser) parseStruct() *StructDecl {
 		before := p.i
 
 		fn := p.expect(IDENT, "a field name")
-		f := StructField{pos: at(fn), Name: fn.Lex}
+		f := StructField{Span: at(fn), Name: fn.Lex}
 		if p.match(COLON) {
 			f.Type = p.parseTypeRef()
 		} else {
@@ -259,7 +259,7 @@ func (p *Parser) parseStruct() *StructDecl {
 func (p *Parser) parseImpl() *ImplBlock {
 	kw := p.advance() // 'impl'
 	name := p.expect(IDENT, "a struct name after 'impl'")
-	b := &ImplBlock{pos: at(kw), Type: name.Lex}
+	b := &ImplBlock{Span: at(kw), Type: name.Lex}
 
 	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
@@ -314,7 +314,7 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 	if name == "" {
 		p.advance() // the 'fn' of a literal, which the caller only peeked
 	}
-	f := &FnDecl{pos: at(kw), Name: name}
+	f := &FnDecl{Span: at(kw), Name: name}
 
 	open := p.expect(LPAREN, "'('")
 	p.skipNewlines()
@@ -324,7 +324,7 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 			// `self` is a parameter with no type: the impl block supplies it.
 			if p.check(SELF) {
 				sf := p.advance()
-				f.Params = append(f.Params, Param{pos: at(sf), Name: "self"})
+				f.Params = append(f.Params, Param{Span: at(sf), Name: "self"})
 				p.skipNewlines()
 				if !p.match(COMMA) {
 					break
@@ -333,7 +333,7 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 				continue
 			}
 			pn := p.expect(IDENT, "a parameter name")
-			prm := Param{pos: at(pn), Name: pn.Lex}
+			prm := Param{Span: at(pn), Name: pn.Lex}
 			if p.match(COLON) {
 				prm.Type = p.parseTypeRef()
 			} else {
@@ -427,11 +427,11 @@ func (p *Parser) parseStmt() Stmt {
 	case BREAK:
 		t := p.advance()
 		p.endStmt()
-		return &BreakStmt{pos: at(t)}
+		return &BreakStmt{Span: at(t)}
 	case CONTINUE:
 		t := p.advance()
 		p.endStmt()
-		return &ContinueStmt{pos: at(t)}
+		return &ContinueStmt{Span: at(t)}
 	case RETURN:
 		return p.parseReturn()
 	case LBRACE:
@@ -453,7 +453,7 @@ func (p *Parser) parseLet() Stmt {
 	kw := p.advance()
 	name := p.expect(IDENT, "a variable name")
 
-	st := &LetStmt{pos: at(kw), Name: name.Lex, Const: kw.Kind == CONST}
+	st := &LetStmt{Span: at(kw), Name: name.Lex, Const: kw.Kind == CONST}
 
 	if p.match(COLON) {
 		st.Type = p.parseTypeRef()
@@ -466,7 +466,7 @@ func (p *Parser) parseLet() Stmt {
 
 func (p *Parser) parseReturn() Stmt {
 	kw := p.advance()
-	st := &ReturnStmt{pos: at(kw)}
+	st := &ReturnStmt{Span: at(kw)}
 
 	// A bare `return` is one followed immediately by a line break or '}'.
 	if !p.check(NEWLINE) && !p.check(RBRACE) && !p.check(EOF) {
@@ -478,7 +478,7 @@ func (p *Parser) parseReturn() Stmt {
 
 func (p *Parser) parseIf() Stmt {
 	kw := p.advance()
-	st := &IfStmt{pos: at(kw)}
+	st := &IfStmt{Span: at(kw)}
 	st.Cond = p.header(func() Expr { return p.parseExpr(0) })
 	st.Then = p.parseBlock()
 
@@ -496,7 +496,7 @@ func (p *Parser) parseIf() Stmt {
 
 func (p *Parser) parseWhile() Stmt {
 	kw := p.advance()
-	st := &WhileStmt{pos: at(kw)}
+	st := &WhileStmt{Span: at(kw)}
 	st.Cond = p.header(func() Expr { return p.parseExpr(0) })
 	st.Body = p.parseBlock()
 	p.endStmt()
@@ -505,7 +505,7 @@ func (p *Parser) parseWhile() Stmt {
 
 func (p *Parser) parseFor() Stmt {
 	kw := p.advance()
-	st := &ForStmt{pos: at(kw)}
+	st := &ForStmt{Span: at(kw)}
 
 	name := p.expect(IDENT, "a loop variable name")
 	st.Var = name.Lex
@@ -564,7 +564,7 @@ func (p *Parser) parseFor() Stmt {
 // through - there is no `break` to forget.
 func (p *Parser) parseMatch() Stmt {
 	kw := p.advance()
-	st := &MatchStmt{pos: at(kw)}
+	st := &MatchStmt{Span: at(kw)}
 	st.Subject = p.header(func() Expr { return p.parseExpr(0) })
 
 	p.expect(LBRACE, "'{' to open the match")
@@ -587,7 +587,7 @@ func (p *Parser) parseMatch() Stmt {
 			continue
 		}
 
-		arm := MatchCase{pos: at(p.cur())}
+		arm := MatchCase{Span: at(p.cur())}
 		for {
 			arm.Values = append(arm.Values, p.header(func() Expr { return p.parseExpr(0) }))
 			if !p.match(COMMA) {
@@ -619,7 +619,7 @@ func (p *Parser) parseArmBody() Stmt {
 
 func (p *Parser) parseBlock() *Block {
 	lb := p.expect(LBRACE, "'{'")
-	b := &Block{pos: at(lb)}
+	b := &Block{Span: at(lb)}
 	p.skipNewlines()
 
 	for !p.check(RBRACE) && !p.check(EOF) {
@@ -653,14 +653,14 @@ func (p *Parser) parseSimpleStmt() Stmt {
 			p.synchronize()
 			return nil
 		}
-		st := &AssignStmt{pos: at(start), Target: x, Op: op.Kind}
+		st := &AssignStmt{Span: at(start), Target: x, Op: op.Kind}
 		st.Value = p.parseExpr(0)
 		p.endStmt()
 		return st
 	}
 
 	p.endStmt()
-	return &ExprStmt{pos: at(start), X: x}
+	return &ExprStmt{Span: at(start), X: x}
 }
 
 // endStmt enforces that a statement is followed by a newline, '}' or EOF.
@@ -729,7 +729,7 @@ func (p *Parser) parseExpr(minPrec int) Expr {
 		op := p.advance()
 		// prec+1 makes these left-associative: a-b-c parses as (a-b)-c
 		right := p.parseExpr(prec + 1)
-		left = &Binary{pos: at(op), Op: op.Kind, L: left, R: right}
+		left = &Binary{Span: at(op), Op: op.Kind, L: left, R: right}
 	}
 	return left
 }
@@ -737,7 +737,7 @@ func (p *Parser) parseExpr(minPrec int) Expr {
 func (p *Parser) parseUnary() Expr {
 	if p.check(BANG) || p.check(MINUS) || p.check(TILDE) {
 		op := p.advance()
-		return &Unary{pos: at(op), Op: op.Kind, X: p.parseUnary()}
+		return &Unary{Span: at(op), Op: op.Kind, X: p.parseUnary()}
 	}
 	return p.parsePostfix()
 }
@@ -748,7 +748,7 @@ func (p *Parser) parsePostfix() Expr {
 		switch {
 		case p.check(LPAREN):
 			lp := p.advance()
-			call := &Call{pos: at(lp), Callee: x}
+			call := &Call{Span: at(lp), Callee: x}
 			p.skipNewlines()
 
 			if !p.check(RPAREN) {
@@ -771,19 +771,19 @@ func (p *Parser) parsePostfix() Expr {
 			idx := p.grouped(func() Expr { return p.parseExpr(0) })
 			p.skipNewlines()
 			p.expectClose(RBRACKET, lb, "']'", "index")
-			x = &Index{pos: at(lb), X: x, Idx: idx}
+			x = &Index{Span: at(lb), X: x, Idx: idx}
 
 		case p.check(LBRACE) && p.noBrace == 0 && isStructLitTarget(x):
 			x = p.parseStructLit(x.(*Ident))
 
 		case p.check(QUESTION):
 			q := p.advance()
-			x = &Try{pos: at(q), X: x}
+			x = &Try{Span: at(q), X: x}
 
 		case p.check(DOT):
 			dot := p.advance()
 			name := p.expect(IDENT, "a name after '.'")
-			x = &Field{pos: at(dot), X: x, Name: name.Lex}
+			x = &Field{Span: at(dot), X: x, Name: name.Lex}
 
 		default:
 			return x
@@ -798,9 +798,9 @@ func (p *Parser) parsePrimary() Expr {
 	case NUMBER:
 		p.advance()
 		if strings.Contains(t.Lex, ".") {
-			return &FloatLit{pos: at(t), Val: t.Lex}
+			return &FloatLit{Span: at(t), Val: t.Lex}
 		}
-		return &IntLit{pos: at(t), Val: t.Lex}
+		return &IntLit{Span: at(t), Val: t.Lex}
 
 	case STRING:
 		p.advance()
@@ -809,29 +809,29 @@ func (p *Parser) parsePrimary() Expr {
 	case RAWSTRING:
 		// No escapes and no interpolation - the text is the value.
 		p.advance()
-		return &StrLit{pos: at(t), Val: t.Lex}
+		return &StrLit{Span: at(t), Val: t.Lex}
 
 	case TRUE:
 		p.advance()
-		return &BoolLit{pos: at(t), Val: true}
+		return &BoolLit{Span: at(t), Val: true}
 
 	case FALSE:
 		p.advance()
-		return &BoolLit{pos: at(t), Val: false}
+		return &BoolLit{Span: at(t), Val: false}
 
 	case NIL:
 		p.advance()
-		return &NilLit{pos: at(t)}
+		return &NilLit{Span: at(t)}
 
 	case IDENT:
 		p.advance()
-		return &Ident{pos: at(t), Name: t.Lex}
+		return &Ident{Span: at(t), Name: t.Lex}
 
 	case SELF:
 		// `self` is a keyword so it cannot be declared as a variable, but
 		// inside a method it reads as an ordinary name.
 		p.advance()
-		return &Ident{pos: at(t), Name: "self"}
+		return &Ident{Span: at(t), Name: "self"}
 
 	case LPAREN:
 		open := p.advance()
@@ -851,15 +851,15 @@ func (p *Parser) parsePrimary() Expr {
 		// An anonymous function used as a value.
 		f := p.parseFnSignature(t, "")
 		if f == nil {
-			return &StrLit{pos: at(t), Val: ""}
+			return &StrLit{Span: at(t), Val: ""}
 		}
 		f.Body = p.parseBlock()
-		return &FuncLit{pos: at(t), Decl: f}
+		return &FuncLit{Span: at(t), Decl: f}
 	}
 
 	p.errorAt(t, "expected an expression, found %s", describe(t))
 	p.advance()
-	return &StrLit{pos: at(t), Val: ""} // placeholder so later passes don't nil-panic
+	return &StrLit{Span: at(t), Val: ""} // placeholder so later passes don't nil-panic
 }
 
 // isStructLitTarget reports whether `x {` should be read as a struct
@@ -875,7 +875,7 @@ func isStructLitTarget(x Expr) bool {
 // literal, the name having already been consumed.
 func (p *Parser) parseStructLit(name *Ident) Expr {
 	line, col := name.Pos()
-	lit := &StructLit{pos: pos{Line: line, Col: col}, Name: name.Name}
+	lit := &StructLit{Span: Span{Line: line, Col: col}, Name: name.Name}
 
 	open := p.advance() // '{'
 	p.skipNewlines()
@@ -906,7 +906,7 @@ func (p *Parser) parseStructLit(name *Ident) Expr {
 // parseListLit reads `[]`, `[1, 2, 3]`, or a list spread over lines.
 func (p *Parser) parseListLit() Expr {
 	lb := p.advance() // '['
-	lit := &ListLit{pos: at(lb)}
+	lit := &ListLit{Span: at(lb)}
 	p.skipNewlines()
 
 	for !p.check(RBRACKET) && !p.check(EOF) {
@@ -929,7 +929,7 @@ func (p *Parser) parseListLit() Expr {
 // statement would do nothing anyway.
 func (p *Parser) parseMapLit() Expr {
 	lb := p.advance() // '{'
-	lit := &MapLit{pos: at(lb)}
+	lit := &MapLit{Span: at(lb)}
 	p.skipNewlines()
 
 	for !p.check(RBRACE) && !p.check(EOF) {
@@ -953,7 +953,7 @@ func (p *Parser) parseMapLit() Expr {
 func (p *Parser) parseStringLit(t Token) Expr {
 	src := t.Lex
 	if !strings.ContainsAny(src, "{}") {
-		return &StrLit{pos: at(t), Val: src}
+		return &StrLit{Span: at(t), Val: src}
 	}
 
 	var parts []InterpPart
@@ -1034,9 +1034,9 @@ func (p *Parser) parseStringLit(t Token) Expr {
 	flush()
 
 	if len(parts) == 1 && parts[0].X == nil {
-		return &StrLit{pos: at(t), Val: parts[0].Lit}
+		return &StrLit{Span: at(t), Val: parts[0].Lit}
 	}
-	return &Interp{pos: at(t), Parts: parts}
+	return &Interp{Span: at(t), Parts: parts}
 }
 
 // parseSubExpr runs a nested lexer+parser over the text inside {}.
@@ -1067,12 +1067,12 @@ func (p *Parser) parseSubExpr(src string, host Token) Expr {
 }
 
 // reanchor rewrites the position of an expression and everything under
-// it. Nodes embed pos by value, so the pointer receiver reaches it.
-func reanchor(e Expr, at pos) {
+// it. Nodes embed Span by value, so the pointer receiver reaches it.
+func reanchor(e Expr, at Span) {
 	if e == nil {
 		return
 	}
-	if s, ok := e.(interface{ setPos(pos) }); ok {
+	if s, ok := e.(interface{ setPos(Span) }); ok {
 		s.setPos(at)
 	}
 	switch x := e.(type) {

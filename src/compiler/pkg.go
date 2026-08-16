@@ -473,7 +473,7 @@ func badImportName(name string) string {
 			return fmt.Sprintf("%q is not allowed in a name", string(r))
 		}
 	}
-	if _, reserved := keywords[name]; reserved {
+	if _, reserved := Keywords[name]; reserved {
 		return "it is a keyword"
 	}
 	return ""
