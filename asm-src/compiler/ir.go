@@ -178,6 +178,12 @@ const (
 	OpWriteStr
 	OpWriteInt
 	OpBoundsFail // A is the index, B the length; does not return
+
+	// Byte-level memory, for strings. A Veyl string is a pointer to
+	// NUL-terminated bytes, so anything that inspects or builds one
+	// needs to read and write single bytes rather than words.
+	OpLoadByte  // Dst = zero-extended byte at [A + B]
+	OpStoreByte // byte at [A + B] = low byte of the value in Imm's slot
 )
 
 var opNames = [...]string{
@@ -190,6 +196,7 @@ var opNames = [...]string{
 	"concat", "streq", "strlen", "inttostr", "booltostr",
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "boundsfail",
+	"loadbyte", "storebyte",
 }
 
 func (o Op) String() string {
@@ -333,6 +340,12 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// listing the way it does in the source.
 	l.fn = &Func{Name: "main", Ret: vVoid}
 	l.pushScope()
+	// Globals are lowered as the opening statements of main. That is
+	// enough while nothing outside main can see them; a function
+	// referring to one will need them in static storage instead.
+	for _, g := range p.Globals {
+		l.stmt(g)
+	}
 	for _, st := range p.Main {
 		l.stmt(st)
 	}
@@ -522,6 +535,9 @@ func (l *lowerer) stmt(s Stmt) {
 
 	case *ForStmt:
 		l.forRange(st)
+
+	case *MatchStmt:
+		l.match(st)
 
 	case *ReturnStmt:
 		if st.Value == nil {
@@ -847,6 +863,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 
 	case "abs", "min", "max":
 		return l.intMath(c, name)
+	}
+
+	if r, handled := l.stringBuiltin(c, name); handled {
+		return r
 	}
 
 	l.errorAt(c, "%q is not on the assembly backend yet", name)
@@ -1304,4 +1324,66 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 	}
 	l.regTy[list] = t
 	return list
+}
+
+// match lowers a multi-way branch into a chain of comparisons.
+//
+// The subject is evaluated once into a slot and compared against each
+// arm's values in turn. Arms do not fall through, so every one ends with
+// a jump past the rest. A jump table would be faster for a dense set of
+// integers and is the obvious later optimisation; a chain is correct for
+// every case including strings, which is what matters now.
+func (l *lowerer) match(st *MatchStmt) {
+	subject := l.expr(st.Subject)
+	t := l.regTy[subject]
+	if t.k == kList {
+		l.errorAt(st, "a list cannot be matched on, because it has no single value to compare")
+		return
+	}
+
+	slot := l.temp(t)
+	l.emit(Instr{Op: OpStore, A: subject, Dst: NoReg, Imm: slot, Comment: "match"})
+
+	done := l.newLabel()
+	bodies := make([]int64, len(st.Cases))
+	for i := range st.Cases {
+		bodies[i] = l.newLabel()
+	}
+
+	for i, arm := range st.Cases {
+		for _, want := range arm.Values {
+			held := l.newReg()
+			l.regTy[held] = t
+			l.emit(Instr{Op: OpLoad, Dst: held, A: NoReg, B: NoReg, Imm: slot})
+			v := l.expr(want)
+			if l.regTy[v].k != t.k {
+				l.errorAt(want, "this arm compares %s against a %s subject",
+					l.regTy[v], t)
+				continue
+			}
+			hit := l.newReg()
+			l.regTy[hit] = vBool
+			if t.k == kStr {
+				l.mod.needs("streq")
+				l.emit(Instr{Op: OpStrEq, Dst: hit, A: held, B: v})
+			} else {
+				l.emit(Instr{Op: OpEq, Dst: hit, A: held, B: v})
+			}
+			l.emit(Instr{Op: OpJumpIf, A: hit, Dst: NoReg, Imm: bodies[i]})
+		}
+	}
+
+	// Nothing matched. The else arm runs here, or control falls past.
+	if st.Else != nil {
+		l.stmt(st.Else)
+	}
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+
+	for i, arm := range st.Cases {
+		l.mark(bodies[i])
+		l.stmt(arm.Body)
+		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+	}
+
+	l.mark(done)
 }

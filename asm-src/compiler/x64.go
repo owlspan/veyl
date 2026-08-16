@@ -477,6 +477,23 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov rdx, %s", e.regAddr(in.A))
 		e.line("call printf")
 
+	case OpLoadByte:
+		// movzx, not mov: reading a byte into a 64-bit register has to
+		// clear the upper bits explicitly, or the value carries whatever
+		// the last operation left above bit 8.
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("movzx eax, byte ptr [rax+rcx]")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpStoreByte:
+		// Three operands, so the value comes from the slot named by Imm
+		// rather than from a third register field.
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rdx, %s", e.slotAddr(in.Imm))
+		e.line("mov byte ptr [rax+rcx], dl")
+
 	case OpBoundsFail:
 		e.line("mov rcx, %s", e.regAddr(in.A))
 		e.line("mov rdx, %s", e.regAddr(in.B))
