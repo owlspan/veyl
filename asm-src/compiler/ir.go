@@ -30,23 +30,46 @@ import (
 // What this does buy is knowing which of print, concat or compare to
 // emit, which is not optional: `print` of a comparison has to write
 // "true" and `a + b` on two strings has to concatenate rather than add.
-type vty int
+type vkind int
 
 const (
-	vVoid vty = iota
-	vInt
-	vBool
-	vStr
+	kVoid vkind = iota
+	kInt
+	kBool
+	kStr
+	kList
 )
 
+// A vty is a kind plus, for a list, the kind of its elements. One level
+// only: [][]int needs elem to be a vty rather than a vkind, and nothing
+// is served by paying for that before lists themselves work.
+type vty struct {
+	k    vkind
+	elem vkind
+}
+
+var (
+	vVoid = vty{k: kVoid}
+	vInt  = vty{k: kInt}
+	vBool = vty{k: kBool}
+	vStr  = vty{k: kStr}
+)
+
+func vListOf(e vkind) vty { return vty{k: kList, elem: e} }
+
+// elemType is the type of what comes out of indexing this list.
+func (t vty) elemType() vty { return vty{k: t.elem} }
+
 func (t vty) String() string {
-	switch t {
-	case vInt:
+	switch t.k {
+	case kInt:
 		return "int"
-	case vBool:
+	case kBool:
 		return "bool"
-	case vStr:
+	case kStr:
 		return "str"
+	case kList:
+		return "[]" + vty{k: t.elem}.String()
 	}
 	return "void"
 }
@@ -63,6 +86,13 @@ func typeOfName(s string) (vty, bool) {
 		return vStr, true
 	case "":
 		return vVoid, true
+	}
+	if strings.HasPrefix(s, "[]") {
+		e, ok := typeOfName(strings.TrimSpace(s[2:]))
+		if !ok || e.k == kVoid || e.k == kList {
+			return vVoid, false
+		}
+		return vListOf(e.k), true
 	}
 	return vVoid, false
 }
@@ -132,6 +162,22 @@ const (
 	OpStrLen // Dst = len(A)
 	OpIntToStr
 	OpBoolToStr
+
+	// Raw memory. These exist so that lists can be built in the IR
+	// rather than as hand-written assembly: a bounds check becomes an
+	// ordinary compare and branch, and the byte writer inherits all of
+	// it without a second implementation. They are also the ops that
+	// `unsafe` and manual memory will eventually be written in terms of.
+	OpAlloc     // Dst = allocate A bytes
+	OpIndexAddr // Dst = A + B*8
+	OpLoadMem   // Dst = qword at [A + Imm]
+	OpStoreMem  // qword at [A + Imm] = B
+
+	// Unbuffered output, for building up a line without a newline after
+	// each piece. print() is these plus a newline.
+	OpWriteStr
+	OpWriteInt
+	OpBoundsFail // A is the index, B the length; does not return
 )
 
 var opNames = [...]string{
@@ -142,6 +188,8 @@ var opNames = [...]string{
 	"param", "call", "ret",
 	"printint", "printbool", "printstr",
 	"concat", "streq", "strlen", "inttostr", "booltostr",
+	"alloc", "indexaddr", "loadmem", "storemem",
+	"writestr", "writeint", "boundsfail",
 }
 
 func (o Op) String() string {
@@ -255,7 +303,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		ok := true
 		for _, pa := range fd.Params {
 			t, good := typeOfName(pa.Type)
-			if !good || t == vVoid {
+			if !good || t.k == kVoid {
 				l.errorAt(fd, "parameter %q has type %q, which the assembly backend does not handle yet",
 					pa.Name, pa.Type)
 				ok = false
@@ -328,7 +376,7 @@ func (l *lowerer) function(fd *FnDecl) {
 	// safe thing is a defined value rather than whatever is in rax.
 	z := l.newReg()
 	l.emit(Instr{Op: OpConst, Dst: z, A: NoReg, B: NoReg, Imm: 0})
-	if s.ret == vVoid {
+	if s.ret.k == kVoid {
 		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
 	} else {
 		l.emit(Instr{Op: OpRet, A: z, Dst: NoReg})
@@ -505,6 +553,20 @@ func (l *lowerer) stmt(s Stmt) {
 }
 
 func (l *lowerer) assign(st *AssignStmt) {
+	if idx, isIndex := st.Target.(*Index); isIndex {
+		if st.Op != ASSIGN {
+			l.errorAt(st, "compound assignment into a list is not on this backend yet")
+			return
+		}
+		coll := l.expr(idx.X)
+		if l.regTy[coll].k != kList {
+			l.errorAt(st, "only a list can be indexed on this backend so far")
+			return
+		}
+		l.listSet(coll, l.expr(idx.Idx), l.expr(st.Value))
+		return
+	}
+
 	id, ok := st.Target.(*Ident)
 	if !ok {
 		l.errorAt(st, "the assembly backend can only assign to a plain name so far")
@@ -526,7 +588,7 @@ func (l *lowerer) assign(st *AssignStmt) {
 		switch st.Op {
 		case PLUSEQ:
 			op = OpAdd
-			if l.slotTy[slot] == vStr {
+			if l.slotTy[slot].k == kStr {
 				op = OpConcat
 				l.mod.needs("concat")
 			}
@@ -574,12 +636,12 @@ func (l *lowerer) assign(st *AssignStmt) {
 // known here, so the step must be a literal for now: a dynamic one needs
 // a runtime sign test that nothing yet writes programs to exercise.
 func (l *lowerer) forRange(st *ForStmt) {
-	if st.Coll != nil {
-		l.errorAt(st, "iterating a collection is not on the assembly backend yet")
-		return
-	}
 	if st.Var2 != "" {
 		l.errorAt(st, "the two-variable for form is not on the assembly backend yet")
+		return
+	}
+	if st.Coll != nil {
+		l.forList(st)
 		return
 	}
 
@@ -730,10 +792,12 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			return l.junk()
 		}
 		a := l.expr(c.Args[0])
-		switch l.regTy[a] {
-		case vBool:
+		switch l.regTy[a].k {
+		case kList:
+			l.printList(a, l.regTy[a])
+		case kBool:
 			l.emit(Instr{Op: OpPrintBool, A: a, Dst: NoReg, Comment: "print"})
-		case vStr:
+		case kStr:
 			l.emit(Instr{Op: OpPrintStr, A: a, Dst: NoReg, Comment: "print"})
 		default:
 			l.emit(Instr{Op: OpPrintInt, A: a, Dst: NoReg, Comment: "print"})
@@ -745,15 +809,35 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			return l.junk()
 		}
 		a := l.expr(c.Args[0])
-		if l.regTy[a] != vStr {
-			l.errorAt(c, "len needs a str here; lists are not on this backend yet")
+		switch l.regTy[a].k {
+		case kList:
+			return l.field(a, listLenOff, vInt)
+		case kStr:
+			l.mod.needs("strlen")
+			d := l.newReg()
+			l.regTy[d] = vInt
+			l.emit(Instr{Op: OpStrLen, Dst: d, A: a, B: NoReg})
+			return d
+		}
+		l.errorAt(c, "len needs a str or a list")
+		return l.junk()
+
+	case "push":
+		if !arity(2) {
 			return l.junk()
 		}
-		l.mod.needs("strlen")
-		d := l.newReg()
-		l.regTy[d] = vInt
-		l.emit(Instr{Op: OpStrLen, Dst: d, A: a, B: NoReg})
-		return d
+		list := l.expr(c.Args[0])
+		if l.regTy[list].k != kList {
+			l.errorAt(c, "push needs a list")
+			return l.junk()
+		}
+		v := l.expr(c.Args[1])
+		if l.regTy[v].k != l.regTy[list].elem {
+			l.errorAt(c, "cannot push %s into %s", l.regTy[v], l.regTy[list])
+			return l.junk()
+		}
+		l.listPush(list, v)
+		return l.void()
 
 	case "str":
 		if !arity(1) {
@@ -827,16 +911,16 @@ func (l *lowerer) pick(cond, whenTrue, whenFalse Reg, t vty) Reg {
 
 // toStr converts any tracked type to a string.
 func (l *lowerer) toStr(v Reg, at Node) Reg {
-	switch l.regTy[v] {
-	case vStr:
+	switch l.regTy[v].k {
+	case kStr:
 		return v
-	case vBool:
+	case kBool:
 		l.mod.needs("booltostr")
 		d := l.newReg()
 		l.regTy[d] = vStr
 		l.emit(Instr{Op: OpBoolToStr, Dst: d, A: v, B: NoReg})
 		return d
-	case vInt:
+	case kInt:
 		l.mod.needs("inttostr")
 		d := l.newReg()
 		l.regTy[d] = vStr
@@ -897,6 +981,18 @@ func (l *lowerer) expr(e Expr) Reg {
 	case *Interp:
 		return l.interp(x)
 
+	case *ListLit:
+		return l.listLit(x)
+
+	case *Index:
+		coll := l.expr(x.X)
+		t := l.regTy[coll]
+		if t.k != kList {
+			l.errorAt(x, "only a list can be indexed on this backend so far")
+			return l.junk()
+		}
+		return l.listGet(coll, l.expr(x.Idx), t.elemType())
+
 	case *Ident:
 		slot, ok := l.lookup(x.Name)
 		if !ok {
@@ -952,10 +1048,10 @@ func (l *lowerer) binary(x *Binary) Reg {
 	at, bt := l.regTy[a], l.regTy[b]
 
 	// Strings overload + and the equality tests, and nothing else.
-	if at == vStr || bt == vStr {
+	if at.k == kStr || bt.k == kStr {
 		switch x.Op {
 		case PLUS:
-			if at != vStr || bt != vStr {
+			if at.k != kStr || bt.k != kStr {
 				l.errorAt(x, "cannot add %s and %s", at, bt)
 				return l.junk()
 			}
@@ -1172,4 +1268,40 @@ func (f *Func) String() string {
 		out += line + "\n"
 	}
 	return out
+}
+
+// listLit builds a list from its elements. The element type comes from
+// the first element, which is what the Go backend's inference does for
+// a literal with no annotation to guide it.
+func (l *lowerer) listLit(x *ListLit) Reg {
+	if len(x.Elems) == 0 {
+		l.errorAt(x, "an empty list literal needs an annotation the assembly backend cannot read yet")
+		return l.junk()
+	}
+
+	vals := make([]Reg, len(x.Elems))
+	for i, e := range x.Elems {
+		vals[i] = l.expr(e)
+	}
+
+	elem := l.regTy[vals[0]]
+	if elem.k == kList || elem.k == kVoid {
+		l.errorAt(x, "a list of %s is not on the assembly backend yet", elem)
+		return l.junk()
+	}
+	for i, v := range vals {
+		if l.regTy[v].k != elem.k {
+			l.errorAt(x.Elems[i], "this list holds %s, but element %d is %s",
+				elem, i, l.regTy[v])
+			return l.junk()
+		}
+	}
+
+	t := vListOf(elem.k)
+	list := l.newList(t, int64(len(vals)))
+	for _, v := range vals {
+		l.listPush(list, v)
+	}
+	l.regTy[list] = t
+	return list
 }

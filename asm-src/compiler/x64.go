@@ -120,6 +120,10 @@ func Emit(m *Module) string {
 	e.b.WriteString("    .asciz \"%s\\n\"\n")
 	e.label("__fmt_int_raw")
 	e.b.WriteString("    .asciz \"%lld\"\n")
+	e.label("__fmt_str_raw")
+	e.b.WriteString("    .asciz \"%s\"\n")
+	e.label("__fmt_bounds")
+	e.b.WriteString("    .asciz \"runtime error: index %lld is out of range for a list of length %lld\\n\"\n")
 	e.label("__str_true")
 	e.b.WriteString("    .asciz \"true\"\n")
 	e.label("__str_false")
@@ -157,6 +161,12 @@ func (e *Emitter) externs() []string {
 	}
 	if e.mod.Helpers["inttostr"] {
 		out = append(out, "malloc", "snprintf")
+	}
+	if e.mod.Helpers["alloc"] {
+		out = append(out, "malloc")
+	}
+	if e.mod.Helpers["bounds"] {
+		out = append(out, "snprintf", "_write", "exit")
 	}
 	out = append(out, "_setmode")
 
@@ -434,6 +444,44 @@ func (e *Emitter) instr(in Instr) {
 		e.line("cmovne rcx, rdx")
 		e.line("mov %s, rcx", e.regAddr(in.Dst))
 
+	case OpAlloc:
+		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("call malloc")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpIndexAddr:
+		// lea with a scale of 8 is one instruction for base + index*8,
+		// which is the whole reason every element is a word wide.
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("lea rax, [rax+rcx*8]")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpLoadMem:
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, qword ptr [rax+%d]", in.Imm)
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpStoreMem:
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov qword ptr [rax+%d], rcx", in.Imm)
+
+	case OpWriteStr:
+		e.line("lea rcx, __fmt_str_raw[rip]")
+		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("call printf")
+
+	case OpWriteInt:
+		e.line("lea rcx, __fmt_int_raw[rip]")
+		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("call printf")
+
+	case OpBoundsFail:
+		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("mov rdx, %s", e.regAddr(in.B))
+		e.line("call __vy_bounds")
+
 	default:
 		e.comment(fmt.Sprintf("unhandled op %s", in.Op))
 	}
@@ -517,6 +565,35 @@ __vy_streq:
     mov rsp, rbp
     pop rbp
     ret
+`)
+	}
+
+	if e.mod.Helpers["bounds"] {
+		// Writes to file descriptor 2 with _write rather than fprintf,
+		// because reaching stderr through a FILE* means __acrt_iob_func
+		// on UCRT and __iob_func on msvcrt, and picking the wrong one is
+		// a link error on somebody else's machine. A descriptor is a
+		// descriptor everywhere.
+		e.b.WriteString(`
+__vy_bounds:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 256
+    mov r10, rcx
+    mov r11, rdx
+    lea rcx, [rbp-200]
+    mov rdx, 180
+    lea r8, __fmt_bounds[rip]
+    mov r9, r10
+    mov qword ptr [rsp+32], r11
+    call snprintf
+    mov r10d, eax
+    mov ecx, 2
+    lea rdx, [rbp-200]
+    mov r8d, r10d
+    call _write
+    mov ecx, 1
+    call exit
 `)
 	}
 
