@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.16** - the language as currently implemented.
+**Version 0.17.02** - the language as currently implemented.
 
 Veyl compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -2160,7 +2160,7 @@ program. Either run it from a terminal, or end the program with
 
 ## Known limitations
 
-Honest list of what v0.14 does not do yet.
+Honest list of what v0.17.02 does not do yet.
 
 - **A missing map key is still silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left

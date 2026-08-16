@@ -28,7 +28,7 @@ $ veyl run primes.vy
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
-**Status:** v0.16. The language is feature-complete for everyday work:
+**Status:** v0.17.02. The language is feature-complete for everyday work:
 a full type checker, lists and maps, structs with methods, nullable
 types, an error type, modules, and libraries for files, HTTP,
 networking, JSON, time, randomness, statistics and terminal output,
@@ -542,8 +542,9 @@ More detail in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | v1.0    | a formatter, warnings, a VS Code grammar            |
 | v0.15   | a Windows installer bundling its own Go toolchain   |
 | **v0.16**| **a package manager, `rand`/`stats`/`term`/`log`** |
-| unreleased | namespaced imports, Veyl tracebacks, `url`/`zip`/`args`/`bits` |
-| unreleased | a `bytes` type, an interactive console, `void!`   |
+| v0.17   | namespaced imports, tracebacks, `url`/`zip`/`args`/`bits` |
+| v0.17   | a `bytes` type, an interactive console, `void!`     |
+| **v0.17.02** | **four editors, an Explorer menu, the Veyl rename** |
 | next    | generics, then the C backend                        |
 
 **The type checker was the bottleneck for everything below it**, and it
@@ -562,7 +563,7 @@ memory and pointers.
 
 ## Known limitations
 
-Honest list of what v0.16 does not do.
+Honest list of what v0.17.02 does not do.
 
 - **Integer division truncates.** `7 / 2` is `3`. This is now a stated
   language rule rather than a leaked backend detail, but it still

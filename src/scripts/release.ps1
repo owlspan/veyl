@@ -44,19 +44,13 @@ try {
     & go run ./tools/mkicon
     if ($LASTEXITCODE -ne 0) { throw 'mkicon failed' }
 
+    # One stamper, called from both here and pushgithub.bat. This used
+    # to be a second copy of the same two regexes, which is how the docs
+    # and the extension drifted three versions behind the compiler.
     Step "stamping version $Version"
-    $driver = Join-Path $repo 'compiler\veyl.go'
-    $text = [System.IO.File]::ReadAllText($driver)
-    $stamped = [regex]::Replace($text, 'const Version = "[^"]*"', "const Version = `"$Version`"")
-    if ($stamped -eq $text) { throw "could not find the Version constant in veyl.go" }
-    [System.IO.File]::WriteAllText($driver, $stamped)
-
-    $iss = Join-Path $repo 'installer\veyl.iss'
-    $issText = [System.IO.File]::ReadAllText($iss)
-    $issStamped = [regex]::Replace($issText, '#define AppVersion "[^"]*"', "#define AppVersion `"$Version`"")
-    if ($issStamped -eq $issText) { throw "could not find AppVersion in veyl.iss" }
-    [System.IO.File]::WriteAllText($iss, $issStamped)
-    Ok "veyl.go and veyl.iss now say $Version"
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $repo 'installer\stamp-version.ps1') -Version $Version
+    if ($LASTEXITCODE -ne 0) { throw 'stamping the version failed' }
+    Ok "every file that states a version now says $Version"
 
     # ReadAllText/WriteAllText rather than Get-Content/Set-Content: the
     # latter round-trips UTF-8 through the ANSI codepage on PowerShell
