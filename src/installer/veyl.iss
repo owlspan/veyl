@@ -191,7 +191,7 @@ Root: HKA; Subkey: "Software\Classes\Veyl.Source\DefaultIcon"; ValueType: string
 ; Double-clicking used to run the program straight away, which meant a
 ; console window that opened, printed, and closed faster than anyone
 ; could read it. It also assumed running was the only thing you might
-; want, when building a standalone .exe is arguably more useful.
+; want, when building a standalone .exe is often more useful.
 ;
 ; The default verb now asks, and keeps the window open. The other two
 ; are on the right-click menu for when you already know.

@@ -89,7 +89,9 @@ try {
     }
 
     Step 'refreshing the Working version snapshot'
-    $snap = Join-Path $repo 'Working version'
+    # The snapshot lives one level up, beside src\, so the repo root
+    # holds only the working copy and the last known-good build.
+    $snap = Join-Path (Split-Path -Parent $repo) 'Working version'
     if (Test-Path $snap) { Remove-Item -Recurse -Force $snap }
     New-Item -ItemType Directory -Force $snap | Out-Null
     # Via a file, not a pipe. A PowerShell pipeline carries objects and

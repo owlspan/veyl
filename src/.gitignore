@@ -1,0 +1,43 @@
+# compiler binary
+/veyl
+/veyl.exe
+
+# helper tools, which build into the repo root when run with `go build`
+/mkicon
+/mkicon.exe
+/mkascii
+/mkascii.exe
+
+# programs built from examples
+examples/*.exe
+examples/demo
+examples/interactive
+examples/hello
+
+# generated ASCII art, an intermediate of the banner
+owl.tmp.txt
+
+
+# Installer build output: a staged copy of the Go toolchain (~177 MB)
+# and the setup executable built from it. Both are reproducible from
+# installer\build.ps1, and neither belongs in git.
+/dist/
+
+# editor / OS noise
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+
+# personal notes and scripts (not for the public repo)
+CLAUDE.md
+ROADMAP.md
+NIGHT-LOG.md
+ARCHITECTURE.md
+HOW-IT-WORKS.md
+PACKAGES.md
+INTERVIEW-PREP.md
+PRACTICE.md
+push.bat
+pushgithub.bat

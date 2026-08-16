@@ -1,49 +1,5 @@
-# compiler binary
-veyl
-veyl.exe
-
-# helper tools, which build into the repo root when run with `go build`
-mkicon
-mkicon.exe
-mkascii
-mkascii.exe
-
-# programs built from examples
-examples/*.exe
-examples/demo
-examples/interactive
-examples/hello
-
-# generated ASCII art, an intermediate of the banner
-owl.tmp.txt
-
-# A verified snapshot kept on disk as a fallback, refreshed by hand
-# after each milestone. Deliberately untracked: git already has every
-# version tagged, and keeping a second copy in history would double the
-# repo for no gain. Being ignored is also what lets it survive a
-# `git reset --hard`, which is exactly when it is wanted.
+# The verified snapshot of the last good build. Untracked on purpose:
+# every version is already tagged in git, so committing a second copy
+# would double the repo for nothing, and being ignored is what lets it
+# survive the `git reset --hard` that is exactly when you want it.
 Working version/
-
-# Installer build output: a staged copy of the Go toolchain (~177 MB)
-# and the setup executable built from it. Both are reproducible from
-# installer\build.ps1, and neither belongs in git.
-dist/
-
-# editor / OS noise
-.vscode/
-.idea/
-*.swp
-Thumbs.db
-desktop.ini
-
-# personal notes and scripts (not for the public repo)
-CLAUDE.md
-ROADMAP.md
-NIGHT-LOG.md
-ARCHITECTURE.md
-HOW-IT-WORKS.md
-PACKAGES.md
-INTERVIEW-PREP.md
-PRACTICE.md
-push.bat
-pushgithub.bat

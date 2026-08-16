@@ -310,7 +310,7 @@ func TestPackageNamesDoNotLeak(t *testing.T) {
 		},
 		{
 			// Something that exists but was never exported gets the
-			// actionable message rather than "no such thing".
+			// specific message rather than "no such thing".
 			"private member",
 			"import \"greet\"\nprint(greet.secret())\n",
 			`is not public in package "greet"`,
