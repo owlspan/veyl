@@ -200,7 +200,7 @@ func run(cmd, path string, progArgs []string) error {
 	}
 
 	// ---- type check ----
-	ck := NewChecker(name)
+	ck := NewChecker(name, goLibrary{})
 	ck.Check(prog)
 	if err := reportErrors(ck.Errors); err != nil {
 		return err
@@ -398,7 +398,7 @@ func (l *loader) resolve(prog *Program, from string) {
 			}
 			abs, err := filepath.Abs(target)
 			if err != nil {
-				l.errorAt(imp, "cannot resolve %q: %v", imp.Path, err)
+				l.ErrorAt(imp, "cannot resolve %q: %v", imp.Path, err)
 				continue
 			}
 			target = abs
@@ -406,7 +406,7 @@ func (l *loader) resolve(prog *Program, from string) {
 			// Something with a dot, a slash or a drive letter was meant
 			// to be a file. Reading it as a package name would answer a
 			// question nobody asked ("no package called notes.txt").
-			l.errorAt(imp, "an import must name a .vy file, got %q", imp.Path)
+			l.ErrorAt(imp, "an import must name a .vy file, got %q", imp.Path)
 			continue
 		} else {
 			if l.pkgs == nil {
@@ -414,14 +414,14 @@ func (l *loader) resolve(prog *Program, from string) {
 			}
 			entry, err := l.pkgs.resolve(imp.Path)
 			if err != nil {
-				l.errorAt(imp, "%v", err)
+				l.ErrorAt(imp, "%v", err)
 				continue
 			}
 			target = entry
 			pkg = imp.Path
 		}
 		if l.onStack(target) {
-			l.errorAt(imp, "import cycle: %s imports itself, directly or indirectly",
+			l.ErrorAt(imp, "import cycle: %s imports itself, directly or indirectly",
 				filepath.Base(target))
 			continue
 		}
@@ -459,9 +459,9 @@ func (l *loader) load(imp *ImportDecl, target string) (*Program, bool) {
 		// is noise here, and it would make error output differ between
 		// machines for no reason.
 		if os.IsNotExist(err) {
-			l.errorAt(imp, "cannot find %q next to %s", imp.Path, filepath.Base(imp.File))
+			l.ErrorAt(imp, "cannot find %q next to %s", imp.Path, filepath.Base(imp.File))
 		} else {
-			l.errorAt(imp, "cannot read %q", imp.Path)
+			l.ErrorAt(imp, "cannot read %q", imp.Path)
 		}
 		return nil, false
 	}
@@ -495,7 +495,7 @@ func (l *loader) onStack(path string) bool {
 	return false
 }
 
-func (l *loader) errorAt(n Node, format string, args ...any) {
+func (l *loader) ErrorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
 	file := "?"
 	if imp, ok := n.(*ImportDecl); ok {

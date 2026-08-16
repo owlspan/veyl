@@ -427,7 +427,7 @@ func wantList(c *Checker, x *Call, i int, args []*Type, fn string) *Type {
 		return Unknown
 	}
 	if t.Kind != KList {
-		c.errorAt(x.Args[i], "%s expects a list, got %s", fn, t)
+		c.ErrorAt(x.Args[i], "%s expects a list, got %s", fn, t)
 		return Unknown
 	}
 	return t.Elem
@@ -440,7 +440,7 @@ func wantResult(c *Checker, x *Call, args []*Type, fn string) *Type {
 		return Unknown
 	}
 	if !args[0].IsResult() {
-		c.errorAt(x.Args[0], "%s expects a value that can fail, and %s cannot", fn, args[0])
+		c.ErrorAt(x.Args[0], "%s expects a value that can fail, and %s cannot", fn, args[0])
 		return Unknown
 	}
 	return args[0].Elem
@@ -454,11 +454,11 @@ func wantCallback(c *Checker, x *Call, i int, args []*Type, fn string, params []
 	}
 	got := args[i]
 	if !got.IsFunc() {
-		c.errorAt(x.Args[i], "%s expects a function here, got %s", fn, got)
+		c.ErrorAt(x.Args[i], "%s expects a function here, got %s", fn, got)
 		return Unknown
 	}
 	if len(got.Params) != len(params) {
-		c.errorAt(x.Args[i], "%s expects a function taking %s, got one taking %d",
+		c.ErrorAt(x.Args[i], "%s expects a function taking %s, got one taking %d",
 			fn, arityText(len(params), len(params)), len(got.Params))
 		return Unknown
 	}
@@ -466,7 +466,7 @@ func wantCallback(c *Checker, x *Call, i int, args []*Type, fn string, params []
 		if want.IsUnknown() || want.Accepts(got.Params[j]) {
 			continue
 		}
-		c.errorAt(x.Args[i], "%s passes %s to its function, but it takes %s",
+		c.ErrorAt(x.Args[i], "%s passes %s to its function, but it takes %s",
 			fn, want, got.Params[j])
 		return Unknown
 	}
@@ -478,7 +478,7 @@ func wantCallback(c *Checker, x *Call, i int, args []*Type, fn string, params []
 func wantPredicate(c *Checker, x *Call, i int, args []*Type, fn string, params []*Type) {
 	ret := wantCallback(c, x, i, args, fn, params)
 	if !ret.IsUnknown() && ret.Kind != KBool {
-		c.errorAt(x.Args[i], "%s needs a function returning bool, got one returning %s", fn, ret)
+		c.ErrorAt(x.Args[i], "%s needs a function returning bool, got one returning %s", fn, ret)
 	}
 }
 
@@ -492,7 +492,7 @@ func wantAssignable(c *Checker, x *Call, i int, fn string) {
 	switch x.Args[i].(type) {
 	case *Ident, *Index, *Field:
 	default:
-		c.errorAt(x.Args[i], "%s changes the list, so its first argument must be a variable, a field, or an element", fn)
+		c.ErrorAt(x.Args[i], "%s changes the list, so its first argument must be a variable, a field, or an element", fn)
 	}
 }
 
@@ -503,10 +503,10 @@ func matches(c *Checker, x *Call, i int, want *Type, fn string) {
 		return
 	}
 	got := x.ArgT[i]
-	if want.Accepts(got) || (isUntypedInt(x.Args[i]) && want.Kind == KFloat) {
+	if want.Accepts(got) || (IsUntypedInt(x.Args[i]) && want.Kind == KFloat) {
 		return
 	}
-	c.errorAt(x.Args[i], "%s expects %s here, got %s", fn, want, got)
+	c.ErrorAt(x.Args[i], "%s expects %s here, got %s", fn, want, got)
 }
 
 var collectionBuiltins map[string]builtin
@@ -660,7 +660,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if !elem.IsNumeric() && elem.Kind != KStr {
-					c.errorAt(x.Args[0], "sort needs a list of numbers or strings, got %s", args[0])
+					c.ErrorAt(x.Args[0], "sort needs a list of numbers or strings, got %s", args[0])
 					return Unknown
 				}
 				return args[0]
@@ -677,7 +677,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if !elem.IsNumeric() {
-					c.errorAt(x.Args[0], "sum needs a list of numbers, got %s", args[0])
+					c.ErrorAt(x.Args[0], "sum needs a list of numbers, got %s", args[0])
 					return Unknown
 				}
 				return elem
@@ -708,7 +708,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if ret.Kind == KVoid {
-					c.errorAt(x.Args[1], "map needs a function that returns something - use each(...) to just do work")
+					c.ErrorAt(x.Args[1], "map needs a function that returns something - use each(...) to just do work")
 					return Unknown
 				}
 				return ListOf(ret)
@@ -741,7 +741,7 @@ func buildCollectionBuiltins() {
 				acc := args[1]
 				ret := wantCallback(c, x, 2, args, "reduce", []*Type{acc, elem})
 				if !ret.IsUnknown() && !acc.Equal(ret) {
-					c.errorAt(x.Args[2], "reduce starts with %s, so its function must return %s, not %s",
+					c.ErrorAt(x.Args[2], "reduce starts with %s, so its function must return %s, not %s",
 						acc, acc, ret)
 					return Unknown
 				}
@@ -916,7 +916,7 @@ func buildCollectionBuiltins() {
 					return Bool
 				}
 				if args[0].Kind != KMap {
-					c.errorAt(x.Args[0], "has expects a map, got %s", args[0])
+					c.ErrorAt(x.Args[0], "has expects a map, got %s", args[0])
 					return Bool
 				}
 				matches(c, x, 1, args[0].Key, "has")
@@ -934,7 +934,7 @@ func buildCollectionBuiltins() {
 					return Void
 				}
 				if args[0].Kind != KMap {
-					c.errorAt(x.Args[0], "remove expects a map, got %s (use removeAt for a list)", args[0])
+					c.ErrorAt(x.Args[0], "remove expects a map, got %s (use removeAt for a list)", args[0])
 					return Void
 				}
 				matches(c, x, 1, args[0].Key, "remove")
@@ -954,7 +954,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if args[0].Kind != KMap {
-					c.errorAt(x.Args[0], "find expects a map, got %s", args[0])
+					c.ErrorAt(x.Args[0], "find expects a map, got %s", args[0])
 					return Unknown
 				}
 				matches(c, x, 1, args[0].Key, "find")
@@ -971,7 +971,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if args[0].Kind != KMap {
-					c.errorAt(x.Args[0], "keys expects a map, got %s", args[0])
+					c.ErrorAt(x.Args[0], "keys expects a map, got %s", args[0])
 					return Unknown
 				}
 				return ListOf(args[0].Key)
@@ -987,7 +987,7 @@ func buildCollectionBuiltins() {
 					return Unknown
 				}
 				if args[0].Kind != KMap {
-					c.errorAt(x.Args[0], "values expects a map, got %s", args[0])
+					c.ErrorAt(x.Args[0], "values expects a map, got %s", args[0])
 					return Unknown
 				}
 				return ListOf(args[0].Elem)
@@ -1051,9 +1051,9 @@ func overloadForCollections() {
 			case KList:
 				matches(c, x, 1, args[0].Elem, "contains")
 			case KMap:
-				c.errorAt(x.Args[0], "use has(map, key) to test a map")
+				c.ErrorAt(x.Args[0], "use has(map, key) to test a map")
 			default:
-				c.errorAt(x.Args[0], "contains expects a str or a list, got %s", args[0])
+				c.ErrorAt(x.Args[0], "contains expects a str or a list, got %s", args[0])
 			}
 			return Bool
 		},
@@ -1080,7 +1080,7 @@ func overloadForCollections() {
 			case KList:
 				matches(c, x, 1, args[0].Elem, "indexOf")
 			default:
-				c.errorAt(x.Args[0], "indexOf expects a str or a list, got %s", args[0])
+				c.ErrorAt(x.Args[0], "indexOf expects a str or a list, got %s", args[0])
 			}
 			return Int
 		},
@@ -1104,7 +1104,7 @@ func overloadForCollections() {
 				switch args[0].Kind {
 				case KStr, KList, KMap, KBytes:
 				default:
-					c.errorAt(x.Args[0], "len expects a str, list, map or bytes, got %s", args[0])
+					c.ErrorAt(x.Args[0], "len expects a str, list, map or bytes, got %s", args[0])
 				}
 			}
 			return Int

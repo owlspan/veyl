@@ -121,6 +121,16 @@ func compile(source, path string) *Module {
 		report(errs)
 	}
 
+	// The shared type checker, with this backend's own library. A
+	// builtin this backend does not have is now an ordinary type error
+	// with a position, reported alongside everything else, rather than
+	// something the lowerer stumbles into later.
+	ck := NewChecker(path, asmLibrary{})
+	ck.Check(prog)
+	if len(ck.Errors) > 0 {
+		report(ck.Errors)
+	}
+
 	mod, lowerErrs := Lower(prog, path)
 	if len(lowerErrs) > 0 {
 		report(lowerErrs)

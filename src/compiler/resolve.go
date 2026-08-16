@@ -61,7 +61,7 @@ func NewResolver(file string) *Resolver {
 	}
 }
 
-func (r *Resolver) errorAt(n Node, format string, args ...any) {
+func (r *Resolver) ErrorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
 	r.Errors = append(r.Errors,
 		fmt.Sprintf("%s:%d:%d: %s", r.file, line, col, fmt.Sprintf(format, args...)))
@@ -94,7 +94,7 @@ func (r *Resolver) pop() {
 func (r *Resolver) declare(name string, info *varInfo, n Node) {
 	top := r.scopes[len(r.scopes)-1]
 	if _, exists := top[name]; exists {
-		r.errorAt(n, "%q is already declared in this scope", name)
+		r.ErrorAt(n, "%q is already declared in this scope", name)
 		return
 	}
 	top[name] = info
@@ -162,14 +162,14 @@ func (r *Resolver) Resolve(p *Program) {
 	for _, d := range p.Structs {
 		if prev, dup := r.structs[d.Name]; dup {
 			line, _ := prev.Pos()
-			r.errorAt(d, "struct %q is already defined on line %d (in %s)",
+			r.ErrorAt(d, "struct %q is already defined on line %d (in %s)",
 				d.Name, line, filepath.Base(prev.File))
 			continue
 		}
 		seen := map[string]bool{}
 		for _, f := range d.Fields {
 			if seen[f.Name] {
-				r.errorAt(f, "struct %q already has a field called %q", d.Name, f.Name)
+				r.ErrorAt(f, "struct %q already has a field called %q", d.Name, f.Name)
 			}
 			seen[f.Name] = true
 		}
@@ -184,16 +184,16 @@ func (r *Resolver) Resolve(p *Program) {
 			continue
 		}
 		if _, isBuiltin := builtins[f.Name]; isBuiltin {
-			r.errorAt(f, "%q is a builtin and cannot be redefined", f.Name)
+			r.ErrorAt(f, "%q is a builtin and cannot be redefined", f.Name)
 			continue
 		}
 		if _, isStruct := r.structs[Qual(f.Pkg, f.Name)]; isStruct {
-			r.errorAt(f, "%q is already a struct, so it cannot also be a function", f.Name)
+			r.ErrorAt(f, "%q is already a struct, so it cannot also be a function", f.Name)
 			continue
 		}
 		if prev, dup := r.funcs[Qual(f.Pkg, f.Name)]; dup {
 			line, _ := prev.Pos()
-			r.errorAt(f, "function %q is already defined on line %d (in %s)",
+			r.ErrorAt(f, "function %q is already defined on line %d (in %s)",
 				f.Name, line, filepath.Base(prev.File))
 			continue
 		}
@@ -220,7 +220,7 @@ func (r *Resolver) Resolve(p *Program) {
 
 func (r *Resolver) declareMethod(f *FnDecl) {
 	if _, known := r.structs[f.Recv]; !known {
-		r.errorAt(f, "there is no struct called %q to add methods to", f.Recv)
+		r.ErrorAt(f, "there is no struct called %q to add methods to", f.Recv)
 		return
 	}
 	if r.methods[f.Recv] == nil {
@@ -228,7 +228,7 @@ func (r *Resolver) declareMethod(f *FnDecl) {
 	}
 	if prev, dup := r.methods[f.Recv][f.Name]; dup {
 		line, _ := prev.Pos()
-		r.errorAt(f, "%s already has a method called %q, defined on line %d",
+		r.ErrorAt(f, "%s already has a method called %q, defined on line %d",
 			f.Recv, f.Name, line)
 		return
 	}
@@ -236,7 +236,7 @@ func (r *Resolver) declareMethod(f *FnDecl) {
 	// ambiguous between reading a field and forgetting to call a method.
 	for _, fld := range r.structs[f.Recv].Fields {
 		if fld.Name == f.Name {
-			r.errorAt(f, "%s already has a field called %q, so it cannot also have a method with that name",
+			r.ErrorAt(f, "%s already has a field called %q, so it cannot also have a method with that name",
 				f.Recv, f.Name)
 			return
 		}
@@ -256,16 +256,16 @@ func (r *Resolver) resolveFn(f *FnDecl) {
 		r.declare(prm.Name, &varInfo{used: true}, prm)
 	}
 	if f.Recv != "" && !hasSelf(f) {
-		r.errorAt(f, "a method needs 'self' as its first parameter, as in: fn %s(self)", f.Name)
+		r.ErrorAt(f, "a method needs 'self' as its first parameter, as in: fn %s(self)", f.Name)
 	}
 
 	r.walkStmts(f.Body.Stmts)
 
 	if f.Ret != "" && !blockReturns(f.Body) {
 		if f.Name == "" {
-			r.errorAt(f, "this function literal must return a value of type %s on every path", f.Ret)
+			r.ErrorAt(f, "this function literal must return a value of type %s on every path", f.Ret)
 		} else {
-			r.errorAt(f, "function %q must return a value of type %s on every path", f.Name, f.Ret)
+			r.ErrorAt(f, "function %q must return a value of type %s on every path", f.Name, f.Ret)
 		}
 	}
 
@@ -297,9 +297,9 @@ func (r *Resolver) stmt(s Stmt) {
 		info := r.lookup(name)
 		switch {
 		case info == nil:
-			r.errorAt(st, "undefined variable %q (declare it with 'let %s = ...')", name, name)
+			r.ErrorAt(st, "undefined variable %q (declare it with 'let %s = ...')", name, name)
 		case info.isConst:
-			r.errorAt(st, "cannot assign to %q because it was declared const", name)
+			r.ErrorAt(st, "cannot assign to %q because it was declared const", name)
 		default:
 			info.used = true
 		}
@@ -356,12 +356,12 @@ func (r *Resolver) stmt(s Stmt) {
 
 	case *BreakStmt:
 		if r.loops == 0 {
-			r.errorAt(st, "'break' can only appear inside a loop")
+			r.ErrorAt(st, "'break' can only appear inside a loop")
 		}
 
 	case *ContinueStmt:
 		if r.loops == 0 {
-			r.errorAt(st, "'continue' can only appear inside a loop")
+			r.ErrorAt(st, "'continue' can only appear inside a loop")
 		}
 
 	case *ReturnStmt:
@@ -370,11 +370,11 @@ func (r *Resolver) stmt(s Stmt) {
 		}
 		switch {
 		case r.curFn == nil:
-			r.errorAt(st, "'return' can only appear inside a function")
+			r.ErrorAt(st, "'return' can only appear inside a function")
 		case r.curFn.Ret == "" && st.Value != nil:
-			r.errorAt(st, "function %q has no return type, so 'return' cannot take a value", r.curFn.Name)
+			r.ErrorAt(st, "function %q has no return type, so 'return' cannot take a value", r.curFn.Name)
 		case r.curFn.Ret != "" && st.Value == nil:
-			r.errorAt(st, "function %q must return a value of type %s", r.curFn.Name, r.curFn.Ret)
+			r.ErrorAt(st, "function %q must return a value of type %s", r.curFn.Name, r.curFn.Ret)
 		}
 
 	case *Block:
@@ -458,32 +458,32 @@ func (r *Resolver) expr(e Expr) {
 			// `let double = twice` hands the function around.
 			if f, isFn := r.funcs[x.Name]; isFn {
 				if !r.visible(f.File, f.Pub) {
-					r.errorAt(x, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
+					r.ErrorAt(x, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
 						x.Name, filepath.Base(f.File), x.Name)
 				}
 				return
 			}
 			if _, isBuiltin := builtins[x.Name]; isBuiltin {
-				r.errorAt(x, "%q is a builtin and cannot be used as a value - "+
+				r.ErrorAt(x, "%q is a builtin and cannot be used as a value - "+
 					"wrap it in a function literal, as in: fn(s: str) { %s(s) }", x.Name, x.Name)
 				return
 			}
 			// Two cases where the name does exist, just not from here.
 			if r.locals[x.Name] {
 				if r.inGlobal {
-					r.errorAt(x, "a top-level const is global, so it cannot use %q, "+
+					r.ErrorAt(x, "a top-level const is global, so it cannot use %q, "+
 						"which belongs to the program body - use 'let' instead of 'const' here", x.Name)
 				} else {
-					r.errorAt(x, "%q belongs to the program body and is not visible inside a function - "+
+					r.ErrorAt(x, "%q belongs to the program body and is not visible inside a function - "+
 						"pass it in as a parameter, or declare it with 'const' to make it global", x.Name)
 				}
 				return
 			}
-			r.errorAt(x, "undefined variable %q", x.Name)
+			r.ErrorAt(x, "undefined variable %q", x.Name)
 			return
 		}
 		if g := info.decl; g != nil && g.Global && !r.visible(g.File, g.Pub) {
-			r.errorAt(x, "%q is private to %s - mark it 'pub const %s' to use it from another file",
+			r.ErrorAt(x, "%q is private to %s - mark it 'pub const %s' to use it from another file",
 				x.Name, filepath.Base(g.File), x.Name)
 			return
 		}
@@ -500,7 +500,7 @@ func (r *Resolver) expr(e Expr) {
 	case *Try:
 		r.expr(x.X)
 		if r.curFn == nil {
-			r.errorAt(x, "'?' can only be used inside a function, because it returns from one")
+			r.ErrorAt(x, "'?' can only be used inside a function, because it returns from one")
 		}
 
 	case *Binary:
@@ -526,9 +526,9 @@ func (r *Resolver) expr(e Expr) {
 		d, known := r.structs[x.Name]
 		switch {
 		case !known:
-			r.errorAt(x, "there is no struct called %q", x.Name)
+			r.ErrorAt(x, "there is no struct called %q", x.Name)
 		case !r.visible(d.File, d.Pub):
-			r.errorAt(x, "struct %q is private to %s - mark it 'pub struct %s' to use it from another file",
+			r.ErrorAt(x, "struct %q is private to %s - mark it 'pub struct %s' to use it from another file",
 				x.Name, filepath.Base(d.File), x.Name)
 		}
 
@@ -557,19 +557,19 @@ func (r *Resolver) expr(e Expr) {
 				return
 			}
 			if _, isBuiltin := builtins[name]; isBuiltin {
-				r.errorAt(x, "%s is a function; did you mean %s(...)?", name, name)
+				r.ErrorAt(x, "%s is a function; did you mean %s(...)?", name, name)
 				return
 			}
 			if f, ok := r.funcs[name]; ok && f.Pub {
-				r.errorAt(x, "%s is a function; did you mean %s(...)?", name, name)
+				r.ErrorAt(x, "%s is a function; did you mean %s(...)?", name, name)
 				return
 			}
 			if root := strings.SplitN(name, ".", 2)[0]; r.pkgNames[root] {
-				r.errorAt(x, "package %q has no public %q", root,
+				r.ErrorAt(x, "package %q has no public %q", root,
 					strings.TrimPrefix(name, root+"."))
 				return
 			}
-			r.errorAt(x, "there is no value called %s%s", name, nearestNamespaceHint(name))
+			r.ErrorAt(x, "there is no value called %s%s", name, nearestNamespaceHint(name))
 			return
 		}
 		// Not a plain path - the base is some other expression, so this is
@@ -638,7 +638,7 @@ func (r *Resolver) call(x *Call) {
 	if _, dotted := x.Callee.(*Field); dotted {
 		if f, ok := r.funcs[name]; ok {
 			if !f.Pub {
-				r.errorAt(x, "%q is not public in package %q - mark it 'pub fn %s'",
+				r.ErrorAt(x, "%q is not public in package %q - mark it 'pub fn %s'",
 					name, f.Pkg, f.Name)
 				return
 			}
@@ -646,11 +646,11 @@ func (r *Resolver) call(x *Call) {
 			return
 		}
 		if root := strings.SplitN(name, ".", 2)[0]; r.pkgNames[root] {
-			r.errorAt(x, "package %q has no public %q", root,
+			r.ErrorAt(x, "package %q has no public %q", root,
 				strings.TrimPrefix(name, root+"."))
 			return
 		}
-		r.errorAt(x, "there is no builtin called %s%s", name, nearestNamespaceHint(name))
+		r.ErrorAt(x, "there is no builtin called %s%s", name, nearestNamespaceHint(name))
 		return
 	}
 
@@ -663,15 +663,15 @@ func (r *Resolver) call(x *Call) {
 	if !isUser && r.curPkg != "" {
 		// Not the package's own, so it can only be a builtin, which was
 		// already ruled out above.
-		r.errorAt(x, "undefined function %q in package %q", name, r.curPkg)
+		r.ErrorAt(x, "undefined function %q in package %q", name, r.curPkg)
 		return
 	}
 	if !isUser {
-		r.errorAt(x, "undefined function %q", name)
+		r.ErrorAt(x, "undefined function %q", name)
 		return
 	}
 	if !r.visible(f.File, f.Pub) {
-		r.errorAt(x, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
+		r.ErrorAt(x, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
 			name, filepath.Base(f.File), name)
 		return
 	}
@@ -714,7 +714,7 @@ func nearestNamespaceHint(name string) string {
 
 func (r *Resolver) checkArity(x *Call, name string, got, min, max int) {
 	if got < min || (max >= 0 && got > max) {
-		r.errorAt(x, "%s expects %s, got %d", name, arityText(min, max), got)
+		r.ErrorAt(x, "%s expects %s, got %d", name, arityText(min, max), got)
 	}
 }
 

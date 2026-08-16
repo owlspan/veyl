@@ -1,4 +1,4 @@
-package main
+package frontend
 
 import (
 	"fmt"
@@ -22,11 +22,19 @@ type Checker struct {
 	narrowed []map[string]bool // names proved non-nil, innermost last
 	curFn    *FnDecl
 	Errors   []string
+
+	// lib is the backend's set of builtins. The checker never assumes
+	// which backend it is serving; see library.go.
+	lib Library
 }
 
-func NewChecker(file string) *Checker {
+func NewChecker(file string, lib Library) *Checker {
+	if lib == nil {
+		lib = EmptyLibrary{}
+	}
 	return &Checker{
 		file:    file,
+		lib:     lib,
 		funcs:   map[string]*FnDecl{},
 		structs: map[string]*StructDecl{},
 		methods: map[string]map[string]*FnDecl{},
@@ -74,7 +82,7 @@ func (c *Checker) pkg() string {
 	return ""
 }
 
-func (c *Checker) errorAt(n Node, format string, args ...any) {
+func (c *Checker) ErrorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
 	c.Errors = append(c.Errors,
 		fmt.Sprintf("%s:%d:%d: %s", c.file, line, col, fmt.Sprintf(format, args...)))
@@ -175,7 +183,7 @@ func (c *Checker) coerce(slot *Expr, want *Type, got *Type) bool {
 	if want == nil || want.IsUnknown() || got.IsUnknown() {
 		return true
 	}
-	if !want.Accepts(got) && !(isUntypedInt(*slot) && innerScalar(want).Kind == KFloat) {
+	if !want.Accepts(got) && !(IsUntypedInt(*slot) && innerScalar(want).Kind == KFloat) {
 		return false
 	}
 	if !want.NeedsWrap(got) {
@@ -223,11 +231,11 @@ func (c *Checker) resolveAnnotation(text string, n Node) *Type {
 	}
 	t := ParseType(text)
 	if t == nil {
-		c.errorAt(n, "unknown type %q", text)
+		c.ErrorAt(n, "unknown type %q", text)
 		return Unknown
 	}
 	if bad := c.undeclaredStruct(t); bad != "" {
-		c.errorAt(n, "unknown type %q", bad)
+		c.ErrorAt(n, "unknown type %q", bad)
 		return Unknown
 	}
 	return t
@@ -275,7 +283,7 @@ func (c *Checker) Check(p *Program) {
 			// A struct cannot contain itself by value: the type would need
 			// infinite space. Through a list or map it is fine.
 			if f.T.Kind == KStruct && f.T.Name == d.Name {
-				c.errorAt(f, "%s cannot contain itself - use []%s if you meant a list of them",
+				c.ErrorAt(f, "%s cannot contain itself - use []%s if you meant a list of them",
 					d.Name, d.Name)
 				f.T = Unknown
 			}
@@ -367,10 +375,10 @@ func (c *Checker) stmt(s Stmt) {
 			// No annotation: infer, but reject types that carry no value.
 			switch valT.Kind {
 			case KVoid:
-				c.errorAt(st, "cannot assign the result of a call that returns nothing to %q", st.Name)
+				c.ErrorAt(st, "cannot assign the result of a call that returns nothing to %q", st.Name)
 				valT = Unknown
 			case KNilLit:
-				c.errorAt(st, "cannot tell what %q can hold - annotate it, as in: let %s: ?int = nil",
+				c.ErrorAt(st, "cannot tell what %q can hold - annotate it, as in: let %s: ?int = nil",
 					st.Name, st.Name)
 				valT = Unknown
 			}
@@ -380,7 +388,7 @@ func (c *Checker) stmt(s Stmt) {
 			st.T = annot
 
 		default:
-			c.errorAt(st, "%q is declared as %s but the value is %s", st.Name, annot, valT)
+			c.ErrorAt(st, "%q is declared as %s but the value is %s", st.Name, annot, valT)
 			st.T = annot
 		}
 		c.define(st.Name, st.T)
@@ -396,7 +404,7 @@ func (c *Checker) stmt(s Stmt) {
 			return
 		}
 		if !c.coerce(&st.Value, want, valT) {
-			c.errorAt(st, "cannot assign %s to %s, which is %s",
+			c.ErrorAt(st, "cannot assign %s to %s, which is %s",
 				valT, describeTarget(st.Target), want)
 		}
 
@@ -434,12 +442,12 @@ func (c *Checker) stmt(s Stmt) {
 			n Node
 		}{{startT, st.Start}, {endT, st.End}} {
 			if !pair.t.IsUnknown() && pair.t.Kind != KInt {
-				c.errorAt(pair.n, "a for-loop range must be int, got %s", pair.t)
+				c.ErrorAt(pair.n, "a for-loop range must be int, got %s", pair.t)
 			}
 		}
 		if st.Step != nil {
 			if stepT := c.expr(st.Step); !stepT.IsUnknown() && stepT.Kind != KInt {
-				c.errorAt(st.Step, "a for-loop step must be int, got %s", stepT)
+				c.ErrorAt(st.Step, "a for-loop step must be int, got %s", stepT)
 			}
 		}
 		c.push()
@@ -462,7 +470,7 @@ func (c *Checker) stmt(s Stmt) {
 			return // resolver already reported the mismatch
 		}
 		if !c.coerce(&st.Value, want, got) {
-			c.errorAt(st, "function %q returns %s but this returns %s",
+			c.ErrorAt(st, "function %q returns %s but this returns %s",
 				c.curFn.Name, want, got)
 		}
 
@@ -479,7 +487,7 @@ func (c *Checker) stmt(s Stmt) {
 func (c *Checker) match(st *MatchStmt) {
 	subj := c.expr(st.Subject)
 	if !subj.IsUnknown() && (subj.IsCollection() || subj.Kind == KStruct) {
-		c.errorAt(st.Subject, "cannot match on %s - match compares values, so it needs an int, float, str or bool", subj)
+		c.ErrorAt(st.Subject, "cannot match on %s - match compares values, so it needs an int, float, str or bool", subj)
 		subj = Unknown
 	}
 
@@ -487,8 +495,8 @@ func (c *Checker) match(st *MatchStmt) {
 	for _, arm := range st.Cases {
 		for _, v := range arm.Values {
 			got := c.exprWant(v, subj)
-			if !subj.Accepts(got) && !(isUntypedInt(v) && subj.Kind == KFloat) {
-				c.errorAt(v, "this match is on %s, but this arm compares against %s", subj, got)
+			if !subj.Accepts(got) && !(IsUntypedInt(v) && subj.Kind == KFloat) {
+				c.ErrorAt(v, "this match is on %s, but this arm compares against %s", subj, got)
 				continue
 			}
 			// Duplicate constants are dead code, and Go rejects them
@@ -496,7 +504,7 @@ func (c *Checker) match(st *MatchStmt) {
 			// message than the backend would give.
 			if key, isConst := constKey(v); isConst {
 				if seen[key] {
-					c.errorAt(v, "this value is already handled by an earlier arm")
+					c.ErrorAt(v, "this value is already handled by an earlier arm")
 				}
 				seen[key] = true
 			}
@@ -545,7 +553,7 @@ func (c *Checker) forEach(st *ForStmt) {
 
 	case collT.Kind == KMap:
 		if st.Var2 == "" {
-			c.errorAt(st, "iterating a map binds two names, as in: for key, value in %s { ... }",
+			c.ErrorAt(st, "iterating a map binds two names, as in: for key, value in %s { ... }",
 				exprText(st.Coll))
 			keyT = collT.Key
 		} else {
@@ -553,11 +561,11 @@ func (c *Checker) forEach(st *ForStmt) {
 		}
 
 	case collT.Kind == KStr:
-		c.errorAt(st, "cannot iterate a str directly - use chars(...) or split(...)")
+		c.ErrorAt(st, "cannot iterate a str directly - use chars(...) or split(...)")
 		keyT, valT = Unknown, Unknown
 
 	default:
-		c.errorAt(st, "cannot iterate %s", collT)
+		c.ErrorAt(st, "cannot iterate %s", collT)
 		keyT, valT = Unknown, Unknown
 	}
 
@@ -586,50 +594,50 @@ func (c *Checker) block(b *Block) {
 func (c *Checker) condition(e Expr, kw string) {
 	t := c.expr(e)
 	if !t.IsUnknown() && t.Kind != KBool {
-		c.errorAt(e, "%s condition must be bool, got %s", kw, t)
+		c.ErrorAt(e, "%s condition must be bool, got %s", kw, t)
 	}
 }
 
 // checkCompound validates `+=` and friends, which are just the binary
 // operator followed by an assignment.
 func (c *Checker) checkCompound(st *AssignStmt, want, got *Type) {
-	op := compoundOp[st.Op]
+	op := CompoundOp[st.Op]
 	target := describeTarget(st.Target)
 
 	// The bitwise family and %= are int-only, like their binary forms.
 	switch op {
 	case PERCENT, AMP, PIPE, CARET, SHL, SHR:
 		if !want.IsUnknown() && want.Kind != KInt {
-			c.errorAt(st, "%s needs an int, but %s is %s", goAssignOp(st.Op), target, want)
+			c.ErrorAt(st, "%s needs an int, but %s is %s", AssignOpText(st.Op), target, want)
 		}
 		if !got.IsUnknown() && got.Kind != KInt {
-			c.errorAt(st, "%s needs an int, got %s", goAssignOp(st.Op), got)
+			c.ErrorAt(st, "%s needs an int, got %s", AssignOpText(st.Op), got)
 		}
 		return
 	}
 
 	if op == PLUS && want.Kind == KStr {
 		if got.Kind != KStr && !got.IsUnknown() {
-			c.errorAt(st, "cannot append %s to %s, which is str", got, target)
+			c.ErrorAt(st, "cannot append %s to %s, which is str", got, target)
 		}
 		return
 	}
 	if !want.IsNumeric() && !want.IsUnknown() {
-		c.errorAt(st, "%s needs a number, but %s is %s", goAssignOp(st.Op), target, want)
+		c.ErrorAt(st, "%s needs a number, but %s is %s", AssignOpText(st.Op), target, want)
 		return
 	}
 	if !got.IsNumeric() && !got.IsUnknown() {
-		c.errorAt(st, "%s needs a number, got %s", goAssignOp(st.Op), got)
+		c.ErrorAt(st, "%s needs a number, got %s", AssignOpText(st.Op), got)
 		return
 	}
 	// An untyped integer literal adapts to a float target, as in Go.
-	if want.Kind == KFloat && got.Kind == KInt && !isUntypedInt(st.Value) {
-		c.errorAt(st, "cannot apply %s with an int to %s, which is float (use float(...))",
-			goAssignOp(st.Op), target)
+	if want.Kind == KFloat && got.Kind == KInt && !IsUntypedInt(st.Value) {
+		c.ErrorAt(st, "cannot apply %s with an int to %s, which is float (use float(...))",
+			AssignOpText(st.Op), target)
 	}
 	if want.Kind == KInt && got.Kind == KFloat {
-		c.errorAt(st, "cannot apply %s with a float to %s, which is int (use int(...))",
-			goAssignOp(st.Op), target)
+		c.ErrorAt(st, "cannot apply %s with a float to %s, which is int (use int(...))",
+			AssignOpText(st.Op), target)
 	}
 }
 
@@ -669,7 +677,7 @@ func (c *Checker) exprWant(e Expr, want *Type) *Type {
 	case *Call:
 		// A builtin that decodes into a type learns that type from here.
 		if name, ok := DottedName(x.Callee); ok {
-			if b, isBuiltin := builtins[name]; isBuiltin && b.wantsTarget {
+			if b, isBuiltin := c.lib.Signature(name); isBuiltin && b.WantsTarget {
 				x.Want = want
 			}
 		}
@@ -718,7 +726,7 @@ func (c *Checker) expr(e Expr) *Type {
 			// going through a parameter type, so the result check has to
 			// be made here too - otherwise "{load(p)}" prints the wrapper.
 			if t.IsResult() {
-				c.errorAt(x.Parts[i].X,
+				c.ErrorAt(x.Parts[i].X,
 					"%s might have failed - unwrap it with '?', must(...) or valueOr(...) before printing it", t)
 				x.Parts[i].T = Unknown
 			}
@@ -735,8 +743,8 @@ func (c *Checker) expr(e Expr) *Type {
 			}
 			return t
 		}
-		if bc, ok := builtinConsts[x.Name]; ok {
-			return bc.typ
+		if t, ok := c.lib.ConstType(x.Name); ok {
+			return t
 		}
 		// A declared function used as a value.
 		if f, ok := c.funcs[x.Name]; ok {
@@ -751,20 +759,20 @@ func (c *Checker) expr(e Expr) *Type {
 		}
 		if x.Op == BANG {
 			if t.Kind != KBool {
-				c.errorAt(x, "'!' needs a bool, got %s", t)
+				c.ErrorAt(x, "'!' needs a bool, got %s", t)
 				return Unknown
 			}
 			return Bool
 		}
 		if x.Op == TILDE {
 			if t.Kind != KInt {
-				c.errorAt(x, "'~' needs an int, got %s", t)
+				c.ErrorAt(x, "'~' needs an int, got %s", t)
 				return Unknown
 			}
 			return Int
 		}
 		if !t.IsNumeric() {
-			c.errorAt(x, "'-' needs a number, got %s", t)
+			c.ErrorAt(x, "'-' needs a number, got %s", t)
 			return Unknown
 		}
 		return t
@@ -803,17 +811,17 @@ func (c *Checker) field(x *Field) *Type {
 		return Unknown
 	}
 	if recv.Kind != KStruct {
-		c.errorAt(x, "%s has no fields, so %q cannot be read from it", recv, x.Name)
+		c.ErrorAt(x, "%s has no fields, so %q cannot be read from it", recv, x.Name)
 		return Unknown
 	}
 	if t, ok := c.fieldType(recv.Name, x.Name); ok {
 		return t
 	}
 	if _, isMethod := c.methods[recv.Name][x.Name]; isMethod {
-		c.errorAt(x, "%s is a method on %s; did you mean %s()?", x.Name, recv.Name, x.Name)
+		c.ErrorAt(x, "%s is a method on %s; did you mean %s()?", x.Name, recv.Name, x.Name)
 		return Unknown
 	}
-	c.errorAt(x, "%s has no field called %q - it has: %s",
+	c.ErrorAt(x, "%s has no field called %q - it has: %s",
 		recv.Name, x.Name, c.fieldNames(recv.Name))
 	return Unknown
 }
@@ -836,12 +844,12 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		want, isField := c.fieldType(x.Name, name)
 		if !isField {
 			c.expr(x.Vals[i])
-			c.errorAt(x.Vals[i], "%s has no field called %q - it has: %s",
+			c.ErrorAt(x.Vals[i], "%s has no field called %q - it has: %s",
 				x.Name, name, c.fieldNames(x.Name))
 			continue
 		}
 		if seen[name] {
-			c.errorAt(x.Vals[i], "field %q is given twice", name)
+			c.ErrorAt(x.Vals[i], "field %q is given twice", name)
 		}
 		seen[name] = true
 
@@ -849,7 +857,7 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		if c.coerce(&x.Vals[i], want, got) {
 			continue
 		}
-		c.errorAt(x.Vals[i], "%s.%s is %s, got %s", x.Name, name, want, got)
+		c.ErrorAt(x.Vals[i], "%s.%s is %s, got %s", x.Name, name, want, got)
 	}
 
 	// Missing fields are allowed and zero-filled, which is what makes
@@ -866,19 +874,19 @@ func (c *Checker) callValue(x *Call, fnType *Type, what string) *Type {
 		return Unknown
 	}
 	if !fnType.IsFunc() {
-		c.errorAt(x, "%s is %s, which cannot be called", what, fnType)
+		c.ErrorAt(x, "%s is %s, which cannot be called", what, fnType)
 		return Unknown
 	}
 	if len(x.Args) != len(fnType.Params) {
-		c.errorAt(x, "%s expects %s, got %d",
-			what, arityText(len(fnType.Params), len(fnType.Params)), len(x.Args))
+		c.ErrorAt(x, "%s expects %s, got %d",
+			what, ArityText(len(fnType.Params), len(fnType.Params)), len(x.Args))
 	}
 	for i := 0; i < len(x.Args) && i < len(fnType.Params); i++ {
 		want := fnType.Params[i]
 		if c.coerce(&x.Args[i], want, x.ArgT[i]) {
 			continue
 		}
-		c.errorAt(x.Args[i], "%s expects %s for argument %d, got %s",
+		c.ErrorAt(x.Args[i], "%s expects %s for argument %d, got %s",
 			what, want, i+1, x.ArgT[i])
 	}
 	return fnType.Elem
@@ -937,7 +945,7 @@ func (c *Checker) try(x *Try) *Type {
 		return Unknown
 	}
 	if !inner.IsResult() {
-		c.errorAt(x, "'?' needs a value that can fail, and %s cannot", inner)
+		c.ErrorAt(x, "'?' needs a value that can fail, and %s cannot", inner)
 		return Unknown
 	}
 	x.T = inner.Elem
@@ -946,7 +954,7 @@ func (c *Checker) try(x *Try) *Type {
 		return x.T // the resolver already reported the misplacement
 	}
 	if !c.curFn.RetT.IsResult() {
-		c.errorAt(x, "'?' returns the failure from %q, so %q must return a type ending in '!' - it returns %s",
+		c.ErrorAt(x, "'?' returns the failure from %q, so %q must return a type ending in '!' - it returns %s",
 			c.curFn.Name, c.curFn.Name, c.curFn.RetT)
 		return x.T
 	}
@@ -961,7 +969,7 @@ func (c *Checker) listLitAs(x *ListLit, want *Type) *Type {
 		if c.coerce(&x.Elems[i], want.Elem, got) {
 			continue
 		}
-		c.errorAt(x.Elems[i], "this list holds %s, but element %d is %s", want.Elem, i+1, got)
+		c.ErrorAt(x.Elems[i], "this list holds %s, but element %d is %s", want.Elem, i+1, got)
 		ok = false
 		break
 	}
@@ -978,7 +986,7 @@ func (c *Checker) mapLitAs(x *MapLit, want *Type) *Type {
 	ok := true
 	for i := range x.Keys {
 		if got := c.expr(x.Keys[i]); !want.Key.Accepts(got) {
-			c.errorAt(x.Keys[i], "this map has %s keys, but key %d is %s", want.Key, i+1, got)
+			c.ErrorAt(x.Keys[i], "this map has %s keys, but key %d is %s", want.Key, i+1, got)
 			ok = false
 			break
 		}
@@ -986,7 +994,7 @@ func (c *Checker) mapLitAs(x *MapLit, want *Type) *Type {
 		if c.coerce(&x.Vals[i], want.Elem, got) {
 			continue
 		}
-		c.errorAt(x.Vals[i], "this map holds %s, but value %d is %s", want.Elem, i+1, got)
+		c.ErrorAt(x.Vals[i], "this map holds %s, but value %d is %s", want.Elem, i+1, got)
 		ok = false
 		break
 	}
@@ -1001,7 +1009,7 @@ func (c *Checker) mapLitAs(x *MapLit, want *Type) *Type {
 // listLit infers a list type from the elements, which must all agree.
 func (c *Checker) listLit(x *ListLit) *Type {
 	if len(x.Elems) == 0 {
-		c.errorAt(x, "cannot tell what kind of list this is - annotate it, as in: let xs: []int = []")
+		c.ErrorAt(x, "cannot tell what kind of list this is - annotate it, as in: let xs: []int = []")
 		x.T = Unknown
 		return Unknown
 	}
@@ -1009,7 +1017,7 @@ func (c *Checker) listLit(x *ListLit) *Type {
 	elem := c.expr(x.Elems[0])
 	// A list of integer literals mixed with any float becomes a float
 	// list, following the same untyped-constant rule as arithmetic.
-	if elem.Kind == KInt && isUntypedInt(x.Elems[0]) && c.anyFloat(x.Elems) {
+	if elem.Kind == KInt && IsUntypedInt(x.Elems[0]) && c.anyFloat(x.Elems) {
 		elem = Float
 	}
 
@@ -1018,7 +1026,7 @@ func (c *Checker) listLit(x *ListLit) *Type {
 		if c.coerce(&x.Elems[i], elem, got) {
 			continue
 		}
-		c.errorAt(x.Elems[i], "this list holds %s, but element %d is %s", elem, i+1, got)
+		c.ErrorAt(x.Elems[i], "this list holds %s, but element %d is %s", elem, i+1, got)
 		elem = Unknown
 		break
 	}
@@ -1044,21 +1052,21 @@ func (c *Checker) anyFloat(elems []Expr) bool {
 
 func (c *Checker) mapLit(x *MapLit) *Type {
 	if len(x.Keys) == 0 {
-		c.errorAt(x, "cannot tell what kind of map this is - annotate it, as in: let m: {str: int} = {}")
+		c.ErrorAt(x, "cannot tell what kind of map this is - annotate it, as in: let m: {str: int} = {}")
 		x.T = Unknown
 		return Unknown
 	}
 
 	keyT := c.expr(x.Keys[0])
 	if keyT.Kind != KStr && keyT.Kind != KInt && !keyT.IsUnknown() {
-		c.errorAt(x.Keys[0], "a map key must be str or int, got %s", keyT)
+		c.ErrorAt(x.Keys[0], "a map key must be str or int, got %s", keyT)
 		keyT = Unknown
 	}
 	valT := c.expr(x.Vals[0])
 
 	for i := range x.Keys {
 		if got := c.expr(x.Keys[i]); !keyT.Accepts(got) {
-			c.errorAt(x.Keys[i], "this map has %s keys, but key %d is %s", keyT, i+1, got)
+			c.ErrorAt(x.Keys[i], "this map has %s keys, but key %d is %s", keyT, i+1, got)
 			keyT = Unknown
 			break
 		}
@@ -1066,7 +1074,7 @@ func (c *Checker) mapLit(x *MapLit) *Type {
 		if c.coerce(&x.Vals[i], valT, got) {
 			continue
 		}
-		c.errorAt(x.Vals[i], "this map holds %s, but value %d is %s", valT, i+1, got)
+		c.ErrorAt(x.Vals[i], "this map holds %s, but value %d is %s", valT, i+1, got)
 		valT = Unknown
 		break
 	}
@@ -1090,23 +1098,23 @@ func (c *Checker) index(x *Index) *Type {
 
 	case collT.Kind == KList:
 		if !idxT.IsUnknown() && idxT.Kind != KInt {
-			c.errorAt(x.Idx, "a list index must be int, got %s", idxT)
+			c.ErrorAt(x.Idx, "a list index must be int, got %s", idxT)
 		}
 		return collT.Elem
 
 	case collT.Kind == KMap:
 		if !collT.Key.Accepts(idxT) {
-			c.errorAt(x.Idx, "this map has %s keys, got %s", collT.Key, idxT)
+			c.ErrorAt(x.Idx, "this map has %s keys, got %s", collT.Key, idxT)
 		}
 		return collT.Elem
 
 	case collT.Kind == KStr:
-		c.errorAt(x, "cannot index a str - use charAt(s, i) or substr(s, a, b)")
+		c.ErrorAt(x, "cannot index a str - use charAt(s, i) or substr(s, a, b)")
 		return Unknown
 
 	case collT.Kind == KBytes:
 		if !idxT.IsUnknown() && idxT.Kind != KInt {
-			c.errorAt(x.Idx, "a bytes index must be int, got %s", idxT)
+			c.ErrorAt(x.Idx, "a bytes index must be int, got %s", idxT)
 		}
 		// One byte, as a number from 0 to 255. There is no separate
 		// byte type: a language with int already has somewhere to put
@@ -1115,7 +1123,7 @@ func (c *Checker) index(x *Index) *Type {
 		return Int
 	}
 
-	c.errorAt(x, "cannot index %s", collT)
+	c.ErrorAt(x, "cannot index %s", collT)
 	return Unknown
 }
 
@@ -1165,8 +1173,8 @@ func (c *Checker) binary(x *Binary) *Type {
 			return Unknown
 		}
 		if lt.Kind != KBool || rt.Kind != KBool {
-			c.errorAt(x, "'%s' needs bool on both sides, got %s and %s",
-				goBinOp(x.Op), lt, rt)
+			c.ErrorAt(x, "'%s' needs bool on both sides, got %s and %s",
+				OpText(x.Op), lt, rt)
 			return Unknown
 		}
 		return Bool
@@ -1183,13 +1191,13 @@ func (c *Checker) binary(x *Binary) *Type {
 	// mistake this type exists to catch, so name the fix.
 	if x.Op != EQ && x.Op != NEQ {
 		if bad := firstNullable(lt, rt); bad != nil {
-			c.errorAt(x, "%s might be nil - %s", bad, nilAdvice(x))
+			c.ErrorAt(x, "%s might be nil - %s", bad, nilAdvice(x))
 			return Unknown
 		}
 	}
 	// Same idea for a result: it holds a value only if it did not fail.
 	if bad := firstResult(lt, rt); bad != nil {
-		c.errorAt(x, "%s might have failed - unwrap it with '?', must(...) or valueOr(...) first", bad)
+		c.ErrorAt(x, "%s might have failed - unwrap it with '?', must(...) or valueOr(...) first", bad)
 		return Unknown
 	}
 
@@ -1201,10 +1209,10 @@ func (c *Checker) binary(x *Binary) *Type {
 	// sides of `7 % 2.0` look like floats, and reporting that would send
 	// the reader hunting for a float they never wrote.
 	origL, origR := lt, rt
-	if lt.Kind == KInt && rt.Kind == KFloat && isUntypedInt(x.L) {
+	if lt.Kind == KInt && rt.Kind == KFloat && IsUntypedInt(x.L) {
 		lt = Float
 	}
-	if rt.Kind == KInt && lt.Kind == KFloat && isUntypedInt(x.R) {
+	if rt.Kind == KInt && lt.Kind == KFloat && IsUntypedInt(x.R) {
 		rt = Float
 	}
 
@@ -1219,18 +1227,18 @@ func (c *Checker) binary(x *Binary) *Type {
 				other = rt
 			}
 			if !other.IsNullable() && other.Kind != KNilLit {
-				c.errorAt(x, "%s can never be nil, so this comparison is always %t",
+				c.ErrorAt(x, "%s can never be nil, so this comparison is always %t",
 					other, x.Op == NEQ)
 				return Bool
 			}
 			return Bool
 		}
 		if !lt.Equal(rt) {
-			c.errorAt(x, "cannot compare %s with %s", lt, rt)
+			c.ErrorAt(x, "cannot compare %s with %s", lt, rt)
 			return Unknown
 		}
 		if lt.IsFunc() {
-			c.errorAt(x, "cannot compare two functions")
+			c.ErrorAt(x, "cannot compare two functions")
 			return Unknown
 		}
 		// Lists, maps and structs compare by their contents, which is
@@ -1240,11 +1248,11 @@ func (c *Checker) binary(x *Binary) *Type {
 
 	case LT, LTE, GT, GTE:
 		if !lt.Equal(rt) {
-			c.errorAt(x, "cannot compare %s with %s", lt, rt)
+			c.ErrorAt(x, "cannot compare %s with %s", lt, rt)
 			return Unknown
 		}
 		if !lt.IsNumeric() && lt.Kind != KStr {
-			c.errorAt(x, "'%s' needs numbers or strings, got %s", goBinOp(x.Op), lt)
+			c.ErrorAt(x, "'%s' needs numbers or strings, got %s", OpText(x.Op), lt)
 			return Unknown
 		}
 		return Bool
@@ -1254,7 +1262,7 @@ func (c *Checker) binary(x *Binary) *Type {
 			return Str
 		}
 		if lt.Kind == KStr || rt.Kind == KStr {
-			c.errorAt(x, "cannot add %s and %s (use \"{...}\" interpolation or str(...))", lt, rt)
+			c.ErrorAt(x, "cannot add %s and %s (use \"{...}\" interpolation or str(...))", lt, rt)
 			return Unknown
 		}
 		return c.arithmetic(x, lt, rt)
@@ -1266,7 +1274,7 @@ func (c *Checker) binary(x *Binary) *Type {
 		// Checked against the originals: `%` does no float promotion, so
 		// an untyped literal stays an int here.
 		if origL.Kind != KInt || origR.Kind != KInt {
-			c.errorAt(x, "'%%' needs two ints, got %s and %s (use mod(...) for floats)",
+			c.ErrorAt(x, "'%%' needs two ints, got %s and %s (use mod(...) for floats)",
 				origL, origR)
 			return Unknown
 		}
@@ -1274,8 +1282,8 @@ func (c *Checker) binary(x *Binary) *Type {
 
 	case AMP, PIPE, CARET, SHL, SHR:
 		if origL.Kind != KInt || origR.Kind != KInt {
-			c.errorAt(x, "'%s' works on ints, got %s and %s%s",
-				goBinOp(x.Op), origL, origR, bitwiseHint(x, origL, origR))
+			c.ErrorAt(x, "'%s' works on ints, got %s and %s%s",
+				OpText(x.Op), origL, origR, bitwiseHint(x, origL, origR))
 			return Unknown
 		}
 		return Int
@@ -1320,7 +1328,7 @@ func nilAdvice(x *Binary) string {
 // rediscover a fifty-year-old wart.
 func bitwiseHint(x *Binary, lt, rt *Type) string {
 	if lt.Kind == KBool || rt.Kind == KBool {
-		return " - comparison binds tighter than '" + goBinOp(x.Op) +
+		return " - comparison binds tighter than '" + OpText(x.Op) +
 			"', so you probably want parentheses"
 	}
 	return ""
@@ -1329,12 +1337,12 @@ func bitwiseHint(x *Binary, lt, rt *Type) string {
 // arithmetic enforces the no-implicit-conversion rule for `- * / +`.
 func (c *Checker) arithmetic(x *Binary, lt, rt *Type) *Type {
 	if !lt.IsNumeric() || !rt.IsNumeric() {
-		c.errorAt(x, "'%s' needs numbers, got %s and %s", goBinOp(x.Op), lt, rt)
+		c.ErrorAt(x, "'%s' needs numbers, got %s and %s", OpText(x.Op), lt, rt)
 		return Unknown
 	}
 	if !lt.Equal(rt) {
-		c.errorAt(x, "cannot mix %s and %s in '%s' - convert one with int(...) or float(...)",
-			lt, rt, goBinOp(x.Op))
+		c.ErrorAt(x, "cannot mix %s and %s in '%s' - convert one with int(...) or float(...)",
+			lt, rt, OpText(x.Op))
 		return Unknown
 	}
 	return lt
@@ -1391,9 +1399,9 @@ func (c *Checker) call(x *Call) *Type {
 		return x.T
 	}
 
-	if b, isBuiltin := builtins[name]; isBuiltin {
-		if b.check != nil {
-			x.T = b.check(c, x, args)
+	if b, isBuiltin := c.lib.Signature(name); isBuiltin {
+		if b.Check != nil {
+			x.T = b.Check(c, x, args)
 			return x.T
 		}
 		x.T = c.checkBuiltin(x, name, b, args)
@@ -1417,7 +1425,7 @@ func (c *Checker) call(x *Call) *Type {
 		if c.coerce(&x.Args[i], want, args[i]) {
 			continue
 		}
-		c.errorAt(x.Args[i], "%s expects %s for %q, got %s",
+		c.ErrorAt(x.Args[i], "%s expects %s for %q, got %s",
 			name, want, f.Params[i].Name, args[i])
 	}
 	x.T = f.RetT
@@ -1430,8 +1438,8 @@ func (c *Checker) dynamicHint(x *Call) func(*Call, []*Type, int) *Type {
 	if !ok {
 		return nil
 	}
-	if b, isBuiltin := builtins[name]; isBuiltin {
-		return b.hintFor
+	if b, isBuiltin := c.lib.Signature(name); isBuiltin {
+		return b.HintFor
 	}
 	return nil
 }
@@ -1457,16 +1465,16 @@ func (c *Checker) paramHints(x *Call) []*Type {
 	if !ok {
 		return nil
 	}
-	if b, isBuiltin := builtins[name]; isBuiltin {
-		if b.check != nil {
+	if b, isBuiltin := c.lib.Signature(name); isBuiltin {
+		if b.Check != nil {
 			return nil // a custom checker decides for itself
 		}
 		hints := make([]*Type, len(x.Args))
 		for i := range hints {
-			if i < len(b.params) {
-				hints[i] = b.params[i]
+			if i < len(b.Params) {
+				hints[i] = b.Params[i]
 			} else {
-				hints[i] = b.rest
+				hints[i] = b.Rest
 			}
 		}
 		return hints
@@ -1490,7 +1498,7 @@ func (c *Checker) paramHints(x *Call) []*Type {
 func (c *Checker) receiverType(fld *Field) *Type {
 	// A plain dotted path that names a builtin is a library call.
 	if name, ok := DottedName(fld); ok {
-		if _, isBuiltin := builtins[name]; isBuiltin {
+		if _, isBuiltin := c.lib.Signature(name); isBuiltin {
 			return nil
 		}
 		// A path rooted at a name that is not a variable is a library
@@ -1530,10 +1538,10 @@ func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Typ
 				x.ViaValue = true
 				return c.callValue(x, ft, recv.Name+"."+fld.Name)
 			}
-			c.errorAt(x, "%s.%s is a field, not a method", recv.Name, fld.Name)
+			c.ErrorAt(x, "%s.%s is a field, not a method", recv.Name, fld.Name)
 			return Unknown
 		}
-		c.errorAt(x, "%s has no method called %q - it has: %s",
+		c.ErrorAt(x, "%s has no method called %q - it has: %s",
 			recv.Name, fld.Name, c.fieldNames(recv.Name))
 		return Unknown
 	}
@@ -1541,65 +1549,65 @@ func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Typ
 	// Params[0] is self, which the receiver supplies.
 	want := m.Params[1:]
 	if len(args) != len(want) {
-		c.errorAt(x, "%s.%s expects %s, got %d",
-			recv.Name, fld.Name, arityText(len(want), len(want)), len(args))
+		c.ErrorAt(x, "%s.%s expects %s, got %d",
+			recv.Name, fld.Name, ArityText(len(want), len(want)), len(args))
 	}
 	for i := 0; i < len(args) && i < len(want); i++ {
 		if c.coerce(&x.Args[i], want[i].T, args[i]) {
 			continue
 		}
-		c.errorAt(x.Args[i], "%s.%s expects %s for %q, got %s",
+		c.ErrorAt(x.Args[i], "%s.%s expects %s for %q, got %s",
 			recv.Name, fld.Name, want[i].T, want[i].Name, args[i])
 	}
 	return m.RetT
 }
 
-func (c *Checker) checkBuiltin(x *Call, name string, b builtin, args []*Type) *Type {
+func (c *Checker) checkBuiltin(x *Call, name string, b Signature, args []*Type) *Type {
 	// A builtin with no declared signature is unchecked. Every builtin
 	// should have one; this guard keeps an omission from panicking.
-	if b.ret == nil && b.retOf == nil {
+	if b.Ret == nil && b.RetOf == nil {
 		return Unknown
 	}
 
 	for i, got := range args {
-		want := b.rest
-		if i < len(b.params) {
-			want = b.params[i]
+		want := b.Rest
+		if i < len(b.Params) {
+			want = b.Params[i]
 		}
 		if want == nil {
 			continue // variadic tail with no declared element type
 		}
-		if want.Accepts(got) || (isUntypedInt(x.Args[i]) && want.Kind == KFloat) {
+		if want.Accepts(got) || (IsUntypedInt(x.Args[i]) && want.Kind == KFloat) {
 			continue
 		}
-		c.errorAt(x.Args[i], "%s expects %s for argument %d, got %s",
+		c.ErrorAt(x.Args[i], "%s expects %s for argument %d, got %s",
 			name, want, i+1, got)
 	}
 
-	if b.retOf != nil {
-		return b.retOf(args)
+	if b.RetOf != nil {
+		return b.RetOf(args)
 	}
-	return b.ret
+	return b.Ret
 }
 
 // ---- untyped constants ----
 
-// isUntypedInt reports whether an expression is built entirely out of
+// IsUntypedInt reports whether an expression is built entirely out of
 // integer literals, and so - following Go's untyped-constant rule - can
 // stand in for a float without an explicit conversion.
 //
 // `x * 2` is fine when x is a float. `x * y` is not, when y is an int
 // variable. That distinction is the whole reason this function exists.
-func isUntypedInt(e Expr) bool {
+func IsUntypedInt(e Expr) bool {
 	switch x := e.(type) {
 	case *IntLit:
 		return true
 	case *Unary:
-		return x.Op == MINUS && isUntypedInt(x.X)
+		return x.Op == MINUS && IsUntypedInt(x.X)
 	case *Binary:
 		switch x.Op {
 		case PLUS, MINUS, STAR, SLASH, PERCENT:
-			return isUntypedInt(x.L) && isUntypedInt(x.R)
+			return IsUntypedInt(x.L) && IsUntypedInt(x.R)
 		}
 	}
 	return false

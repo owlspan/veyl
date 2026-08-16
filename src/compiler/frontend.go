@@ -22,7 +22,9 @@ type (
 	BoolLit      = front.BoolLit
 	BreakStmt    = front.BreakStmt
 	Call         = front.Call
+	Checker      = front.Checker
 	ContinueStmt = front.ContinueStmt
+	EmptyLibrary = front.EmptyLibrary
 	Expr         = front.Expr
 	ExprStmt     = front.ExprStmt
 	Field        = front.Field
@@ -41,6 +43,7 @@ type (
 	Kind         = front.Kind
 	LetStmt      = front.LetStmt
 	Lexer        = front.Lexer
+	Library      = front.Library
 	ListLit      = front.ListLit
 	MapLit       = front.MapLit
 	MatchCase    = front.MatchCase
@@ -51,6 +54,7 @@ type (
 	Parser       = front.Parser
 	Program      = front.Program
 	ReturnStmt   = front.ReturnStmt
+	Signature    = front.Signature
 	Span         = front.Span
 	Stmt         = front.Stmt
 	StrLit       = front.StrLit
@@ -67,32 +71,38 @@ type (
 )
 
 var (
-	DottedName = front.DottedName
-	FuncOf     = front.FuncOf
-	IsAlpha    = front.IsAlpha
-	IsDigit    = front.IsDigit
-	IsHexDigit = front.IsHexDigit
-	ListOf     = front.ListOf
-	MapOf      = front.MapOf
-	NewLexer   = front.NewLexer
-	NewParser  = front.NewParser
-	NullableOf = front.NullableOf
-	ParseType  = front.ParseType
-	Qual       = front.Qual
-	ResultOf   = front.ResultOf
-	StructOf   = front.StructOf
-	Any        = front.Any
-	Bool       = front.Bool
-	Bytes      = front.Bytes
-	ErrLitT    = front.ErrLitT
-	Float      = front.Float
-	Int        = front.Int
-	Keywords   = front.Keywords
-	NilLitT    = front.NilLitT
-	Numeric    = front.Numeric
-	Str        = front.Str
-	Unknown    = front.Unknown
-	Void       = front.Void
+	ArityText    = front.ArityText
+	AssignOpText = front.AssignOpText
+	DottedName   = front.DottedName
+	FuncOf       = front.FuncOf
+	IsAlpha      = front.IsAlpha
+	IsDigit      = front.IsDigit
+	IsHexDigit   = front.IsHexDigit
+	IsUntypedInt = front.IsUntypedInt
+	ListOf       = front.ListOf
+	MapOf        = front.MapOf
+	NewChecker   = front.NewChecker
+	NewLexer     = front.NewLexer
+	NewParser    = front.NewParser
+	NullableOf   = front.NullableOf
+	OpText       = front.OpText
+	ParseType    = front.ParseType
+	Qual         = front.Qual
+	ResultOf     = front.ResultOf
+	StructOf     = front.StructOf
+	Any          = front.Any
+	Bool         = front.Bool
+	Bytes        = front.Bytes
+	CompoundOp   = front.CompoundOp
+	ErrLitT      = front.ErrLitT
+	Float        = front.Float
+	Int          = front.Int
+	Keywords     = front.Keywords
+	NilLitT      = front.NilLitT
+	Numeric      = front.Numeric
+	Str          = front.Str
+	Unknown      = front.Unknown
+	Void         = front.Void
 )
 
 const (

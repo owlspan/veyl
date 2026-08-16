@@ -223,7 +223,7 @@ func buildJsonBuiltins() {
 				// `let p: Point! = json.decode(t)` names Point as the shape
 				// to build and Point! as what the call produces.
 				if x.Want == nil || x.Want.IsUnknown() || !x.Want.IsResult() {
-					c.errorAt(x, "json.decode needs to know what to decode into, and it can fail - "+
+					c.ErrorAt(x, "json.decode needs to know what to decode into, and it can fail - "+
 						"annotate the variable, as in: let p: Point! = json.decode(text)")
 					return Unknown
 				}

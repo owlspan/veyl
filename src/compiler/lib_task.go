@@ -89,7 +89,7 @@ func buildTaskBuiltins() {
 					return Unknown
 				}
 				if ret.Kind == KVoid {
-					c.errorAt(x.Args[1], "task.map needs a function that returns something - "+
+					c.ErrorAt(x.Args[1], "task.map needs a function that returns something - "+
 						"use task.each(...) to just do work")
 					return Unknown
 				}
@@ -112,7 +112,7 @@ func buildTaskBuiltins() {
 					return Unknown
 				}
 				if ret.Kind == KVoid {
-					c.errorAt(x.Args[2], "task.mapLimit needs a function that returns something")
+					c.ErrorAt(x.Args[2], "task.mapLimit needs a function that returns something")
 					return Unknown
 				}
 				return ListOf(ret)
@@ -153,7 +153,7 @@ func buildTaskBuiltins() {
 					return Void
 				}
 				if !elem.IsFunc() || len(elem.Params) != 0 || elem.Elem.Kind != KVoid {
-					c.errorAt(x.Args[0], "task.all expects a list of fn() taking nothing "+
+					c.ErrorAt(x.Args[0], "task.all expects a list of fn() taking nothing "+
 						"and returning nothing, got []%s", elem)
 				}
 				return Void

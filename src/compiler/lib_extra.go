@@ -291,7 +291,7 @@ func buildExtraBuiltins() {
 					return Float
 				}
 				if len(args) > 0 && !args[0].IsUnknown() {
-					c.errorAt(x, "%s expects a list of numbers, got %s", name, args[0])
+					c.ErrorAt(x, "%s expects a list of numbers, got %s", name, args[0])
 				}
 				return Unknown
 			},
@@ -379,7 +379,7 @@ func buildExtraBuiltins() {
 					return Unknown
 				}
 				if len(args) > 1 && args[1].Kind != KInt {
-					c.errorAt(x, "rand.sample expects a count, got %s", args[1])
+					c.ErrorAt(x, "rand.sample expects a count, got %s", args[1])
 					return Unknown
 				}
 				return args[0]
@@ -399,11 +399,11 @@ func buildExtraBuiltins() {
 			check: func(c *Checker, x *Call, args []*Type) *Type {
 				if len(args) < 2 || args[0].Kind != KList ||
 					(args[0].Elem.Kind != KInt && args[0].Elem.Kind != KFloat) {
-					c.errorAt(x, "stats.percentile expects a list of numbers and a percentage")
+					c.ErrorAt(x, "stats.percentile expects a list of numbers and a percentage")
 					return Unknown
 				}
 				if args[1].Kind != KFloat && args[1].Kind != KInt {
-					c.errorAt(x, "stats.percentile expects a percentage, got %s", args[1])
+					c.ErrorAt(x, "stats.percentile expects a percentage, got %s", args[1])
 					return Unknown
 				}
 				return Float

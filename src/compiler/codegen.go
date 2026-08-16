@@ -321,7 +321,7 @@ func NewCodegen(srcPath, target string) *Codegen {
 	}
 }
 
-func (c *Codegen) errorAt(n Node, format string, args ...any) {
+func (c *Codegen) ErrorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
 	c.Errors = append(c.Errors,
 		fmt.Sprintf("%s:%d:%d: %s", c.srcPath, line, col, fmt.Sprintf(format, args...)))
@@ -1170,7 +1170,7 @@ func (c *Codegen) call(x *Call) string {
 
 	if b, isBuiltin := builtins[name]; isBuiltin {
 		if b.osOnly != "" && b.osOnly != c.target {
-			c.errorAt(x, "%s() is only available on %s (building for %s)",
+			c.ErrorAt(x, "%s() is only available on %s (building for %s)",
 				name, b.osOnly, c.target)
 			return "nil"
 		}
