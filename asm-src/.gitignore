@@ -1,0 +1,8 @@
+# compiler binary
+/veylasm
+/veylasm.exe
+
+# programs built from examples
+examples/*.exe
+examples/*.s
+examples/*.o
