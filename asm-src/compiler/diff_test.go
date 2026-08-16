@@ -121,14 +121,16 @@ func TestUnsupportedIsAnError(t *testing.T) {
 	// they started compiling, the assertion that they could not failed,
 	// and the boundary moved on purpose rather than by drift.
 	cases := map[string]string{
-		"float":      "let x = 1.5\nprint(x)\n",
-		"string":     "let s = \"hi\"\nprint(s)\n",
-		"unknown fn": "print(sqrt(4))\n",
-		"undefined":  "print(nope)\n",
-		"function":   "fn f() -> int { return 1 }\nprint(f())\n",
-		"for loop":   "for i in 1..3 { print(i) }\n",
-		"list":       "let xs = [1, 2]\nprint(xs[0])\n",
-		"bitwise":    "print(6 & 3)\n",
+		"float":        "let x = 1.5\nprint(x)\n",
+		"unknown fn":   "print(sqrt(4))\n",
+		"undefined":    "print(nope)\n",
+		"list":         "let xs = [1, 2]\nprint(xs[0])\n",
+		"map":          "let m = {1: 2}\nprint(m[1])\n",
+		"struct":       "struct P {\n x: int\n}\nlet p = P{x: 1}\nprint(p.x)\n",
+		"arity":        "fn f(a: int) -> int { return a }\nprint(f(1, 2))\n",
+		"bad annot":    "let x: int = \"hi\"\nprint(x)\n",
+		"str minus":    "print(\"a\" - \"b\")\n",
+		"out of scope": "if true {\n let inner = 1\n}\nprint(inner)\n",
 	}
 
 	for name, src := range cases {

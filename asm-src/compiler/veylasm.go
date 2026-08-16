@@ -75,16 +75,16 @@ func main() {
 		fail("cannot read %s: %v", args[1], err)
 	}
 
-	fn := compile(string(source), path)
+	mod := compile(string(source), path)
 
 	switch cmd {
 	case "ir":
-		fmt.Print(fn)
+		fmt.Print(mod)
 	case "asm":
-		fmt.Print(Emit(fn))
+		fmt.Print(Emit(mod))
 	case "build":
 		out := strings.TrimSuffix(path, filepath.Ext(path)) + ".exe"
-		buildExe(fn, out)
+		buildExe(mod, out)
 		fmt.Printf("wrote %s\n", out)
 	case "run":
 		tmp, err := os.MkdirTemp("", "veylasm-*")
@@ -93,7 +93,7 @@ func main() {
 		}
 		defer os.RemoveAll(tmp)
 		out := filepath.Join(tmp, "prog.exe")
-		buildExe(fn, out)
+		buildExe(mod, out)
 		run := exec.Command(out)
 		run.Stdout, run.Stderr, run.Stdin = os.Stdout, os.Stderr, os.Stdin
 		if err := run.Run(); err != nil {
@@ -110,7 +110,7 @@ func main() {
 
 // compile runs the front end and lowers to IR, reporting every error it
 // found in source order rather than only the first.
-func compile(source, path string) *Func {
+func compile(source, path string) *Module {
 	lex := NewLexer(path, source)
 	tokens := lex.Scan()
 
@@ -121,11 +121,11 @@ func compile(source, path string) *Func {
 		report(errs)
 	}
 
-	fn, lowerErrs := Lower(prog, path)
+	mod, lowerErrs := Lower(prog, path)
 	if len(lowerErrs) > 0 {
 		report(lowerErrs)
 	}
-	return fn
+	return mod
 }
 
 func report(errs []string) {
@@ -138,7 +138,7 @@ func report(errs []string) {
 }
 
 // buildExe writes the assembly, then assembles and links it.
-func buildExe(fn *Func, out string) {
+func buildExe(mod *Module, out string) {
 	tmp, err := os.MkdirTemp("", "veylasm-build-*")
 	if err != nil {
 		fail("%v", err)
@@ -148,7 +148,7 @@ func buildExe(fn *Func, out string) {
 	asmPath := filepath.Join(tmp, "prog.s")
 	objPath := filepath.Join(tmp, "prog.o")
 
-	if err := os.WriteFile(asmPath, []byte(Emit(fn)), 0o644); err != nil {
+	if err := os.WriteFile(asmPath, []byte(Emit(mod)), 0o644); err != nil {
 		fail("%v", err)
 	}
 
