@@ -152,28 +152,60 @@ func buildExe(mod *Module, out string) {
 		fail("%v", err)
 	}
 
-	as, cc := findToolchain()
+	as, cc, binDir := findToolchain()
 
-	if outp, err := exec.Command(as, asmPath, "-o", objPath).CombinedOutput(); err != nil {
+	if outp, err := toolchainCmd(binDir, as, asmPath, "-o", objPath).CombinedOutput(); err != nil {
 		fail("the assembler rejected the generated code. This is a compiler "+
 			"bug, not a mistake in your program.\n%s\n%s", err, outp)
 	}
-	if outp, err := exec.Command(cc, objPath, "-o", out).CombinedOutput(); err != nil {
+	if outp, err := toolchainCmd(binDir, cc, objPath, "-o", out).CombinedOutput(); err != nil {
 		fail("linking failed.\n%s\n%s", err, outp)
 	}
+}
+
+// toolchainCmd runs a MinGW tool with MinGW's bin directory on PATH.
+//
+// Finding gcc.exe by absolute path is not enough. gcc spawns collect2,
+// which spawns ld, and ld lives in a different directory from the DLLs
+// it needs. With MinGW off PATH - the normal state of a Windows machine
+// that has it - ld cannot load them and exits 53, and the only thing
+// that reaches the surface is "ld returned 53 exit status".
+//
+// This cost a real debugging session because it depends on the shell:
+// Git Bash happens to carry compatible DLLs on PATH, so the same command
+// worked there and failed from cmd.
+//
+// The Go backend has the same shape of problem and answers it the same
+// way, by setting GOROOT for its child. Nothing is added to this
+// process's own PATH, so a developer's own toolchain stays unshadowed.
+func toolchainCmd(binDir, exe string, args ...string) *exec.Cmd {
+	cmd := exec.Command(exe, args...)
+	if binDir == "" {
+		return cmd
+	}
+	env := os.Environ()
+	for i, kv := range env {
+		if len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
+			env[i] = "PATH=" + binDir + string(os.PathListSeparator) + kv[5:]
+			cmd.Env = env
+			return cmd
+		}
+	}
+	cmd.Env = append(env, "PATH="+binDir)
+	return cmd
 }
 
 // findToolchain locates the assembler and linker. MinGW is not usually
 // on PATH on a Windows machine that has it, so the known install
 // locations are checked too, the same way findGo does on the Go backend.
-func findToolchain() (as string, cc string) {
+func findToolchain() (as string, cc string, binDir string) {
 	if env := os.Getenv("VEYL_MINGW"); env != "" {
-		return filepath.Join(env, "as.exe"), filepath.Join(env, "gcc.exe")
+		return filepath.Join(env, "as.exe"), filepath.Join(env, "gcc.exe"), env
 	}
 
 	if a, err := exec.LookPath("as"); err == nil {
 		if c, err := exec.LookPath("gcc"); err == nil {
-			return a, c
+			return a, c, filepath.Dir(c)
 		}
 	}
 
@@ -186,14 +218,14 @@ func findToolchain() (as string, cc string) {
 		a := filepath.Join(dir, "as.exe")
 		c := filepath.Join(dir, "gcc.exe")
 		if exists(a) && exists(c) {
-			return a, c
+			return a, c, dir
 		}
 	}
 
 	fail("cannot find an assembler. veylasm needs MinGW's `as` and `gcc`.\n" +
 		"Install MSYS2 and its mingw-w64 toolchain, or set VEYL_MINGW to the\n" +
 		"folder holding as.exe and gcc.exe.")
-	return "", ""
+	return "", "", ""
 }
 
 func exists(p string) bool {
