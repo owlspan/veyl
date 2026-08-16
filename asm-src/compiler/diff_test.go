@@ -124,7 +124,7 @@ func TestUnsupportedIsAnError(t *testing.T) {
 		"float":        "let x = 1.5\nprint(x)\n",
 		"unknown fn":   "print(sqrt(4))\n",
 		"undefined":    "print(nope)\n",
-		"empty list":   "let xs: []int = []\nprint(len(xs))\n",
+		"bare empty":   "let xs = []\nprint(len(xs))\n",
 		"nested list":  "let xs = [[1], [2]]\nprint(xs[0])\n",
 		"mixed list":   "let xs = [1, \"two\"]\nprint(xs[0])\n",
 		"map":          "let m = {1: 2}\nprint(m[1])\n",

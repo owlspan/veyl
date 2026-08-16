@@ -16,41 +16,64 @@ hello.vy  ->  [veylasm]  ->  hello.s  ->  [as, ld]  ->  hello.exe
 
 ## Status
 
-A working subset, compiled all the way to a running `.exe`:
+A working subset, compiled all the way to a running `.exe` with no Go
+anywhere in the pipeline:
 
-- integer arithmetic, `+ - * / %` and unary `-`
-- `let`, plain and compound assignment (`+= -= *= /= %=`)
-- comparisons, `&&`, `||`, `!`, and bools that print as `true`/`false`
-- `if` / `else`, `while`, `break`, `continue`, nested to any depth
-- `print` of an int or a bool
+- integers, bools and strings; `let`, `const`, plain and compound
+  assignment; block scoping with shadowing
+- all arithmetic, comparisons, `&&`, `||`, `!`, and the bitwise
+  operators including signed shifts
+- `if` / `else`, `while`, `for` over a range with `step`, `for x in xs`,
+  `break`, `continue`, `match`, nested to any depth
+- functions with up to any number of arguments, recursion, and
+  order-independent declaration
+- string concatenation, comparison, and full `"{interpolation}"`
+- lists: literals, indexing, index assignment, `push`, `len`, iteration,
+  and bounds checks that print the Go backend's exact sentence
+- `print`, `write`, `str`, `len`, `abs`, `min`, `max`, `upper`, `lower`,
+  `substr`, `charAt`, `indexOf`, `contains`, `startsWith`, `endsWith`,
+  `repeat`
 
 Everything else is a clear compile error naming what is missing:
-floats, strings, functions, `for`, lists, bitwise operators.
+floats, maps, structs, closures, the error type `T!`, and the
+namespaced libraries.
 
 ```
-$ veylasm run examples/primes.vy
-2
-3
-5
-...
-17
+$ veylasm run examples/functions.vy
+49
+6765
+21
 ```
 
-`examples/collatz.vy` is the honest benchmark - nested loops, 10,000
-iterations of real integer work - through both backends:
+`examples/collatz.vy` is the benchmark - nested loops, 10,000 iterations
+of real integer work - through both backends:
 
 | | via Go | via assembly |
 | --- | ---: | ---: |
-| runtime, best of 5 | 49 ms | 58 ms |
-| executable size | 2,524,160 bytes | 122,932 bytes |
+| runtime, best of 5 | 67 ms | 81 ms |
+| executable size | 2,524,160 bytes | 123,027 bytes |
 
-**18% slower and 20x smaller**, and most of that 122 KB is MinGW's C
-runtime rather than anything this compiler produced.
+**About 20% slower and 20x smaller**, and most of that 123 KB is
+MinGW's C runtime rather than anything this compiler produced.
 
-The speed gap is smaller than expected this early, and it will get
-worse before it gets better: every value currently round-trips through
-a stack slot, and Go's optimiser is doing real work that nothing here
-does yet. Do not read 18% as a finish line.
+Do not read that gap as a finish line. Every value still round-trips
+through a stack slot, and Go's optimiser is doing work nothing here
+does. It will widen on bigger programs before a register allocator
+closes it.
+
+## What it does not have
+
+**No type checker.** `check.go` lives in `../src` and is not shared,
+because it and the builtin table need each other and the code
+generator at once. This backend tracks int, bool, str and list only far
+enough to pick the right instruction - which `print`, whether `+` means
+add or concatenate. A wrong program still compiles to something. Run it
+through the Go backend first.
+
+**No collector.** Every string concatenation and every list allocates
+and nothing is ever freed. This is the single largest thing between
+here and the Go backend, and it is the reason the roadmap's memory
+model sits at 11%.
 
 ## Why assembly text and not machine code
 

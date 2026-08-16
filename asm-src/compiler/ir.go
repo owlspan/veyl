@@ -281,6 +281,11 @@ type lowerer struct {
 
 	loops []loopTarget
 	sigs  map[string]sig
+
+	// hint is the type the surrounding context expects. An empty list
+	// literal has no element to infer from, so `let xs: []int = []` can
+	// only work if the annotation reaches the literal.
+	hint vty
 }
 
 type loopTarget struct {
@@ -467,7 +472,15 @@ func (l *lowerer) mark(label int64) {
 func (l *lowerer) stmt(s Stmt) {
 	switch st := s.(type) {
 	case *LetStmt:
+		saved := l.hint
+		if st.Type != "" {
+			if want, ok := typeOfName(st.Type); ok {
+				l.hint = want
+			}
+		}
 		v := l.expr(st.Value)
+		l.hint = saved
+
 		t := l.regTy[v]
 		if st.Type != "" {
 			declared, ok := typeOfName(st.Type)
@@ -817,6 +830,25 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			l.emit(Instr{Op: OpPrintStr, A: a, Dst: NoReg, Comment: "print"})
 		default:
 			l.emit(Instr{Op: OpPrintInt, A: a, Dst: NoReg, Comment: "print"})
+		}
+		return l.void()
+
+	case "write":
+		if !arity(1) {
+			return l.junk()
+		}
+		a := l.expr(c.Args[0])
+		switch l.regTy[a].k {
+		case kStr:
+			l.emit(Instr{Op: OpWriteStr, A: a, Dst: NoReg, Comment: "write"})
+		case kBool:
+			l.mod.needs("booltostr")
+			d := l.newReg()
+			l.regTy[d] = vStr
+			l.emit(Instr{Op: OpBoolToStr, Dst: d, A: a, B: NoReg})
+			l.emit(Instr{Op: OpWriteStr, A: d, Dst: NoReg})
+		default:
+			l.emit(Instr{Op: OpWriteInt, A: a, Dst: NoReg, Comment: "write"})
 		}
 		return l.void()
 
@@ -1295,8 +1327,13 @@ func (f *Func) String() string {
 // a literal with no annotation to guide it.
 func (l *lowerer) listLit(x *ListLit) Reg {
 	if len(x.Elems) == 0 {
-		l.errorAt(x, "an empty list literal needs an annotation the assembly backend cannot read yet")
-		return l.junk()
+		if l.hint.k != kList {
+			l.errorAt(x, "an empty list needs an annotation saying what it holds, as in let xs: []int = []")
+			return l.junk()
+		}
+		list := l.newList(l.hint, 0)
+		l.regTy[list] = l.hint
+		return list
 	}
 
 	vals := make([]Reg, len(x.Elems))
