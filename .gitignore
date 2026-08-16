@@ -3,3 +3,15 @@
 # would double the repo for nothing, and being ignored is what lets it
 # survive the `git reset --hard` that is exactly when you want it.
 Working version/
+
+# Personal notes, not for the public repo. These were ignored from
+# src/.gitignore until the docs moved up here; the rules had to move
+# with them.
+/CLAUDE.md
+/docs/ARCHITECTURE.md
+/docs/HOW-IT-WORKS.md
+/docs/PACKAGES.md
+/docs/ROADMAP.md
+/docs/NIGHT-LOG.md
+/docs/INTERVIEW-PREP.md
+/docs/PRACTICE.md
