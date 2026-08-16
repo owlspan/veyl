@@ -18,11 +18,14 @@ package main
 // folder alone still runs its other tests.
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func goBackend(t *testing.T) string {
@@ -48,6 +51,25 @@ func asmBackend(t *testing.T) string {
 	return out
 }
 
+// runBounded compiles and runs one program under a deadline.
+//
+// A miscompile does not always produce wrong output. Lowering `i += 1`
+// as `i = 1` made every counting loop run forever, which produces no
+// output at all - so without a deadline the test suite hangs instead of
+// failing, and a hang tells you nothing about which program broke.
+func runBounded(t *testing.T, backend, src string) ([]byte, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, backend, "run", src).CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("%s did not finish within 30s, which usually means "+
+			"a loop was miscompiled into one that never ends", filepath.Base(backend))
+	}
+	return out, err
+}
+
 func TestBackendsAgree(t *testing.T) {
 	veyl := goBackend(t)
 	veylasm := asmBackend(t)
@@ -65,13 +87,13 @@ func TestBackendsAgree(t *testing.T) {
 		t.Run(filepath.Base(src), func(t *testing.T) {
 			t.Parallel()
 
-			wantOut, wantErr := exec.Command(veyl, "run", src).CombinedOutput()
+			wantOut, wantErr := runBounded(t, veyl, src)
 			if wantErr != nil {
 				t.Fatalf("the Go backend could not run this program, so there is "+
 					"nothing to compare against: %v\n%s", wantErr, wantOut)
 			}
 
-			gotOut, gotErr := exec.Command(veylasm, "run", src).CombinedOutput()
+			gotOut, gotErr := runBounded(t, veylasm, src)
 			if gotErr != nil {
 				t.Fatalf("the assembly backend failed: %v\n%s", gotErr, gotOut)
 			}
@@ -94,13 +116,19 @@ func TestUnsupportedIsAnError(t *testing.T) {
 	veylasm := asmBackend(t)
 	dir := t.TempDir()
 
+	// Keep this list honest as the subset grows. `while` and comparisons
+	// were here until branches landed, and this test is what said so:
+	// they started compiling, the assertion that they could not failed,
+	// and the boundary moved on purpose rather than by drift.
 	cases := map[string]string{
 		"float":      "let x = 1.5\nprint(x)\n",
 		"string":     "let s = \"hi\"\nprint(s)\n",
-		"while loop": "let i = 0\nwhile i < 3 { i += 1 }\nprint(i)\n",
 		"unknown fn": "print(sqrt(4))\n",
 		"undefined":  "print(nope)\n",
-		"comparison": "print(1 < 2)\n",
+		"function":   "fn f() -> int { return 1 }\nprint(f())\n",
+		"for loop":   "for i in 1..3 { print(i) }\n",
+		"list":       "let xs = [1, 2]\nprint(xs[0])\n",
+		"bitwise":    "print(6 & 3)\n",
 	}
 
 	for name, src := range cases {

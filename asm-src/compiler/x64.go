@@ -89,6 +89,12 @@ func Emit(f *Func) string {
 	e.b.WriteString("\n    .section .rdata\n")
 	e.label("__fmt_int")
 	e.b.WriteString("    .asciz \"%lld\\n\"\n")
+	e.label("__fmt_str")
+	e.b.WriteString("    .asciz \"%s\\n\"\n")
+	e.label("__str_true")
+	e.b.WriteString("    .asciz \"true\"\n")
+	e.label("__str_false")
+	e.b.WriteString("    .asciz \"false\"\n")
 	e.b.WriteString("\n    .text\n")
 	e.label("main")
 
@@ -169,12 +175,70 @@ func (e *Emitter) instr(in Instr) {
 		e.line("neg rax")
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
+	case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
+		// cmp sets the flags; setcc turns one flag combination into a
+		// single 0 or 1 byte. setcc only writes 8 bits, so the register
+		// is zeroed first - otherwise the upper 56 bits keep whatever
+		// the last operation left there, and a "true" compares unequal
+		// to 1. The zeroing must come before cmp, because xor writes
+		// flags of its own.
+		//
+		// The signed forms (l/le/g/ge) are correct because Veyl integers
+		// are signed. An unsigned type would need b/be/a/ae instead.
+		cc := map[Op]string{
+			OpEq: "e", OpNe: "ne", OpLt: "l", OpLe: "le", OpGt: "g", OpGe: "ge",
+		}[in.Op]
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("xor edx, edx")
+		e.line("cmp rax, rcx")
+		e.line("set%s dl", cc)
+		e.line("mov %s, rdx", e.regAddr(in.Dst))
+
+	case OpNot:
+		// !x is x == 0.
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("xor edx, edx")
+		e.line("test rax, rax")
+		e.line("sete dl")
+		e.line("mov %s, rdx", e.regAddr(in.Dst))
+
+	case OpLabel:
+		e.label(fmt.Sprintf(".L%d", in.Imm))
+
+	case OpJump:
+		e.line("jmp .L%d", in.Imm)
+
+	case OpJumpIf:
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("test rax, rax")
+		e.line("jne .L%d", in.Imm)
+
+	case OpJumpNot:
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("test rax, rax")
+		e.line("je .L%d", in.Imm)
+
 	case OpPrintInt:
 		// Windows x64: first two integer arguments in rcx and rdx. The
 		// shadow space is already part of the frame, so rsp needs no
 		// adjustment here.
 		e.line("lea rcx, __fmt_int[rip]")
 		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("call printf")
+
+	case OpPrintBool:
+		// cmov rather than a branch: it picks between the two string
+		// pointers with no jump, which keeps this to one basic block.
+		// The false pointer is loaded first so that cmovne can overwrite
+		// it, since cmov cannot take an address operand as its source.
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("lea rcx, __str_false[rip]")
+		e.line("lea rdx, __str_true[rip]")
+		e.line("test rax, rax")
+		e.line("cmovne rcx, rdx")
+		e.line("mov rdx, rcx")
+		e.line("lea rcx, __fmt_str[rip]")
 		e.line("call printf")
 
 	default:

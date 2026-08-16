@@ -6,3 +6,6 @@
 examples/*.exe
 examples/*.s
 examples/*.o
+
+# leftover build artifacts
+*~

@@ -16,28 +16,41 @@ hello.vy  ->  [veylasm]  ->  hello.s  ->  [as, ld]  ->  hello.exe
 
 ## Status
 
-A vertical slice. It handles integer arithmetic, `let`, plain
-assignment, and `print`, and it compiles them all the way to a running
-`.exe`. Everything else is a clear compile error naming what is missing.
+A working subset, compiled all the way to a running `.exe`:
+
+- integer arithmetic, `+ - * / %` and unary `-`
+- `let`, plain and compound assignment (`+= -= *= /= %=`)
+- comparisons, `&&`, `||`, `!`, and bools that print as `true`/`false`
+- `if` / `else`, `while`, `break`, `continue`, nested to any depth
+- `print` of an int or a bool
+
+Everything else is a clear compile error naming what is missing:
+floats, strings, functions, `for`, lists, bitwise operators.
 
 ```
-$ veylasm run examples/slice.vy
-5
-34
-8
+$ veylasm run examples/primes.vy
 2
-66
-156
+3
+5
+...
+17
 ```
 
-That same program through both backends:
+`examples/collatz.vy` is the honest benchmark - nested loops, 10,000
+iterations of real integer work - through both backends:
 
 | | via Go | via assembly |
 | --- | ---: | ---: |
-| executable size | 2,524,672 bytes | 122,845 bytes |
+| runtime, best of 5 | 49 ms | 58 ms |
+| executable size | 2,524,160 bytes | 122,932 bytes |
 
-and most of the 122 KB is MinGW's C runtime rather than anything the
-compiler produced.
+**18% slower and 20x smaller**, and most of that 122 KB is MinGW's C
+runtime rather than anything this compiler produced.
+
+The speed gap is smaller than expected this early, and it will get
+worse before it gets better: every value currently round-trips through
+a stack slot, and Go's optimiser is doing real work that nothing here
+does yet. Do not read 18% as a finish line.
 
 ## Why assembly text and not machine code
 
@@ -58,24 +71,29 @@ must be one instruction whose bytes we could write ourselves.
 
 ```
 asm-src/
-  go.mod
+  go.mod            requires ../frontend
   compiler/
-    token.go  lexer.go  ast.go  types.go  parser.go   shared front end
-    ir.go       AST -> three-address IR over virtual registers
-    x64.go      IR  -> x86-64, GNU as with Intel syntax
-    veylasm.go  the driver
+    frontend.go     type aliases onto the shared front end
+    ir.go           AST -> three-address IR over virtual registers
+    x64.go          IR  -> x86-64, GNU as with Intel syntax
+    veylasm.go      the driver
     diff_test.go
   examples/
 ```
 
-The five front-end files are copies of the ones in `../src/compiler`.
-They compile unchanged because the lexer, parser, AST and type
-representation never knew which backend they were feeding. **They are
-copies, and that is temporary**: two copies of a language definition
-drift, and the fix is to extract them into a package both backends
-import. That should happen before this backend grows much further.
+The lexer, parser, AST and types live in `../frontend` and are shared
+with the Go backend, so both compile the same language from one
+definition. `frontend.go` is nothing but Go type aliases, which is what
+lets the rest of this package write `Expr` and `PLUS` unqualified.
 
 `ir.go` is the boundary. Nothing in it knows an x86 register exists.
+
+One real gap: the **type checker is not shared yet**, so this backend
+does almost no checking. It tracks int against bool, purely so that
+`print` of a comparison writes `true` rather than `1`, and that is all.
+A program that is wrong will still compile to something. Run it through
+the Go backend first. Sharing `check.go` is blocked on the builtin
+table, which needs the checker and the code generator at once.
 
 ## Commands
 
@@ -122,10 +140,16 @@ away when `x64.go` learns to write bytes.
 
 ## What comes next
 
-Comparisons and branches, then `while`, then functions and the full
-calling convention. After that a real register allocator, because every
-value currently round-trips through the stack, which is correct and
-slow.
+Functions and the full calling convention, which is the next real piece
+of design: argument registers, callee-saved registers, and a frame that
+survives a nested call.
+
+Then a register allocator, because every value currently round-trips
+through a stack slot. That is where the 18% turns into something
+better, and it is one function - `regAddr` - that has to change.
+
+Then sharing the type checker, so this stops being a backend that
+trusts its input.
 
 Then the part that removes the toolchain: an encoder, and a PE writer
 with an import table for kernel32.
