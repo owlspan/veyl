@@ -189,13 +189,22 @@ away when `x64.go` learns to write bytes.
 
 In dependency order, with the reasoning rather than just the list.
 
-**1. The object header.** Before structs and closures multiply the
-number of places that allocate, decide the shape of a heap object: a
-header word saying what it is and how big. A collector has to tell a
-pointer from an integer at runtime, and right now every value is an
-anonymous eight bytes, so it cannot. This is cheap now and expensive
-later, and it does not require writing a collector - only making one
-possible.
+**1. The object header. Done.** Every heap allocation carries one word
+in front of it: `size << 8 | tag`, where the tag says whether the block
+is raw bytes, word slots holding no pointers, word slots that are all
+pointers, or a list header. `allocObj` in `list.go`.
+
+It buys nothing today. A collector has to tell a pointer from an
+integer at runtime, and every value here is an anonymous eight bytes,
+so nothing in the heap could say. The tag says it for a whole block at
+once. Done before structs and closures multiplied the number of places
+that allocate, because retrofitting it across all of them costs far
+more than adding it to four sites.
+
+One thing it does not cover: **string literals are static rather than
+heap-allocated, so they have no header.** A collector will meet
+pointers that do not point into the heap at all. That is a constraint
+to design around, not an oversight.
 
 **2. Maps.** Four programs in the Go suite block on it. Same approach
 as lists: a header plus a hash table built in the IR out of the memory
