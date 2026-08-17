@@ -36,13 +36,19 @@ anywhere in the pipeline:
   `float`, `divf`, `sqrt`, `mod`, `upper`, `lower`, `substr`, `charAt`,
   `indexOf`, `contains`, `startsWith`, `endsWith`, `repeat`
 - the constants `PI` and `E`
+- namespaced calls at any depth, of which `time.now` is so far the
+  only one implemented
 
 Everything else is a compile error naming what is missing: maps,
-structs, closures, the error type `T!`, nullable `?T`, and the
-namespaced libraries.
+structs, closures, the error type `T!`, nullable `?T`, and all but one
+of the namespaced library functions.
+
+Every heap allocation carries an object header - a size and a tag
+saying whether the block holds pointers - so that a collector is
+possible. There is still no collector.
 
 It compiles 4 of the 24 programs in the Go backend's own test suite,
-and every one of the 12 programs in `examples/` produces byte-identical
+and every one of the 13 programs in `examples/` produces byte-identical
 output through both backends.
 
 ```
@@ -206,27 +212,49 @@ heap-allocated, so they have no header.** A collector will meet
 pointers that do not point into the heap at all. That is a constraint
 to design around, not an oversight.
 
-**2. Maps.** Four programs in the Go suite block on it. Same approach
+**2. Namespaced calls. Done.** The lowerer required a plain identifier
+as the callee, so nothing under `os.`, `time.`, `mem.` and the rest
+could be called at all. It now flattens the callee with `DottedName`
+and looks that string up like any other builtin, at any depth:
+`os.file.write` arrives as one name. A namespace is a naming
+convention, not a scope, exactly as on the Go backend.
+
+`time.now` is implemented as the proof, and is the only one so far.
+
+Adding another is two edits - a signature in `library.go` and a case in
+`builtin` in `ir.go` - but it is not the Go backend's one-liner. There
+`emit` returns a line of Go and the standard library does the work;
+here you write IR and usually a libc call. A function absent from
+`library.go` is a type error naming it, so the subset stays honest
+without anyone maintaining a list of what is missing.
+
+The one that should come before writing many of them is the **error
+type `T!`**. Every library function in Veyl reports failure as `T!`
+rather than panicking, and without results here they can only be
+ported in a lying form. It changes the calling convention too, so doing
+it after twenty of them exist means rewriting twenty.
+
+**3. Maps.** Seven programs in the Go suite block on it. Same approach
 as lists: a header plus a hash table built in the IR out of the memory
 ops that already exist, with the byte ops in `strings.go` available for
 hashing. One real design call - the Go backend sorts keys on iteration
 so output is stable, and matching that means either sorting per
 iteration or keeping insertion order.
 
-**3. Structs.** Cheapest of the remaining big three: fixed field
+**4. Structs.** Cheapest of the remaining big three: fixed field
 offsets, no allocation strategy to invent, and `alloc`/`loadmem`/
 `storemem` already do everything needed.
 
-**4. A register allocator.** Where the 20% gap starts closing. Do it
+**5. A register allocator.** Where the 20% gap starts closing. Do it
 after functions exist - which they now do - because the whole
 difficulty is knowing which values are live across a call, and a
 version written before calls existed would be written twice.
 
-**5. The collector.** Needs step 1 done first. Budget a whole session
+**6. The collector.** Needs step 1, which is done. Budget a whole session
 minimum; a collector that frees one live object produces a bug that
 surfaces somewhere else entirely, hours later.
 
-**6. The byte writer and PE emitter.** What finally removes the MinGW
+**7. The byte writer and PE emitter.** What finally removes the MinGW
 dependency. Mechanical by then: `x64.go` is replaced and nothing above
 it changes.
 
