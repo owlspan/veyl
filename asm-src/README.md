@@ -115,6 +115,9 @@ asm-src/
     frontend.go     type aliases onto the shared front end
     ir.go           AST -> three-address IR over virtual registers
     x64.go          IR  -> x86-64, GNU as with Intel syntax
+    library.go      asmLibrary - the builtin table, for the checker
+    list.go         lists, built in the IR
+    strings.go      the string library, built in the IR
     veylasm.go      the driver
     diff_test.go
   examples/
@@ -127,12 +130,17 @@ lets the rest of this package write `Expr` and `PLUS` unqualified.
 
 `ir.go` is the boundary. Nothing in it knows an x86 register exists.
 
-One real gap: the **type checker is not shared yet**, so this backend
-does almost no checking. It tracks int against bool, purely so that
-`print` of a comparison writes `true` rather than `1`, and that is all.
-A program that is wrong will still compile to something. Run it through
-the Go backend first. Sharing `check.go` is blocked on the builtin
-table, which needs the checker and the code generator at once.
+**The type checker is shared too, as of the last commit.** What
+unblocked it was the builtin table: the two backends do not have the
+same set of builtins, so the checker could not assume either one.
+`frontend/library.go` is the interface it asks instead, and
+`library.go` here implements it as `asmLibrary`. A builtin this backend
+lacks comes back as a clean "not on the assembly backend yet" error
+rather than a checker crash.
+
+So a wrong program is now caught here, with the same message the Go
+backend would give. The remaining gap is the **resolver**, described
+above - still `src`-only.
 
 ## Commands
 

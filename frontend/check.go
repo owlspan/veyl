@@ -1401,6 +1401,15 @@ func (c *Checker) call(x *Call) *Type {
 
 	if b, isBuiltin := c.lib.Signature(name); isBuiltin {
 		if b.Check != nil {
+			// The same rule Accepts applies on the fixed-signature path:
+			// an argument that already failed carries Unknown, and a
+			// second error about it is noise that buries the real one.
+			// Guarding at the seam rather than inside each custom check
+			// means a new one cannot forget to.
+			if anyUnknown(args) {
+				x.T = Unknown
+				return x.T
+			}
 			x.T = b.Check(c, x, args)
 			return x.T
 		}
@@ -1588,6 +1597,16 @@ func (c *Checker) checkBuiltin(x *Call, name string, b Signature, args []*Type) 
 		return b.RetOf(args)
 	}
 	return b.Ret
+}
+
+// anyUnknown reports whether an argument already failed to check.
+func anyUnknown(args []*Type) bool {
+	for _, a := range args {
+		if a != nil && a.Kind == KUnknown {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- untyped constants ----
