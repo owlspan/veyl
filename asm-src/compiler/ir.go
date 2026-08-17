@@ -215,6 +215,13 @@ const (
 	// needs to read and write single bytes rather than words.
 	OpLoadByte  // Dst = zero-extended byte at [A + B]
 	OpStoreByte // byte at [A + B] = low byte of the value in Imm's slot
+
+	// The first of the namespaced library functions. It is its own op
+	// rather than a general foreign call because the general one has to
+	// settle argument classification and shadow space first, and time()
+	// takes a null pointer and returns an integer - the one shape that
+	// needs none of that.
+	OpTimeNow // Dst = time(NULL)
 )
 
 var opNames = [...]string{
@@ -231,6 +238,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
+	"timenow",
 }
 
 func (o Op) String() string {
@@ -896,16 +904,21 @@ func constInt(e Expr) (int64, bool) {
 // ---- calls ----
 
 func (l *lowerer) call(c *Call) Reg {
-	name, ok := c.Callee.(*Ident)
+	// DottedName flattens both a plain identifier and a chain of field
+	// accesses, so `print` and `time.now` arrive here the same way. The
+	// checker has already refused any dotted name the library does not
+	// declare, which is why nothing below needs to guess whether a
+	// namespace exists.
+	name, ok := DottedName(c.Callee)
 	if !ok {
-		l.errorAt(c, "the assembly backend can only call a plain name so far")
+		l.errorAt(c, "the assembly backend cannot call this expression yet")
 		return l.junk()
 	}
 
-	if s, isUser := l.sigs[name.Name]; isUser {
+	if s, isUser := l.sigs[name]; isUser {
 		if len(c.Args) != len(s.params) {
 			l.errorAt(c, "%s takes %d argument(s), got %d",
-				name.Name, len(s.params), len(c.Args))
+				name, len(s.params), len(c.Args))
 			return l.junk()
 		}
 		args := make([]Reg, len(c.Args))
@@ -922,11 +935,11 @@ func (l *lowerer) call(c *Call) Reg {
 		d := l.newReg()
 		l.regTy[d] = s.ret
 		l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
-			ArgTypes: s.params, RetType: s.ret, Sym: name.Name, Comment: name.Name + "()"})
+			ArgTypes: s.params, RetType: s.ret, Sym: name, Comment: name + "()"})
 		return d
 	}
 
-	return l.builtin(c, name.Name)
+	return l.builtin(c, name)
 }
 
 // builtin covers the handful of library functions this backend has. The
@@ -942,6 +955,16 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	switch name {
+	case "time.now":
+		if !arity(0) {
+			return l.junk()
+		}
+		l.mod.needs("timenow")
+		d := l.newReg()
+		l.regTy[d] = vInt
+		l.emit(Instr{Op: OpTimeNow, Dst: d, A: NoReg, B: NoReg, Comment: "time.now()"})
+		return d
+
 	case "print":
 		if !arity(1) {
 			return l.junk()

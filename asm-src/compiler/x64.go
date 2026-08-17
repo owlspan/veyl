@@ -194,6 +194,9 @@ func (e *Emitter) externs() []string {
 	if e.mod.Helpers["alloc"] {
 		out = append(out, "malloc")
 	}
+	if e.mod.Helpers["timenow"] {
+		out = append(out, "time")
+	}
 	if e.mod.Helpers["bounds"] {
 		out = append(out, "snprintf", "_write", "exit")
 	}
@@ -508,6 +511,14 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov rsp, rbp")
 		e.line("pop rbp")
 		e.line("ret")
+
+	case OpTimeNow:
+		// time(NULL). A null argument means the return value is the only
+		// result, so there is nothing to spill and no pointer to keep
+		// alive across the call.
+		e.line("xor ecx, ecx")
+		e.line("call time")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
 
 	case OpPrintInt:
 		e.line("lea rcx, __fmt_int[rip]")

@@ -54,6 +54,17 @@ var sigs = map[string]front.Signature{
 	"startsWith": {Params: []*Type{Str, Str}, Ret: Bool},
 	"endsWith":   {Params: []*Type{Str, Str}, Ret: Bool},
 	"repeat":     {Params: []*Type{Str, Int}, Ret: Str},
+
+	// The namespaced library. A dotted name is looked up here exactly
+	// like a plain one - the checker flattens `time.now` to that string
+	// before asking - so a namespace is a naming convention rather than
+	// a scope, the same as on the Go backend.
+	//
+	// Everything else the Go backend puts under os, time, mem, json, re,
+	// hash, csv, net, http and task is absent, and absent here means a
+	// type error naming the function rather than something the lowerer
+	// discovers later.
+	"time.now": {Ret: Int},
 }
 
 func (asmLibrary) Signature(name string) (front.Signature, bool) {
