@@ -121,16 +121,21 @@ func TestUnsupportedIsAnError(t *testing.T) {
 	// they started compiling, the assertion that they could not failed,
 	// and the boundary moved on purpose rather than by drift.
 	cases := map[string]string{
-		"undefined":    "print(nope)\n",
-		"bare empty":   "let xs = []\nprint(len(xs))\n",
-		"nested list":  "let xs = [[1], [2]]\nprint(xs[0])\n",
-		"mixed list":   "let xs = [1, \"two\"]\nprint(xs[0])\n",
-		"map":          "let m = {1: 2}\nprint(m[1])\n",
-		"struct":       "struct P {\n x: int\n}\nlet p = P{x: 1}\nprint(p.x)\n",
-		"arity":        "fn f(a: int) -> int { return a }\nprint(f(1, 2))\n",
-		"bad annot":    "let x: int = \"hi\"\nprint(x)\n",
-		"str minus":    "print(\"a\" - \"b\")\n",
-		"out of scope": "if true {\n let inner = 1\n}\nprint(inner)\n",
+		"undefined":      "print(nope)\n",
+		"bare empty":     "let xs = []\nprint(len(xs))\n",
+		"nested list":    "let xs = [[1], [2]]\nprint(xs[0])\n",
+		"mixed list":     "let xs = [1, \"two\"]\nprint(xs[0])\n",
+		"bare empty map": "let m = {}\nprint(len(m))\n",
+		"nested map":     "let m = {\"a\": {\"b\": 1}}\nprint(len(m))\n",
+		"map of list":    "let m = {\"a\": [1, 2]}\nprint(len(m))\n",
+		"mixed map":      "let m = {\"a\": 1, \"b\": \"two\"}\nprint(len(m))\n",
+		"float key":      "let m = {1.5: 2}\nprint(len(m))\n",
+		"wrong key type": "let m: {str: int} = {\"a\": 1}\nprint(m[1])\n",
+		"struct":         "struct P {\n x: int\n}\nlet p = P{x: 1}\nprint(p.x)\n",
+		"arity":          "fn f(a: int) -> int { return a }\nprint(f(1, 2))\n",
+		"bad annot":      "let x: int = \"hi\"\nprint(x)\n",
+		"str minus":      "print(\"a\" - \"b\")\n",
+		"out of scope":   "if true {\n let inner = 1\n}\nprint(inner)\n",
 	}
 
 	for name, src := range cases {

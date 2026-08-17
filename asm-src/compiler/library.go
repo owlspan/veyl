@@ -110,10 +110,10 @@ func checkLen(c *Checker, x *Call, args []*Type) *Type {
 		return Unknown
 	}
 	switch args[0].Kind {
-	case KStr, KList:
+	case KStr, KList, KMap:
 		return Int
 	}
-	c.ErrorAt(x, "len needs a str or a list, got %s", args[0])
+	c.ErrorAt(x, "len needs a str, a list or a map, got %s", args[0])
 	return Unknown
 }
 

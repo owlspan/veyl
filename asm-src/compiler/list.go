@@ -65,6 +65,7 @@ const (
 	tagWords = 1 // eight-byte slots holding no pointers: []int, []float
 	tagPtrs  = 2 // eight-byte slots, every one a pointer: []str
 	tagList  = 3 // a list header: len, cap, and a pointer to the elements
+	tagMap   = 4 // a map header: len, cap, and pointers to keys and values
 )
 
 // elemTag reports how the element block of a list must be treated.
@@ -306,7 +307,21 @@ func (l *lowerer) printList(list Reg, t vty) {
 	l.regTy[v] = t.elemType()
 	l.emit(Instr{Op: OpLoadMem, Dst: v, A: addr, B: NoReg, Imm: 0})
 
-	switch t.elem {
+	l.writeValue(v, t.elem)
+
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: iSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+	l.mark(done)
+
+	l.writeLit("]\n")
+}
+
+// writeValue writes one element the way it appears inside a printed
+// list or map: strings quoted, bools as words, everything else plain.
+// Shared so that the two containers cannot drift apart in how they
+// render what they hold.
+func (l *lowerer) writeValue(v Reg, k vkind) {
+	switch k {
 	case kStr:
 		l.writeLit("\"")
 		l.emit(Instr{Op: OpWriteStr, A: v, Dst: NoReg})
@@ -323,12 +338,14 @@ func (l *lowerer) printList(list Reg, t vty) {
 	default:
 		l.emit(Instr{Op: OpWriteInt, A: v, Dst: NoReg})
 	}
+}
 
-	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: iSlot})
-	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
-	l.mark(done)
-
-	l.writeLit("]\n")
+// emptyStr is the interned "", used as the zero value for a str.
+func (l *lowerer) emptyStr() Reg {
+	r := l.newReg()
+	l.regTy[r] = vStr
+	l.emit(Instr{Op: OpStr, Dst: r, A: NoReg, B: NoReg, Imm: l.mod.intern("")})
+	return r
 }
 
 func (l *lowerer) writeLit(s string) {

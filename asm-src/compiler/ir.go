@@ -40,14 +40,17 @@ const (
 	kBool
 	kStr
 	kList
+	kMap
 )
 
-// A vty is a kind plus, for a list, the kind of its elements. One level
-// only: [][]int needs elem to be a vty rather than a vkind, and nothing
-// is served by paying for that before lists themselves work.
+// A vty is a kind plus, for a list, the kind of its elements, and for a
+// map, the kinds of its keys and values. One level only: [][]int needs
+// elem to be a vty rather than a vkind, and nothing is served by paying
+// for that before lists themselves work.
 type vty struct {
 	k    vkind
-	elem vkind
+	elem vkind // list: the element kind. map: the value kind.
+	key  vkind // map only: the key kind.
 }
 
 var (
@@ -58,10 +61,14 @@ var (
 	vStr   = vty{k: kStr}
 )
 
-func vListOf(e vkind) vty { return vty{k: kList, elem: e} }
+func vListOf(e vkind) vty     { return vty{k: kList, elem: e} }
+func vMapOf(kk, vk vkind) vty { return vty{k: kMap, elem: vk, key: kk} }
 
-// elemType is the type of what comes out of indexing this list.
+// elemType is the type of what comes out of indexing this list or map.
 func (t vty) elemType() vty { return vty{k: t.elem} }
+
+// keyType is the type of a map's keys.
+func (t vty) keyType() vty { return vty{k: t.key} }
 
 func (t vty) String() string {
 	switch t.k {
@@ -75,6 +82,8 @@ func (t vty) String() string {
 		return "str"
 	case kList:
 		return "[]" + vty{k: t.elem}.String()
+	case kMap:
+		return "{" + vty{k: t.key}.String() + ": " + vty{k: t.elem}.String() + "}"
 	}
 	return "void"
 }
@@ -100,6 +109,28 @@ func typeOfName(s string) (vty, bool) {
 			return vVoid, false
 		}
 		return vListOf(e.k), true
+	}
+	// {K: V}. The colon is found rather than split on, because neither a
+	// key nor a value type contains one at this depth - nested maps are
+	// rejected below along with every other compound.
+	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
+		body := s[1 : len(s)-1]
+		i := strings.Index(body, ":")
+		if i < 0 {
+			return vVoid, false
+		}
+		kt, kok := typeOfName(strings.TrimSpace(body[:i]))
+		vt, vok := typeOfName(strings.TrimSpace(body[i+1:]))
+		if !kok || !vok {
+			return vVoid, false
+		}
+		if kt.k != kInt && kt.k != kStr {
+			return vVoid, false
+		}
+		if vt.k == kVoid || vt.k == kList || vt.k == kMap {
+			return vVoid, false
+		}
+		return vMapOf(kt.k, vt.k), true
 	}
 	return vVoid, false
 }
@@ -222,6 +253,11 @@ const (
 	// takes a null pointer and returns an integer - the one shape that
 	// needs none of that.
 	OpTimeNow // Dst = time(NULL)
+
+	// Three-way string comparison, negative, zero or positive like the
+	// strcmp it calls. Needed to keep a map sorted by string key; the
+	// existing streq only answers equality.
+	OpStrCmp // Dst = strcmp(A, B)
 )
 
 var opNames = [...]string{
@@ -238,7 +274,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"timenow",
+	"timenow", "strcmp",
 }
 
 func (o Op) String() string {
@@ -675,11 +711,26 @@ func (l *lowerer) assign(st *AssignStmt) {
 			return
 		}
 		coll := l.expr(idx.X)
-		if l.regTy[coll].k != kList {
-			l.errorAt(st, "only a list can be indexed on this backend so far")
+		t := l.regTy[coll]
+		switch t.k {
+		case kList:
+			l.listSet(coll, l.expr(idx.Idx), l.expr(st.Value))
+			return
+		case kMap:
+			key := l.expr(idx.Idx)
+			if l.regTy[key].k != t.key {
+				l.errorAt(st, "this map is keyed by %s, but the index is %s", t.keyType(), l.regTy[key])
+				return
+			}
+			val := l.expr(st.Value)
+			if l.regTy[val].k != t.elem {
+				l.errorAt(st, "this map holds %s, but the value is %s", t.elemType(), l.regTy[val])
+				return
+			}
+			l.mapSet(coll, key, val, t)
 			return
 		}
-		l.listSet(coll, l.expr(idx.Idx), l.expr(st.Value))
+		l.errorAt(st, "only a list or a map can be indexed on this backend so far")
 		return
 	}
 
@@ -973,6 +1024,8 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		switch l.regTy[a].k {
 		case kList:
 			l.printList(a, l.regTy[a])
+		case kMap:
+			l.printMap(a, l.regTy[a])
 		case kFloat:
 			l.mod.needs("floattostr")
 			l.emit(Instr{Op: OpPrintFloat, A: a, Dst: NoReg, Comment: "print"})
@@ -1015,6 +1068,8 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		switch l.regTy[a].k {
 		case kList:
 			return l.field(a, listLenOff, vInt)
+		case kMap:
+			return l.field(a, mapLenOff, vInt)
 		case kStr:
 			l.mod.needs("strlen")
 			d := l.newReg()
@@ -1022,7 +1077,7 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			l.emit(Instr{Op: OpStrLen, Dst: d, A: a, B: NoReg})
 			return d
 		}
-		l.errorAt(c, "len needs a str or a list")
+		l.errorAt(c, "len needs a str, a list or a map")
 		return l.junk()
 
 	case "push":
@@ -1282,14 +1337,25 @@ func (l *lowerer) expr(e Expr) Reg {
 	case *ListLit:
 		return l.listLit(x)
 
+	case *MapLit:
+		return l.mapLit(x)
+
 	case *Index:
 		coll := l.expr(x.X)
 		t := l.regTy[coll]
-		if t.k != kList {
-			l.errorAt(x, "only a list can be indexed on this backend so far")
-			return l.junk()
+		switch t.k {
+		case kList:
+			return l.listGet(coll, l.expr(x.Idx), t.elemType())
+		case kMap:
+			key := l.expr(x.Idx)
+			if l.regTy[key].k != t.key {
+				l.errorAt(x, "this map is keyed by %s, but the index is %s", t.keyType(), l.regTy[key])
+				return l.junk()
+			}
+			return l.mapGet(coll, key, t)
 		}
-		return l.listGet(coll, l.expr(x.Idx), t.elemType())
+		l.errorAt(x, "only a list or a map can be indexed on this backend so far")
+		return l.junk()
 
 	case *Ident:
 		slot, ok := l.lookup(x.Name)
@@ -1678,6 +1744,61 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 	}
 	l.regTy[list] = t
 	return list
+}
+
+// mapLit builds a map from its entries. The key and value types come
+// from the first entry, or from the annotation when there is no first
+// entry - the same inference the Go backend does, and the same reason
+// an empty literal on its own cannot be typed.
+//
+// Entries are inserted through mapSet rather than written straight into
+// the blocks, so a literal that lists its keys out of order still ends
+// up sorted, and a literal that repeats a key keeps the last value.
+// Both match the Go backend.
+func (l *lowerer) mapLit(x *MapLit) Reg {
+	if len(x.Keys) == 0 {
+		if l.hint.k != kMap {
+			l.errorAt(x, "cannot tell what kind of map this is - annotate it, as in: let m: {str: int} = {}")
+			return l.junk()
+		}
+		return l.newMap(l.hint, 0)
+	}
+
+	keys := make([]Reg, len(x.Keys))
+	vals := make([]Reg, len(x.Vals))
+	for i := range x.Keys {
+		keys[i] = l.expr(x.Keys[i])
+		vals[i] = l.expr(x.Vals[i])
+	}
+
+	kk := l.regTy[keys[0]]
+	vk := l.regTy[vals[0]]
+	if kk.k != kInt && kk.k != kStr {
+		l.errorAt(x, "a map keyed by %s is not on the assembly backend yet", kk)
+		return l.junk()
+	}
+	if vk.k == kList || vk.k == kMap || vk.k == kVoid {
+		l.errorAt(x, "a map of %s is not on the assembly backend yet", vk)
+		return l.junk()
+	}
+	for i := range keys {
+		if l.regTy[keys[i]].k != kk.k {
+			l.errorAt(x.Keys[i], "this map is keyed by %s, but key %d is %s", kk, i, l.regTy[keys[i]])
+			return l.junk()
+		}
+		if l.regTy[vals[i]].k != vk.k {
+			l.errorAt(x.Vals[i], "this map holds %s, but value %d is %s", vk, i, l.regTy[vals[i]])
+			return l.junk()
+		}
+	}
+
+	t := vMapOf(kk.k, vk.k)
+	m := l.newMap(t, int64(len(keys)))
+	for i := range keys {
+		l.mapSet(m, keys[i], vals[i], t)
+	}
+	l.regTy[m] = t
+	return m
 }
 
 // match lowers a multi-way branch into a chain of comparisons.
