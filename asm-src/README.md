@@ -36,13 +36,13 @@ anywhere in the pipeline:
   `float`, `divf`, `sqrt`, `mod`, `upper`, `lower`, `substr`, `charAt`,
   `indexOf`, `contains`, `startsWith`, `endsWith`, `repeat`
 - the constants `PI` and `E`
-- namespaced calls at any depth, of which `time.now` is so far the
-  only one implemented
+- namespaced calls at any depth: `time.now`, `os.env.get`,
+  `os.env.has`
 - maps `{K: V}` with int or str keys: literals, get, set, `len`,
   `print`, growth, and a missing key reading the zero value
 
 Everything else is a compile error naming what is missing: structs,
-closures, the error type `T!`, nullable `?T`, and all but one of the
+closures, the error type `T!`, nullable `?T`, and all but three of the
 namespaced library functions. Also `str()` of a list or a map - both
 print fine, but printing writes to stdout and converting needs to build
 into a buffer, which is a different implementation.
@@ -52,7 +52,7 @@ saying whether the block holds pointers - so that a collector is
 possible. There is still no collector.
 
 It compiles 4 of the 24 programs in the Go backend's own test suite,
-and every one of the 14 programs in `examples/` produces byte-identical
+and every one of the 15 programs in `examples/` produces byte-identical
 output through both backends.
 
 ```
@@ -127,6 +127,7 @@ asm-src/
     x64.go          IR  -> x86-64, GNU as with Intel syntax
     library.go      asmLibrary - the builtin table, for the checker
     list.go         lists, built in the IR
+    map.go          maps, sorted key and value blocks
     strings.go      the string library, built in the IR
     veylasm.go      the driver
     diff_test.go
@@ -155,7 +156,8 @@ above - still `src`-only.
 ## Commands
 
 ```
-veylasm run   f.vy    compile and run
+veylasm f.vy          compile and run
+veylasm run   f.vy    the same thing, spelled out
 veylasm build f.vy    write an executable next to the source
 veylasm asm   f.vy    print the generated assembly
 veylasm ir    f.vy    print the intermediate representation
@@ -223,7 +225,8 @@ and looks that string up like any other builtin, at any depth:
 `os.file.write` arrives as one name. A namespace is a naming
 convention, not a scope, exactly as on the Go backend.
 
-`time.now` is implemented as the proof, and is the only one so far.
+Implemented so far: `time.now`, `os.env.get`, `os.env.has`. `os.env.set`
+is not, because it returns `Void!`.
 
 Adding another is two edits - a signature in `library.go` and a case in
 `builtin` in `ir.go` - but it is not the Go backend's one-liner. There
@@ -266,9 +269,8 @@ it changes.
 
 Two papercuts worth ten minutes whenever:
 
-- `veylasm f.vy` should work as shorthand for `run`, matching `veyl`.
-- The linker's real output should surface instead of being swallowed;
-  that is what turned the PATH bug into a twenty-minute hunt.
+Both papercuts listed here are done: `veylasm f.vy` is shorthand for
+`run`, and the linker's real output surfaces instead of being swallowed.
 
 A note on what this is not for. It will not be faster than the Go
 backend for a long time, and probably starts out several times slower.
