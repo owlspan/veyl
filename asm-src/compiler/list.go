@@ -255,6 +255,9 @@ func (l *lowerer) printList(list Reg, t vty) {
 		l.regTy[s] = vStr
 		l.emit(Instr{Op: OpBoolToStr, Dst: s, A: v, B: NoReg})
 		l.emit(Instr{Op: OpWriteStr, A: s, Dst: NoReg})
+	case kFloat:
+		l.mod.needs("floattostr")
+		l.emit(Instr{Op: OpWriteFloat, A: v, Dst: NoReg})
 	default:
 		l.emit(Instr{Op: OpWriteInt, A: v, Dst: NoReg})
 	}

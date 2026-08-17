@@ -19,30 +19,38 @@ hello.vy  ->  [veylasm]  ->  hello.s  ->  [as, ld]  ->  hello.exe
 A working subset, compiled all the way to a running `.exe` with no Go
 anywhere in the pipeline:
 
-- integers, bools and strings; `let`, `const`, plain and compound
-  assignment; block scoping with shadowing
-- all arithmetic, comparisons, `&&`, `||`, `!`, and the bitwise
-  operators including signed shifts
+- `int`, `float`, `bool`, `str`, and lists of any of them
+- `let`, `const`, plain and compound assignment, block scoping with
+  shadowing
+- all arithmetic on ints and floats, comparisons, `&&`, `||`, `!`, and
+  the bitwise operators including signed shifts
 - `if` / `else`, `while`, `for` over a range with `step`, `for x in xs`,
   `break`, `continue`, `match`, nested to any depth
-- functions with up to any number of arguments, recursion, and
-  order-independent declaration
+- functions with any number of arguments, recursion, order-independent
+  declaration, and the full Windows x64 calling convention including
+  mixed int/float argument lists
 - string concatenation, comparison, and full `"{interpolation}"`
-- lists: literals, indexing, index assignment, `push`, `len`, iteration,
-  and bounds checks that print the Go backend's exact sentence
-- `print`, `write`, `str`, `len`, `abs`, `min`, `max`, `upper`, `lower`,
-  `substr`, `charAt`, `indexOf`, `contains`, `startsWith`, `endsWith`,
-  `repeat`
+- lists: literals, indexing, index assignment, `push`, `len`,
+  iteration, and bounds checks printing the Go backend's exact sentence
+- `print`, `write`, `str`, `len`, `push`, `abs`, `min`, `max`, `int`,
+  `float`, `divf`, `sqrt`, `mod`, `upper`, `lower`, `substr`, `charAt`,
+  `indexOf`, `contains`, `startsWith`, `endsWith`, `repeat`
+- the constants `PI` and `E`
 
-Everything else is a clear compile error naming what is missing:
-floats, maps, structs, closures, the error type `T!`, and the
+Everything else is a compile error naming what is missing: maps,
+structs, closures, the error type `T!`, nullable `?T`, and the
 namespaced libraries.
 
+It compiles 4 of the 24 programs in the Go backend's own test suite,
+and every one of the 12 programs in `examples/` produces byte-identical
+output through both backends.
+
 ```
-$ veylasm run examples/functions.vy
-49
-6765
-21
+$ veylasm run examples/floats.vy
+5.5
+-2.5
+6
+0.375
 ```
 
 `examples/collatz.vy` is the benchmark - nested loops, 10,000 iterations
@@ -63,17 +71,25 @@ closes it.
 
 ## What it does not have
 
-**No type checker.** `check.go` lives in `../src` and is not shared,
-because it and the builtin table need each other and the code
-generator at once. This backend tracks int, bool, str and list only far
-enough to pick the right instruction - which `print`, whether `+` means
-add or concatenate. A wrong program still compiles to something. Run it
-through the Go backend first.
+**No collector.** Every string concatenation, every list and every
+float-to-string conversion allocates, and nothing is ever freed. This
+is the single largest thing between here and the Go backend, and it is
+what the memory model on the roadmap is blocked on.
 
-**No collector.** Every string concatenation and every list allocates
-and nothing is ever freed. This is the single largest thing between
-here and the Go backend, and it is the reason the roadmap's memory
-model sits at 11%.
+**No resolver.** A name that is neither a local, a function nor a
+builtin is caught by the lowerer rather than the checker, so it is
+missed when the checker has already failed on something else. Sharing
+`resolve.go` the way `check.go` is now shared is the obvious fix.
+
+**Three deliberate float gaps**, each a compile error rather than a
+wrong answer:
+
+- `NAN` - the comparisons lower to `comisd`, which reports an unordered
+  pair as both below and equal, so a NaN would compare wrong.
+- `INF` - this build links the legacy msvcrt, whose `printf` writes
+  `1.#INF` where Go writes `+Inf`.
+- `min`/`max` on floats - the integer versions work; the float ones need
+  a float compare in the branch-select and were not worth it yet.
 
 ## Why assembly text and not machine code
 
@@ -163,19 +179,45 @@ away when `x64.go` learns to write bytes.
 
 ## What comes next
 
-Functions and the full calling convention, which is the next real piece
-of design: argument registers, callee-saved registers, and a frame that
-survives a nested call.
+In dependency order, with the reasoning rather than just the list.
 
-Then a register allocator, because every value currently round-trips
-through a stack slot. That is where the 18% turns into something
-better, and it is one function - `regAddr` - that has to change.
+**1. The object header.** Before structs and closures multiply the
+number of places that allocate, decide the shape of a heap object: a
+header word saying what it is and how big. A collector has to tell a
+pointer from an integer at runtime, and right now every value is an
+anonymous eight bytes, so it cannot. This is cheap now and expensive
+later, and it does not require writing a collector - only making one
+possible.
 
-Then sharing the type checker, so this stops being a backend that
-trusts its input.
+**2. Maps.** Four programs in the Go suite block on it. Same approach
+as lists: a header plus a hash table built in the IR out of the memory
+ops that already exist, with the byte ops in `strings.go` available for
+hashing. One real design call - the Go backend sorts keys on iteration
+so output is stable, and matching that means either sorting per
+iteration or keeping insertion order.
 
-Then the part that removes the toolchain: an encoder, and a PE writer
-with an import table for kernel32.
+**3. Structs.** Cheapest of the remaining big three: fixed field
+offsets, no allocation strategy to invent, and `alloc`/`loadmem`/
+`storemem` already do everything needed.
+
+**4. A register allocator.** Where the 20% gap starts closing. Do it
+after functions exist - which they now do - because the whole
+difficulty is knowing which values are live across a call, and a
+version written before calls existed would be written twice.
+
+**5. The collector.** Needs step 1 done first. Budget a whole session
+minimum; a collector that frees one live object produces a bug that
+surfaces somewhere else entirely, hours later.
+
+**6. The byte writer and PE emitter.** What finally removes the MinGW
+dependency. Mechanical by then: `x64.go` is replaced and nothing above
+it changes.
+
+Two papercuts worth ten minutes whenever:
+
+- `veylasm f.vy` should work as shorthand for `run`, matching `veyl`.
+- The linker's real output should surface instead of being swallowed;
+  that is what turned the PATH bug into a twenty-minute hunt.
 
 A note on what this is not for. It will not be faster than the Go
 backend for a long time, and probably starts out several times slower.

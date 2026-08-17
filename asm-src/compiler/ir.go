@@ -17,6 +17,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -35,6 +36,7 @@ type vkind int
 const (
 	kVoid vkind = iota
 	kInt
+	kFloat
 	kBool
 	kStr
 	kList
@@ -49,10 +51,11 @@ type vty struct {
 }
 
 var (
-	vVoid = vty{k: kVoid}
-	vInt  = vty{k: kInt}
-	vBool = vty{k: kBool}
-	vStr  = vty{k: kStr}
+	vVoid  = vty{k: kVoid}
+	vInt   = vty{k: kInt}
+	vFloat = vty{k: kFloat}
+	vBool  = vty{k: kBool}
+	vStr   = vty{k: kStr}
 )
 
 func vListOf(e vkind) vty { return vty{k: kList, elem: e} }
@@ -64,6 +67,8 @@ func (t vty) String() string {
 	switch t.k {
 	case kInt:
 		return "int"
+	case kFloat:
+		return "float"
 	case kBool:
 		return "bool"
 	case kStr:
@@ -80,6 +85,8 @@ func typeOfName(s string) (vty, bool) {
 	switch s {
 	case "int":
 		return vInt, true
+	case "float":
+		return vFloat, true
 	case "bool":
 		return vBool, true
 	case "str":
@@ -118,6 +125,27 @@ const (
 	OpMod             // Dst = A % B
 	OpNeg             // Dst = -A
 
+	// Floats. A separate set rather than overloading the integer ops,
+	// because they run on a different register file (xmm0-15) and the
+	// emitter has to know which one at the point it picks an
+	// instruction - regTy is a lowering-time concept, gone by then.
+	OpFConst // Dst = the float constant pool entry Imm
+	OpFAdd
+	OpFSub
+	OpFMul
+	OpFDiv
+	OpFNeg
+	OpFEq
+	OpFNe
+	OpFLt
+	OpFLe
+	OpFGt
+	OpFGe
+	OpIntToFloat // Dst = float(A), exact
+	OpFloatToInt // Dst = int(A), truncated toward zero
+	OpSqrt       // Dst = sqrt(A)
+	OpFMod       // Dst = fmod(A, B), the C library's floating remainder
+
 	// Bitwise. All int-only, matching the language.
 	OpBAnd // Dst = A & B
 	OpBOr  // Dst = A | B
@@ -155,12 +183,14 @@ const (
 	// keeps the emitter free of open-coded sequences that the byte
 	// writer would have to reproduce exactly.
 	OpPrintInt
+	OpPrintFloat
 	OpPrintBool
 	OpPrintStr
 	OpConcat // Dst = A ++ B
 	OpStrEq  // Dst = A == B, as strings
 	OpStrLen // Dst = len(A)
 	OpIntToStr
+	OpFloatToStr
 	OpBoolToStr
 
 	// Raw memory. These exist so that lists can be built in the IR
@@ -177,6 +207,7 @@ const (
 	// each piece. print() is these plus a newline.
 	OpWriteStr
 	OpWriteInt
+	OpWriteFloat
 	OpBoundsFail // A is the index, B the length; does not return
 
 	// Byte-level memory, for strings. A Veyl string is a pointer to
@@ -188,14 +219,17 @@ const (
 
 var opNames = [...]string{
 	"const", "str", "load", "store", "add", "sub", "mul", "div", "mod", "neg",
+	"fconst", "fadd", "fsub", "fmul", "fdiv", "fneg",
+	"feq", "fne", "flt", "fle", "fgt", "fge",
+	"inttofloat", "floattoint", "sqrt", "fmod",
 	"band", "bor", "bxor", "bnot", "shl", "shr",
 	"eq", "ne", "lt", "le", "gt", "ge", "not",
 	"label", "jump", "jumpif", "jumpnot",
 	"param", "call", "ret",
-	"printint", "printbool", "printstr",
-	"concat", "streq", "strlen", "inttostr", "booltostr",
+	"printint", "printfloat", "printbool", "printstr",
+	"concat", "streq", "strlen", "inttostr", "floattostr", "booltostr",
 	"alloc", "indexaddr", "loadmem", "storemem",
-	"writestr", "writeint", "boundsfail",
+	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
 }
 
@@ -207,21 +241,33 @@ func (o Op) String() string {
 }
 
 type Instr struct {
-	Op      Op
-	Dst     Reg
-	A, B    Reg
-	Imm     int64
-	Args    []Reg  // OpCall only
+	Op       Op
+	Dst      Reg
+	A, B     Reg
+	Imm      int64
+	Args     []Reg // OpCall only
+	ArgTypes []vty // OpCall only, parallel to Args: the emitter needs to
+	// know which of the outgoing slots is a float, since
+	// the Windows x64 convention routes a float argument
+	// to xmm0-3 while an int in the same position goes
+	// to rcx/rdx/r8/r9 - the choice depends on the type
+	// in that position, not on how many of each kind
+	// came before it.
+	RetType vty    // OpCall only: whether the result comes back in rax or xmm0
 	Sym     string // OpCall only: the function being called
 	Comment string // the Veyl this came from, carried into the .s file
 }
 
 // A Func is one lowered function.
 type Func struct {
-	Name    string
-	NParams int
-	Ret     vty
-	Code    []Instr
+	Name       string
+	NParams    int
+	ParamTypes []vty // parallel to the incoming OpParam instructions;
+	// the emitter needs this for the same reason OpCall
+	// carries ArgTypes - which physical register an
+	// incoming argument arrives in depends on its type.
+	Ret  vty
+	Code []Instr
 
 	NRegs   int // virtual registers used
 	NSlots  int // stack slots for locals and spilled temporaries
@@ -238,6 +284,7 @@ type Func struct {
 type Module struct {
 	Funcs   []*Func
 	Strings []string
+	Floats  []float64
 	Helpers map[string]bool // runtime helpers actually used
 }
 
@@ -253,6 +300,18 @@ func (m *Module) intern(s string) int64 {
 	}
 	m.Strings = append(m.Strings, s)
 	return int64(len(m.Strings) - 1)
+}
+
+// internFloat is intern's counterpart for float literals, so the same
+// bit pattern is not written into .rdata twice.
+func (m *Module) internFloat(v float64) int64 {
+	for i, existing := range m.Floats {
+		if existing == v {
+			return int64(i)
+		}
+	}
+	m.Floats = append(m.Floats, v)
+	return int64(len(m.Floats) - 1)
 }
 
 // ---- function signatures ----
@@ -366,7 +425,7 @@ func (l *lowerer) function(fd *FnDecl) {
 		return // its signature was already rejected
 	}
 
-	l.fn = &Func{Name: fd.Name, NParams: len(fd.Params), Ret: s.ret}
+	l.fn = &Func{Name: fd.Name, NParams: len(fd.Params), ParamTypes: s.params, Ret: s.ret}
 	l.slotTy = map[int64]vty{}
 	l.regTy = map[Reg]vty{}
 	l.pushScope()
@@ -391,12 +450,21 @@ func (l *lowerer) function(fd *FnDecl) {
 	// A function that runs off the end returns zero. The Go backend's
 	// return-path checking would have rejected that already for a
 	// non-void function, and this backend does not have it yet, so the
-	// safe thing is a defined value rather than whatever is in rax.
-	z := l.newReg()
-	l.emit(Instr{Op: OpConst, Dst: z, A: NoReg, B: NoReg, Imm: 0})
-	if s.ret.k == kVoid {
+	// safe thing is a defined value rather than whatever happens to be
+	// in rax or xmm0. The zero has to be the right kind of zero: a float
+	// return reads xmm0, so an int OpConst left there would be garbage.
+	switch s.ret.k {
+	case kVoid:
 		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
-	} else {
+	case kFloat:
+		z := l.newReg()
+		l.regTy[z] = vFloat
+		l.emit(Instr{Op: OpFConst, Dst: z, A: NoReg, B: NoReg, Imm: l.mod.internFloat(0)})
+		l.emit(Instr{Op: OpRet, A: z, Dst: NoReg})
+	default:
+		z := l.newReg()
+		l.regTy[z] = vInt
+		l.emit(Instr{Op: OpConst, Dst: z, A: NoReg, B: NoReg, Imm: 0})
 		l.emit(Instr{Op: OpRet, A: z, Dst: NoReg})
 	}
 
@@ -488,9 +556,17 @@ func (l *lowerer) stmt(s Stmt) {
 				l.errorAt(st, "type %q is not on the assembly backend yet", st.Type)
 				return
 			}
+			// The checker already accepted an untyped int literal going
+			// into a float slot - Go's own untyped-constant rule, which
+			// Veyl copies - so that combination is promoted rather than
+			// rejected here.
 			if declared != t {
-				l.errorAt(st, "%s was declared %s but the value is %s",
-					st.Name, declared, t)
+				if declared.k == kFloat && t.k == kInt {
+					v = l.toFloat(v)
+				} else {
+					l.errorAt(st, "%s was declared %s but the value is %s",
+						st.Name, declared, t)
+				}
 			}
 			t = declared
 		}
@@ -558,6 +634,9 @@ func (l *lowerer) stmt(s Stmt) {
 			return
 		}
 		v := l.expr(st.Value)
+		if l.fn.Ret.k == kFloat && l.regTy[v].k == kInt {
+			v = l.toFloat(v)
+		}
 		l.emit(Instr{Op: OpRet, A: v, Dst: NoReg, Comment: "return"})
 
 	case *BreakStmt:
@@ -607,27 +686,47 @@ func (l *lowerer) assign(st *AssignStmt) {
 		return
 	}
 	v := l.expr(st.Value)
+	target := l.slotTy[slot]
+
+	// Plain assignment into a float variable accepts the same untyped
+	// int literal promotion `let` does; the checker already allowed it.
+	if st.Op == ASSIGN && target.k == kFloat && l.regTy[v].k == kInt {
+		v = l.toFloat(v)
+	}
 
 	// The compound forms read the target first. Ignoring st.Op here
 	// silently turned `i += 1` into `i = 1`, which made every loop that
 	// counted upwards run forever - a miscompile that produces no output
 	// rather than wrong output, so nothing catches it except a deadline.
 	if st.Op != ASSIGN {
+		isFloat := target.k == kFloat
+		if isFloat && l.regTy[v].k == kInt {
+			v = l.toFloat(v)
+		}
+
 		var op Op
 		switch st.Op {
 		case PLUSEQ:
-			op = OpAdd
-			if l.slotTy[slot].k == kStr {
+			switch {
+			case target.k == kStr:
 				op = OpConcat
 				l.mod.needs("concat")
+			case isFloat:
+				op = OpFAdd
+			default:
+				op = OpAdd
 			}
 		case MINUSEQ:
-			op = OpSub
+			op = pickOp(isFloat, OpFSub, OpSub)
 		case STAREQ:
-			op = OpMul
+			op = pickOp(isFloat, OpFMul, OpMul)
 		case SLASHEQ:
-			op = OpDiv
+			op = pickOp(isFloat, OpFDiv, OpDiv)
 		case PERCENTEQ:
+			if isFloat {
+				l.errorAt(st, "%%= needs two ints - use mod(...) for floats")
+				return
+			}
 			op = OpMod
 		case AMPEQ:
 			op = OpBAnd
@@ -644,17 +743,40 @@ func (l *lowerer) assign(st *AssignStmt) {
 			return
 		}
 		cur := l.newReg()
-		l.regTy[cur] = l.slotTy[slot]
+		l.regTy[cur] = target
 		l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: slot,
 			Comment: id.Name})
 		d := l.newReg()
-		l.regTy[d] = l.slotTy[slot]
+		l.regTy[d] = target
 		l.emit(Instr{Op: op, Dst: d, A: cur, B: v})
 		v = d
 	}
 
 	l.emit(Instr{Op: OpStore, A: v, Dst: NoReg, Imm: slot,
 		Comment: id.Name + " " + st.Op.String()})
+}
+
+// pickOp chooses between a float and an int op, the same choice
+// binary() makes for the infix forms. Named apart from the lowerer's
+// own pick (a branch-select over two values) even though Go would not
+// object to the clash, because a reader should not have to check which
+// one a call site means.
+func pickOp(float bool, f, i Op) Op {
+	if float {
+		return f
+	}
+	return i
+}
+
+// toFloat converts an int-typed register to a float-typed one. Every
+// site that promotes an untyped int literal - let, assignment, return,
+// a call argument, a binary operand - goes through this, so there is
+// one place that knows what "int becomes float" means at the IR level.
+func (l *lowerer) toFloat(v Reg) Reg {
+	d := l.newReg()
+	l.regTy[d] = vFloat
+	l.emit(Instr{Op: OpIntToFloat, Dst: d, A: v, B: NoReg})
+	return d
 }
 
 // forRange lowers the counted form into the same shape as a while loop.
@@ -788,7 +910,11 @@ func (l *lowerer) call(c *Call) Reg {
 		}
 		args := make([]Reg, len(c.Args))
 		for i, a := range c.Args {
-			args[i] = l.expr(a)
+			v := l.expr(a)
+			if s.params[i].k == kFloat && l.regTy[v].k == kInt {
+				v = l.toFloat(v)
+			}
+			args[i] = v
 		}
 		if len(args) > l.fn.MaxCallArgs {
 			l.fn.MaxCallArgs = len(args)
@@ -796,7 +922,7 @@ func (l *lowerer) call(c *Call) Reg {
 		d := l.newReg()
 		l.regTy[d] = s.ret
 		l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
-			Sym: name.Name, Comment: name.Name + "()"})
+			ArgTypes: s.params, RetType: s.ret, Sym: name.Name, Comment: name.Name + "()"})
 		return d
 	}
 
@@ -824,6 +950,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		switch l.regTy[a].k {
 		case kList:
 			l.printList(a, l.regTy[a])
+		case kFloat:
+			l.mod.needs("floattostr")
+			l.emit(Instr{Op: OpPrintFloat, A: a, Dst: NoReg, Comment: "print"})
 		case kBool:
 			l.emit(Instr{Op: OpPrintBool, A: a, Dst: NoReg, Comment: "print"})
 		case kStr:
@@ -841,6 +970,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		switch l.regTy[a].k {
 		case kStr:
 			l.emit(Instr{Op: OpWriteStr, A: a, Dst: NoReg, Comment: "write"})
+		case kFloat:
+			l.mod.needs("floattostr")
+			l.emit(Instr{Op: OpWriteFloat, A: a, Dst: NoReg, Comment: "write"})
 		case kBool:
 			l.mod.needs("booltostr")
 			d := l.newReg()
@@ -895,6 +1027,60 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 
 	case "abs", "min", "max":
 		return l.intMath(c, name)
+
+	case "int":
+		if !arity(1) {
+			return l.junk()
+		}
+		v := l.expr(c.Args[0])
+		if l.regTy[v].k == kFloat {
+			d := l.newReg()
+			l.regTy[d] = vInt
+			l.emit(Instr{Op: OpFloatToInt, Dst: d, A: v, B: NoReg})
+			return d
+		}
+		return v
+
+	case "float":
+		if !arity(1) {
+			return l.junk()
+		}
+		v := l.expr(c.Args[0])
+		if l.regTy[v].k == kInt {
+			return l.toFloat(v)
+		}
+		return v
+
+	case "divf":
+		if !arity(2) {
+			return l.junk()
+		}
+		a, b := l.numeric(c.Args[0]), l.numeric(c.Args[1])
+		d := l.newReg()
+		l.regTy[d] = vFloat
+		l.emit(Instr{Op: OpFDiv, Dst: d, A: a, B: b})
+		return d
+
+	case "sqrt":
+		if !arity(1) {
+			return l.junk()
+		}
+		a := l.numeric(c.Args[0])
+		d := l.newReg()
+		l.regTy[d] = vFloat
+		l.emit(Instr{Op: OpSqrt, Dst: d, A: a, B: NoReg})
+		return d
+
+	case "mod":
+		if !arity(2) {
+			return l.junk()
+		}
+		a, b := l.numeric(c.Args[0]), l.numeric(c.Args[1])
+		l.mod.needs("fmod")
+		d := l.newReg()
+		l.regTy[d] = vFloat
+		l.emit(Instr{Op: OpFMod, Dst: d, A: a, B: b})
+		return d
 	}
 
 	if r, handled := l.stringBuiltin(c, name); handled {
@@ -903,6 +1089,19 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 
 	l.errorAt(c, "%q is not on the assembly backend yet", name)
 	return l.junk()
+}
+
+// numeric lowers an argument that the Go backend accepts as int or
+// float (the "Numeric" parameter kind) and always hands back a float,
+// promoting an int the same way an untyped literal promotes elsewhere.
+// divf, sqrt and mod all specify this: divf(7, 2) is 3.5 whichever of
+// its arguments were written as int literals.
+func (l *lowerer) numeric(e Expr) Reg {
+	v := l.expr(e)
+	if l.regTy[v].k == kInt {
+		return l.toFloat(v)
+	}
+	return v
 }
 
 // intMath covers abs, min and max, which are worth having because they
@@ -978,9 +1177,22 @@ func (l *lowerer) toStr(v Reg, at Node) Reg {
 		l.regTy[d] = vStr
 		l.emit(Instr{Op: OpIntToStr, Dst: d, A: v, B: NoReg})
 		return d
+	case kFloat:
+		l.mod.needs("floattostr")
+		d := l.newReg()
+		l.regTy[d] = vStr
+		l.emit(Instr{Op: OpFloatToStr, Dst: d, A: v, B: NoReg})
+		return d
 	}
 	l.errorAt(at, "nothing to convert to a string here")
 	return l.junk()
+}
+
+// floatConsts are the builtin float constants. NAN is absent on
+// purpose; see the note in library.go's ConstType.
+var floatConsts = map[string]float64{
+	"PI": math.Pi,
+	"E":  math.E,
 }
 
 // junk is a defined-but-meaningless register, returned after an error so
@@ -1011,6 +1223,17 @@ func (l *lowerer) expr(e Expr) Reg {
 		d := l.newReg()
 		l.regTy[d] = vInt
 		l.emit(Instr{Op: OpConst, Dst: d, A: NoReg, B: NoReg, Imm: n})
+		return d
+
+	case *FloatLit:
+		v, err := strconv.ParseFloat(strings.ReplaceAll(x.Val, "_", ""), 64)
+		if err != nil {
+			l.errorAt(x, "float literal out of range: %s", x.Val)
+			return l.junk()
+		}
+		d := l.newReg()
+		l.regTy[d] = vFloat
+		l.emit(Instr{Op: OpFConst, Dst: d, A: NoReg, B: NoReg, Imm: l.mod.internFloat(v)})
 		return d
 
 	case *BoolLit:
@@ -1048,6 +1271,15 @@ func (l *lowerer) expr(e Expr) Reg {
 	case *Ident:
 		slot, ok := l.lookup(x.Name)
 		if !ok {
+			// The float constants are not variables, so they are not in
+			// any scope; they lower straight to a pool entry.
+			if v, isConst := floatConsts[x.Name]; isConst {
+				d := l.newReg()
+				l.regTy[d] = vFloat
+				l.emit(Instr{Op: OpFConst, Dst: d, A: NoReg, B: NoReg,
+					Imm: l.mod.internFloat(v), Comment: x.Name})
+				return d
+			}
 			l.errorAt(x, "undefined variable %q", x.Name)
 			return l.junk()
 		}
@@ -1065,8 +1297,13 @@ func (l *lowerer) expr(e Expr) Reg {
 		d := l.newReg()
 		switch x.Op {
 		case MINUS:
-			l.regTy[d] = vInt
-			l.emit(Instr{Op: OpNeg, Dst: d, A: a, B: NoReg})
+			if l.regTy[a].k == kFloat {
+				l.regTy[d] = vFloat
+				l.emit(Instr{Op: OpFNeg, Dst: d, A: a, B: NoReg})
+			} else {
+				l.regTy[d] = vInt
+				l.emit(Instr{Op: OpNeg, Dst: d, A: a, B: NoReg})
+			}
 		case BANG:
 			l.regTy[d] = vBool
 			l.emit(Instr{Op: OpNot, Dst: d, A: a, B: NoReg})
@@ -1128,6 +1365,63 @@ func (l *lowerer) binary(x *Binary) Reg {
 			l.errorAt(x, "%s is not defined on strings", x.Op)
 			return l.junk()
 		}
+	}
+
+	// Numbers. An untyped int literal on one side of a float operand was
+	// already accepted by the checker - Go's own untyped-constant rule,
+	// which Veyl copies for exactly this case - so by the time lowering
+	// sees a kind mismatch here it can only be that, and can safely
+	// promote rather than error a second time.
+	if at.k == kFloat || bt.k == kFloat {
+		if at.k == kInt {
+			a = l.toFloat(a)
+		}
+		if bt.k == kInt {
+			b = l.toFloat(b)
+		}
+		if l.regTy[a].k != kFloat || l.regTy[b].k != kFloat {
+			l.errorAt(x, "'%s' needs numbers, got %s and %s", OpText(x.Op), at, bt)
+			return l.junk()
+		}
+
+		var fop Op
+		switch x.Op {
+		case PLUS:
+			fop = OpFAdd
+		case MINUS:
+			fop = OpFSub
+		case STAR:
+			fop = OpFMul
+		case SLASH:
+			fop = OpFDiv
+		case EQ:
+			fop = OpFEq
+		case NEQ:
+			fop = OpFNe
+		case LT:
+			fop = OpFLt
+		case LTE:
+			fop = OpFLe
+		case GT:
+			fop = OpFGt
+		case GTE:
+			fop = OpFGe
+		case PERCENT:
+			l.errorAt(x, "'%%' needs two ints - use mod(...) for floats")
+			return l.junk()
+		default:
+			l.errorAt(x, "'%s' is not defined on floats", OpText(x.Op))
+			return l.junk()
+		}
+		d := l.newReg()
+		switch fop {
+		case OpFEq, OpFNe, OpFLt, OpFLe, OpFGt, OpFGe:
+			l.regTy[d] = vBool
+		default:
+			l.regTy[d] = vFloat
+		}
+		l.emit(Instr{Op: fop, Dst: d, A: a, B: b})
+		return d
 	}
 
 	var op Op

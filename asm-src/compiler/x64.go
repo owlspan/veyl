@@ -28,6 +28,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -48,6 +49,13 @@ type Emitter struct {
 //   - rbx, rbp, rdi, rsi and r12-r15 belong to the caller. Only rbp is
 //     touched here, and it is pushed and restored.
 var argRegs = [4]string{"rcx", "rdx", "r8", "r9"}
+
+// xmmArgs holds the floating-point counterpart of argRegs. Which one an
+// argument in position i uses is decided purely by that argument's own
+// type - a float in position 0 goes in xmm0 and an int in position 1
+// still goes in rdx, not rcx's float sibling. The two arrays are parallel
+// by position, never combined into one count.
+var xmmArgs = [4]string{"xmm0", "xmm1", "xmm2", "xmm3"}
 
 const shadowSpace = 32
 
@@ -134,6 +142,27 @@ func Emit(m *Module) string {
 		e.b.WriteString("    .asciz \"" + escapeAsm(s) + "\"\n")
 	}
 
+	if len(m.Floats) > 0 || e.mod.Helpers["floattostr"] {
+		e.label("__fmt_g")
+		e.b.WriteString("    .asciz \"%.*g\"\n")
+		// Negation goes through multiplication rather than flipping the
+		// sign bit with a bitwise xor, because that would need a second
+		// SSE instruction family (xorpd) and a 16-byte-aligned mask
+		// constant for no real saving over one more .rdata entry.
+		e.label("__neg_one")
+		e.b.WriteString(fmt.Sprintf("    .quad %#x\n", math.Float64bits(-1)))
+	}
+	for i, v := range m.Floats {
+		// .quad with the raw IEEE 754 bit pattern, computed here rather
+		// than trusting the assembler's own float literal syntax - the
+		// same reasoning as the string pool above using .asciz for text
+		// rather than a computed encoding: this is data the assembler
+		// already turns to bytes for us, not an instruction whose
+		// encoding this file is supposed to own.
+		e.label(fmt.Sprintf("__flt%d", i))
+		e.b.WriteString(fmt.Sprintf("    .quad %#x\n", math.Float64bits(v)))
+	}
+
 	e.b.WriteString("\n    .text\n")
 
 	e.helpers()
@@ -167,6 +196,12 @@ func (e *Emitter) externs() []string {
 	}
 	if e.mod.Helpers["bounds"] {
 		out = append(out, "snprintf", "_write", "exit")
+	}
+	if e.mod.Helpers["floattostr"] {
+		out = append(out, "malloc", "strlen", "strcpy", "snprintf", "strtod")
+	}
+	if e.mod.Helpers["fmod"] {
+		out = append(out, "fmod")
 	}
 	out = append(out, "_setmode")
 
@@ -312,6 +347,76 @@ func (e *Emitter) instr(in Instr) {
 		e.line("neg rax")
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
+	case OpFConst:
+		e.line("movsd xmm0, __flt%d[rip]", in.Imm)
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+
+	case OpFAdd, OpFSub, OpFMul, OpFDiv:
+		mnemonic := map[Op]string{
+			OpFAdd: "addsd", OpFSub: "subsd", OpFMul: "mulsd", OpFDiv: "divsd",
+		}[in.Op]
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm1, %s", e.regAddr(in.B))
+		e.line("%s xmm0, xmm1", mnemonic)
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+
+	case OpFNeg:
+		// mulsd by -1.0 rather than flipping the sign bit: see the
+		// comment on __neg_one in Emit for why xorpd was not worth it.
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm1, __neg_one[rip]")
+		e.line("mulsd xmm0, xmm1")
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+
+	case OpFEq, OpFNe, OpFLt, OpFLe, OpFGt, OpFGe:
+		// comisd sets the flags the same way an unsigned integer compare
+		// does: CF for below, ZF for equal. That gives setb/setbe/
+		// seta/setae for the ordered comparisons, matching the unsigned
+		// forms rather than the signed ones OpLt and friends use.
+		//
+		// This is not NaN-safe: comisd sets CF=ZF=PF=1 on an unordered
+		// pair, which would read here as both less-than and equal. Veyl
+		// has no NaN literal yet, so nothing in the language can
+		// construct one to expose it, but it is a real gap and belongs
+		// on the record rather than only in this comment.
+		cc := map[Op]string{
+			OpFEq: "e", OpFNe: "ne", OpFLt: "b", OpFLe: "be", OpFGt: "a", OpFGe: "ae",
+		}[in.Op]
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm1, %s", e.regAddr(in.B))
+		e.line("xor eax, eax")
+		e.line("comisd xmm0, xmm1")
+		e.line("set%s al", cc)
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpIntToFloat:
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("cvtsi2sd xmm0, rax")
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+
+	case OpFloatToInt:
+		// cvttsd2si: the double-t is truncating rather than
+		// round-to-nearest, which is what Veyl's int() promises and
+		// what int(-3.7) being -3 rather than -4 depends on.
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("cvttsd2si rax, xmm0")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpSqrt:
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("sqrtsd xmm0, xmm0")
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+
+	case OpFMod:
+		// fmod has a fixed double,double prototype rather than a
+		// variadic one, so unlike the printf/snprintf calls elsewhere
+		// in this file its float arguments go in xmm0/xmm1 alone - no
+		// duplication into the integer registers is needed here.
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm1, %s", e.regAddr(in.B))
+		e.line("call fmod")
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+
 	case OpBNot:
 		e.line("mov rax, %s", e.regAddr(in.A))
 		e.line("not rax")
@@ -361,7 +466,18 @@ func (e *Emitter) instr(in Instr) {
 
 	case OpParam:
 		if in.Imm < 4 {
-			e.line("mov %s, %s", e.regAddr(in.Dst), argRegs[in.Imm])
+			// Which register holds this parameter depends only on its
+			// own position and its own type - a float in position 0
+			// arrives in xmm0 whether or not any earlier parameter was
+			// also a float, because the Windows x64 convention keeps
+			// the integer and floating-point register files in lock
+			// step by position rather than counting each kind
+			// separately.
+			if e.f.ParamTypes[in.Imm].k == kFloat {
+				e.line("movsd %s, %s", e.regAddr(in.Dst), xmmArgs[in.Imm])
+			} else {
+				e.line("mov %s, %s", e.regAddr(in.Dst), argRegs[in.Imm])
+			}
 			return
 		}
 		// Arguments past the fourth sit in the caller's outgoing area.
@@ -381,9 +497,12 @@ func (e *Emitter) instr(in Instr) {
 		e.call(in)
 
 	case OpRet:
-		if in.A != NoReg {
+		switch {
+		case in.A != NoReg && e.f.Ret.k == kFloat:
+			e.line("movsd xmm0, %s", e.regAddr(in.A))
+		case in.A != NoReg:
 			e.line("mov rax, %s", e.regAddr(in.A))
-		} else {
+		default:
 			e.line("xor eax, eax")
 		}
 		e.line("mov rsp, rbp")
@@ -393,6 +512,19 @@ func (e *Emitter) instr(in Instr) {
 	case OpPrintInt:
 		e.line("lea rcx, __fmt_int[rip]")
 		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("call printf")
+
+	case OpPrintFloat:
+		// Via __vy_floattostr rather than handing the double to printf
+		// directly, which would put it in the vararg position that the
+		// Windows ABI requires to be duplicated into an integer register
+		// as well as xmm1 - the same complication OpFloatToStr already
+		// has to solve once, inside the helper, rather than solving it
+		// again at every call site that wants to print a float.
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("call __vy_floattostr")
+		e.line("lea rcx, __fmt_str[rip]")
+		e.line("mov rdx, rax")
 		e.line("call printf")
 
 	case OpPrintStr:
@@ -436,6 +568,11 @@ func (e *Emitter) instr(in Instr) {
 		e.line("call __vy_inttostr")
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
+	case OpFloatToStr:
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("call __vy_floattostr")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
 	case OpBoolToStr:
 		e.line("mov rax, %s", e.regAddr(in.A))
 		e.line("lea rcx, __str_false[rip]")
@@ -477,6 +614,13 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov rdx, %s", e.regAddr(in.A))
 		e.line("call printf")
 
+	case OpWriteFloat:
+		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("call __vy_floattostr")
+		e.line("lea rcx, __fmt_str_raw[rip]")
+		e.line("mov rdx, rax")
+		e.line("call printf")
+
 	case OpLoadByte:
 		// movzx, not mov: reading a byte into a 64-bit register has to
 		// clear the upper bits explicitly, or the value carries whatever
@@ -512,16 +656,32 @@ func (e *Emitter) instr(in Instr) {
 // with everything living in memory that could not happen anyway, but the
 // ordering has to survive a register allocator that changes it.
 func (e *Emitter) call(in Instr) {
+	// Beyond the fourth argument, everything - float or int - is just
+	// eight raw bytes written to its stack slot. There is exactly one
+	// storage location at that position, so unlike the register window
+	// there is no float/int choice to make and no duplication rule to
+	// honour; a plain integer-register move carries the bits unchanged
+	// either way.
 	for i := len(in.Args) - 1; i >= 4; i-- {
 		e.line("mov rax, %s", e.regAddr(in.Args[i]))
 		e.line("mov qword ptr [rsp+%d], rax", i*8)
 	}
+	// Within the register window, position decides which file: this
+	// argument's own type, not how many floats or ints came before it.
 	for i := 0; i < len(in.Args) && i < 4; i++ {
-		e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
+		if in.ArgTypes[i].k == kFloat {
+			e.line("movsd %s, %s", xmmArgs[i], e.regAddr(in.Args[i]))
+		} else {
+			e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
+		}
 	}
 	e.line("call __vy_%s", in.Sym)
 	if in.Dst != NoReg {
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		if in.RetType.k == kFloat {
+			e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		} else {
+			e.line("mov %s, rax", e.regAddr(in.Dst))
+		}
 	}
 }
 
@@ -632,6 +792,107 @@ __vy_inttostr:
     mov r9, qword ptr [rbp-8]
     call snprintf
     mov rax, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+`)
+	}
+
+	if e.mod.Helpers["floattostr"] {
+		// Go's fmt.Println prints a float64 as the shortest decimal that
+		// reads back to the exact same bits - strconv's 'g' format with
+		// precision -1. There is no equivalent single libc call, so this
+		// finds it by brute force: try "%.Ng" for N = 1, 2, 3, ... and
+		// stop at the first one that survives a round trip through
+		// strtod. That matches Go closely rather than exactly, because
+		// both C's %g and Go's shortest-form switch between decimal and
+		// exponential notation on the same rule - exponent < -4 or
+		// exponent >= the digit count - so once N is the true number of
+		// significant digits, the two agree on which form to use. Every
+		// float64 round-trips by N=17, so the loop always terminates.
+		//
+		// snprintf is variadic, and the Windows x64 ABI requires a
+		// float argument passed through the four-register window to be
+		// duplicated into the matching integer register, since a
+		// variadic callee has no static type to know which file to read.
+		// "%.*g" sidesteps needing that here: the precision is an int in
+		// position 3 (an ordinary register, no duplication), and the
+		// value itself falls at position 4, past the register window
+		// entirely, where there is exactly one storage location - the
+		// stack slot at [rsp+32] - so there is nothing to duplicate.
+		e.b.WriteString(`
+__vy_floattostr:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 256
+    movsd qword ptr [rbp-8], xmm0
+    lea rax, [rbp-104]
+    mov qword ptr [rbp-24], rax
+    mov dword ptr [rbp-16], 1
+.Lfloattostr_loop:
+    mov rcx, qword ptr [rbp-24]
+    mov edx, 64
+    lea r8, __fmt_g[rip]
+    mov r9d, dword ptr [rbp-16]
+    movsd xmm0, qword ptr [rbp-8]
+    movsd qword ptr [rsp+32], xmm0
+    call snprintf
+    # MSVCRT's %g always pads the exponent to three digits - "1e+008"
+    # where Go and a POSIX libc both write "1e+08" - because this build
+    # links the legacy msvcrt.dll rather than UCRT. Stripping one
+    # redundant leading zero fixes it and does not change the value:
+    # "1e+008" and "1e+08" parse to the same double either way, so
+    # normalizing before the round-trip check below is safe.
+    mov rax, qword ptr [rbp-24]
+.Lfloattostr_scan:
+    movzx ecx, byte ptr [rax]
+    test ecx, ecx
+    je .Lfloattostr_noexp
+    cmp ecx, 101
+    je .Lfloattostr_foundexp
+    add rax, 1
+    jmp .Lfloattostr_scan
+.Lfloattostr_foundexp:
+    movzx ecx, byte ptr [rax+2]
+    cmp ecx, 48
+    jne .Lfloattostr_noexp
+    movzx ecx, byte ptr [rax+3]
+    cmp ecx, 48
+    jl .Lfloattostr_noexp
+    cmp ecx, 57
+    jg .Lfloattostr_noexp
+    lea rdx, [rax+2]
+    lea r8, [rax+3]
+.Lfloattostr_shift:
+    movzx ecx, byte ptr [r8]
+    mov byte ptr [rdx], cl
+    add rdx, 1
+    add r8, 1
+    test ecx, ecx
+    jne .Lfloattostr_shift
+.Lfloattostr_noexp:
+    mov rcx, qword ptr [rbp-24]
+    xor edx, edx
+    call strtod
+    movsd xmm1, qword ptr [rbp-8]
+    ucomisd xmm0, xmm1
+    je .Lfloattostr_done
+    mov eax, dword ptr [rbp-16]
+    add eax, 1
+    mov dword ptr [rbp-16], eax
+    cmp eax, 18
+    jl .Lfloattostr_loop
+.Lfloattostr_done:
+    mov rcx, qword ptr [rbp-24]
+    call strlen
+    mov rcx, rax
+    add rcx, 1
+    call malloc
+    mov qword ptr [rbp-32], rax
+    mov rcx, rax
+    mov rdx, qword ptr [rbp-24]
+    call strcpy
+    mov rax, qword ptr [rbp-32]
     mov rsp, rbp
     pop rbp
     ret

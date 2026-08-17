@@ -33,8 +33,16 @@ var sigs = map[string]front.Signature{
 
 	// Numbers.
 	"abs": {Params: []*Type{Int}, Ret: Int},
-	"min": {Params: []*Type{Int, Int}, Ret: Int},
-	"max": {Params: []*Type{Int, Int}, Ret: Int},
+	// Numeric accepts int or float and always yields a float, matching
+	// the Go backend: divf(7, 2) is 3.5 however its arguments were
+	// written.
+	"int":   {Params: []*Type{Numeric}, Ret: Int},
+	"float": {Params: []*Type{Numeric}, Ret: Float},
+	"divf":  {Params: []*Type{Numeric, Numeric}, Ret: Float},
+	"sqrt":  {Params: []*Type{Numeric}, Ret: Float},
+	"mod":   {Params: []*Type{Numeric, Numeric}, Ret: Float},
+	"min":   {Params: []*Type{Int, Int}, Ret: Int},
+	"max":   {Params: []*Type{Int, Int}, Ret: Int},
 
 	// Strings.
 	"upper":      {Params: []*Type{Str}, Ret: Str},
@@ -62,10 +70,28 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 	return s, ok
 }
 
-// ConstType reports no constants. PI, E, INF and NAN are all floats, and
-// this backend has no float type yet; claiming otherwise would turn a
-// clear error into a wrong program.
-func (asmLibrary) ConstType(string) (*Type, bool) { return nil, false }
+// ConstType reports the float constants this backend can honour.
+//
+// NAN and INF are deliberately absent, for two different reasons, and
+// both are real gaps rather than oversights.
+//
+// NAN: the float comparisons here lower to comisd, which reports an
+// unordered pair as both below and equal. A NaN would therefore compare
+// wrong rather than fail loudly, which is the worse of the two.
+//
+// INF: this build links the legacy msvcrt, whose printf writes infinity
+// as "1.#INF" where Go writes "+Inf". Printing one would silently
+// disagree with the Go backend, and the whole guarantee of this backend
+// is that when both compile a program they produce the same bytes.
+//
+// Leaving both out keeps each a compile error naming what is missing.
+func (asmLibrary) ConstType(name string) (*Type, bool) {
+	switch name {
+	case "PI", "E":
+		return Float, true
+	}
+	return nil, false
+}
 
 func checkLen(c *Checker, x *Call, args []*Type) *Type {
 	if len(args) != 1 {

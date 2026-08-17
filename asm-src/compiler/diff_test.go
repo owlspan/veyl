@@ -121,8 +121,6 @@ func TestUnsupportedIsAnError(t *testing.T) {
 	// they started compiling, the assertion that they could not failed,
 	// and the boundary moved on purpose rather than by drift.
 	cases := map[string]string{
-		"float":        "let x = 1.5\nprint(x)\n",
-		"unknown fn":   "print(sqrt(4))\n",
 		"undefined":    "print(nope)\n",
 		"bare empty":   "let xs = []\nprint(len(xs))\n",
 		"nested list":  "let xs = [[1], [2]]\nprint(xs[0])\n",

@@ -40,9 +40,10 @@ usage:
   veylasm ir    <file.vy>    print the intermediate representation
   veylasm version            print the version
 
-This backend handles a subset of Veyl: integer arithmetic, let, plain
-assignment, and print. Everything else is a clear compile error rather
-than wrong output. The Go backend in ../src remains the complete one.
+This backend handles a subset of Veyl: integers, floats, bools, strings,
+lists, let, assignment, control flow, functions, and print. Everything
+else is a clear compile error rather than wrong output. The Go backend
+in ../src remains the complete one.
 `
 
 func main() {
