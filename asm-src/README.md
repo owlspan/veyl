@@ -38,17 +38,21 @@ anywhere in the pipeline:
 - the constants `PI` and `E`
 - namespaced calls at any depth, of which `time.now` is so far the
   only one implemented
+- maps `{K: V}` with int or str keys: literals, get, set, `len`,
+  `print`, growth, and a missing key reading the zero value
 
-Everything else is a compile error naming what is missing: maps,
-structs, closures, the error type `T!`, nullable `?T`, and all but one
-of the namespaced library functions.
+Everything else is a compile error naming what is missing: structs,
+closures, the error type `T!`, nullable `?T`, and all but one of the
+namespaced library functions. Also `str()` of a list or a map - both
+print fine, but printing writes to stdout and converting needs to build
+into a buffer, which is a different implementation.
 
 Every heap allocation carries an object header - a size and a tag
 saying whether the block holds pointers - so that a collector is
 possible. There is still no collector.
 
 It compiles 4 of the 24 programs in the Go backend's own test suite,
-and every one of the 13 programs in `examples/` produces byte-identical
+and every one of the 14 programs in `examples/` produces byte-identical
 output through both backends.
 
 ```
@@ -234,12 +238,14 @@ rather than panicking, and without results here they can only be
 ported in a lying form. It changes the calling convention too, so doing
 it after twenty of them exist means rewriting twenty.
 
-**3. Maps.** Seven programs in the Go suite block on it. Same approach
-as lists: a header plus a hash table built in the IR out of the memory
-ops that already exist, with the byte ops in `strings.go` available for
-hashing. One real design call - the Go backend sorts keys on iteration
-so output is stable, and matching that means either sorting per
-iteration or keeping insertion order.
+**3. Maps. Done.** Sorted rather than hashed: the Go backend sorts keys
+when it prints or iterates, so keeping the array sorted at all times
+matches its output for free and moves the cost to insertion. O(n) per
+lookup; the six functions in `map.go` are the seam for swapping in a
+hash table later.
+
+It did not move parity, which is worth knowing: all seven programs that
+reported a map as their first error had something else behind it.
 
 **4. Structs.** Cheapest of the remaining big three: fixed field
 offsets, no allocation strategy to invent, and `alloc`/`loadmem`/
