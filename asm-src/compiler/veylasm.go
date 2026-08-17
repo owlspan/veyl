@@ -62,6 +62,14 @@ func main() {
 		fmt.Print(usage)
 		return
 	}
+	// `veylasm f.vy` means `veylasm run f.vy`, matching the Go backend.
+	// A first argument ending in .vy can only be a file, since no command
+	// does, so this cannot shadow one.
+	if strings.HasSuffix(cmd, ".vy") {
+		args = append([]string{"run"}, args...)
+		cmd = "run"
+	}
+
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "veylasm: %s needs a file\n", cmd)
 		os.Exit(2)
