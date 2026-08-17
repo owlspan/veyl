@@ -258,6 +258,11 @@ const (
 	// strcmp it calls. Needed to keep a map sorted by string key; the
 	// existing streq only answers equality.
 	OpStrCmp // Dst = strcmp(A, B)
+
+	// getenv. Returns the raw pointer, which is NULL when the variable
+	// is unset - the null check is done in the IR by whichever builtin
+	// asked, because get and has want different answers to it.
+	OpGetEnv // Dst = getenv(A)
 )
 
 var opNames = [...]string{
@@ -274,7 +279,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"timenow", "strcmp",
+	"timenow", "strcmp", "getenv",
 }
 
 func (o Op) String() string {
@@ -1006,6 +1011,32 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	switch name {
+	case "os.env.get":
+		if !arity(1) {
+			return l.junk()
+		}
+		p := l.getenv(c.Args[0])
+		// getenv gives NULL for an unset variable, and the Go backend
+		// gives "", so the null becomes the empty string here rather than
+		// a pointer nothing downstream would survive dereferencing.
+		out := l.temp(vStr)
+		l.emit(Instr{Op: OpStore, A: l.emptyStr(), Dst: NoReg, Imm: out})
+		skip := l.newLabel()
+		set := l.compare(OpEq, p, l.constant(0))
+		l.emit(Instr{Op: OpJumpIf, A: set, Dst: NoReg, Imm: skip})
+		l.emit(Instr{Op: OpStore, A: p, Dst: NoReg, Imm: out})
+		l.mark(skip)
+		d := l.newReg()
+		l.regTy[d] = vStr
+		l.emit(Instr{Op: OpLoad, Dst: d, A: NoReg, B: NoReg, Imm: out})
+		return d
+
+	case "os.env.has":
+		if !arity(1) {
+			return l.junk()
+		}
+		return l.compare(OpNe, l.getenv(c.Args[0]), l.constant(0))
+
 	case "time.now":
 		if !arity(0) {
 			return l.junk()
@@ -1744,6 +1775,16 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 	}
 	l.regTy[list] = t
 	return list
+}
+
+// getenv lowers one environment lookup to the raw pointer, NULL and all.
+func (l *lowerer) getenv(arg Expr) Reg {
+	l.mod.needs("getenv")
+	name := l.expr(arg)
+	d := l.newReg()
+	l.regTy[d] = vStr
+	l.emit(Instr{Op: OpGetEnv, Dst: d, A: name, B: NoReg, Comment: "os.env"})
+	return d
 }
 
 // mapLit builds a map from its entries. The key and value types come

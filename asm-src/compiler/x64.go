@@ -200,6 +200,9 @@ func (e *Emitter) externs() []string {
 	if e.mod.Helpers["strcmp3"] {
 		out = append(out, "strcmp")
 	}
+	if e.mod.Helpers["getenv"] {
+		out = append(out, "getenv")
+	}
 	if e.mod.Helpers["bounds"] {
 		out = append(out, "snprintf", "_write", "exit")
 	}
@@ -522,6 +525,11 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov rdx, %s", e.regAddr(in.B))
 		e.line("call strcmp")
 		e.line("movsxd rax, eax")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpGetEnv:
+		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("call getenv")
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
 	case OpTimeNow:

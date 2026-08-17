@@ -64,7 +64,9 @@ var sigs = map[string]front.Signature{
 	// hash, csv, net, http and task is absent, and absent here means a
 	// type error naming the function rather than something the lowerer
 	// discovers later.
-	"time.now": {Ret: Int},
+	"time.now":   {Ret: Int},
+	"os.env.get": {Params: []*Type{Str}, Ret: Str},
+	"os.env.has": {Params: []*Type{Str}, Ret: Bool},
 }
 
 func (asmLibrary) Signature(name string) (front.Signature, bool) {
