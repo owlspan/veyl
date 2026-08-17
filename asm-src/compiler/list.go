@@ -32,6 +32,66 @@ const (
 	wordSize    = 8
 )
 
+// ---- the object header ----
+//
+// Every heap allocation carries one word in front of it saying what it
+// is and how big it is:
+//
+//	[ptr-8]   size in bytes << 8 | tag
+//	[ptr+0]   the payload, which is what every caller sees
+//
+// There is no collector yet. This exists so that there can be one.
+//
+// A collector has to answer one question about every word it finds: is
+// this a pointer to trace, or an integer that happens to look like one?
+// Every value here is an anonymous eight bytes, so nothing in the heap
+// could answer that. The tag answers it for a whole block at once - the
+// bytes of a string are never scanned, the elements of a []int are
+// never scanned, and the elements of a []str always are.
+//
+// Putting the word before the payload rather than after the other
+// fields is what kept this cheap: every offset already in this file and
+// in strings.go still measures from the same place, so nothing above
+// the allocator changed.
+//
+// The size is recorded because a collector that moves or frees an
+// object needs to know how much of it there is, and the allocator is
+// the only place that still knows.
+const (
+	objHeader = 8
+	tagShift  = 8
+
+	tagBytes = 0 // raw bytes, never scanned: the characters of a string
+	tagWords = 1 // eight-byte slots holding no pointers: []int, []float
+	tagPtrs  = 2 // eight-byte slots, every one a pointer: []str
+	tagList  = 3 // a list header: len, cap, and a pointer to the elements
+)
+
+// elemTag reports how the element block of a list must be treated.
+// One level deep is all the vty tracks, which is all this needs: a
+// list of strings holds pointers, a list of anything else does not.
+func elemTag(t vty) int64 {
+	if t.elem == kStr {
+		return tagPtrs
+	}
+	return tagWords
+}
+
+// allocObj allocates a tagged object and returns a pointer to its
+// payload. The header is written in the IR rather than inside the
+// runtime alloc helper, so that x64.go stays a translator and the
+// layout stays visible in `veylasm ir`.
+func (l *lowerer) allocObj(bytes Reg, tag int64) Reg {
+	raw := l.allocRaw(l.arith(OpAdd, bytes, l.constant(objHeader)))
+
+	// tag is below 256 and the size is shifted past it, so no bit of one
+	// can reach the other and an add is an or.
+	word := l.arith(OpAdd, l.arith(OpShl, bytes, l.constant(tagShift)), l.constant(tag))
+	l.emit(Instr{Op: OpStoreMem, A: raw, B: word, Imm: 0})
+
+	return l.arith(OpAdd, raw, l.constant(objHeader))
+}
+
 // initialCap is what an empty list grows to on its first push. Four is
 // small enough not to waste much on the many short lists a program
 // makes, and large enough that a handful of pushes do not each realloc.
@@ -44,10 +104,10 @@ func (l *lowerer) newList(t vty, capacity int64) Reg {
 		capacity = 1
 	}
 
-	hdr := l.alloc(l.constant(listHeader))
+	hdr := l.allocObj(l.constant(listHeader), tagList)
 	l.regTy[hdr] = t
 
-	data := l.alloc(l.constant(capacity * wordSize))
+	data := l.allocObj(l.constant(capacity*wordSize), elemTag(t))
 
 	l.emit(Instr{Op: OpStoreMem, A: hdr, B: l.constant(0), Imm: listLenOff})
 	l.emit(Instr{Op: OpStoreMem, A: hdr, B: l.constant(capacity), Imm: listCapOff})
@@ -62,7 +122,9 @@ func (l *lowerer) constant(n int64) Reg {
 	return d
 }
 
-func (l *lowerer) alloc(bytes Reg) Reg {
+// allocRaw is the untagged allocation. Only allocObj should call it:
+// an untagged block is one a collector cannot describe.
+func (l *lowerer) allocRaw(bytes Reg) Reg {
 	l.mod.needs("alloc")
 	d := l.newReg()
 	l.regTy[d] = vInt
@@ -120,7 +182,7 @@ func (l *lowerer) listPush(list, val Reg) {
 	l.regTy[newCap] = vInt
 	l.emit(Instr{Op: OpLoad, Dst: newCap, A: NoReg, B: NoReg, Imm: capSlot})
 
-	fresh := l.alloc(l.arith(OpMul, newCap, l.constant(wordSize)))
+	fresh := l.allocObj(l.arith(OpMul, newCap, l.constant(wordSize)), elemTag(l.regTy[list]))
 	old := l.field(list, listDataOff, vInt)
 
 	// Copy the old elements one word at a time. memcpy would be faster

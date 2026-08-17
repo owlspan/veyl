@@ -15,7 +15,7 @@ package main
 // string. The extra byte is the terminator, which every caller has to
 // write itself.
 func (l *lowerer) strAlloc(n Reg) Reg {
-	buf := l.alloc(l.arith(OpAdd, n, l.constant(1)))
+	buf := l.allocObj(l.arith(OpAdd, n, l.constant(1)), tagBytes)
 	l.regTy[buf] = vStr
 	return buf
 }
