@@ -275,7 +275,7 @@ func (l *lowerer) listSet(list, idx, val Reg) {
 // printList writes a list the way the Go backend does: [1, 2, 3], with
 // strings quoted. Built from the write ops rather than a runtime helper,
 // so it costs no assembly of its own.
-func (l *lowerer) printList(list Reg, t vty) {
+func (l *lowerer) writeList(n Node, list Reg, t vty) {
 	l.mod.needs("write")
 	l.writeLit("[")
 
@@ -307,21 +307,38 @@ func (l *lowerer) printList(list Reg, t vty) {
 	l.regTy[v] = t.elemType()
 	l.emit(Instr{Op: OpLoadMem, Dst: v, A: addr, B: NoReg, Imm: 0})
 
-	l.writeValue(v, t.elem)
+	l.writeValue(n, v, t.elemType())
 
 	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: iSlot})
 	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
 	l.mark(done)
 
-	l.writeLit("]\n")
+	l.writeLit("]")
+}
+
+// printList is the same list on a line of its own. The two are
+// separate because a list nested inside a printed struct must not
+// end the line.
+func (l *lowerer) printList(n Node, v Reg, t vty) {
+	l.writeList(n, v, t)
+	l.writeLit("\n")
 }
 
 // writeValue writes one element the way it appears inside a printed
-// list or map: strings quoted, bools as words, everything else plain.
-// Shared so that the two containers cannot drift apart in how they
+// list, map or struct: strings quoted, bools as words, everything else
+// plain. Shared so that the containers cannot drift apart in how they
 // render what they hold.
-func (l *lowerer) writeValue(v Reg, k vkind) {
-	switch k {
+//
+// It takes the whole vty rather than the kind, because a struct element
+// needs its name to render and a kind cannot carry one.
+func (l *lowerer) writeValue(n Node, v Reg, t vty) {
+	switch t.k {
+	case kStruct:
+		l.writeStruct(n, v, t)
+	case kList:
+		l.writeList(n, v, t)
+	case kMap:
+		l.writeMap(n, v, t)
 	case kStr:
 		l.writeLit("\"")
 		l.emit(Instr{Op: OpWriteStr, A: v, Dst: NoReg})

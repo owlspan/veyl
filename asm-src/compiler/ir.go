@@ -468,6 +468,10 @@ type lowerer struct {
 	loops []loopTarget
 	sigs  map[string]sig
 
+	// Declared structs, by name. Filled before anything is lowered,
+	// because a function signature can name one.
+	structs map[string]*structLayout
+
 	// hint is the type the surrounding context expects. An empty list
 	// literal has no element to infer from, so `let xs: []int = []` can
 	// only work if the annotation reaches the literal.
@@ -489,7 +493,11 @@ func Lower(p *Program, file string) (*Module, []string) {
 		sigs: map[string]sig{},
 	}
 
-	// Signatures first, so a function can call one declared below it.
+	// Struct layouts before signatures, because a parameter or a return
+	// type can name one and the signature needs its vty.
+	l.collectStructs(p)
+
+	// Signatures next, so a function can call one declared below it.
 	// The Go backend guarantees order-independent declaration and this
 	// has to match.
 	for _, fd := range p.Funcs {
@@ -673,7 +681,7 @@ func (l *lowerer) stmt(s Stmt) {
 				l.hint = want
 			}
 		}
-		v := l.expr(st.Value)
+		v := l.rvalue(st.Value)
 		l.hint = saved
 
 		t := l.regTy[v]
@@ -776,7 +784,7 @@ func (l *lowerer) stmt(s Stmt) {
 			l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg, Comment: "return"})
 			return
 		}
-		v := l.expr(st.Value)
+		v := l.rvalue(st.Value)
 
 		// Boxing a plain value into the T! a function promises is not
 		// decided here: the checker already marked the spot with a
@@ -818,7 +826,7 @@ func (l *lowerer) assign(st *AssignStmt) {
 		t := l.regTy[coll]
 		switch t.k {
 		case kList:
-			l.listSet(coll, l.expr(idx.Idx), l.expr(st.Value))
+			l.listSet(coll, l.expr(idx.Idx), l.rvalue(st.Value))
 			return
 		case kMap:
 			key := l.expr(idx.Idx)
@@ -826,7 +834,7 @@ func (l *lowerer) assign(st *AssignStmt) {
 				l.errorAt(st, "this map is keyed by %s, but the index is %s", t.keyType(), l.regTy[key])
 				return
 			}
-			val := l.expr(st.Value)
+			val := l.rvalue(st.Value)
 			if l.regTy[val].k != t.elem {
 				l.errorAt(st, "this map holds %s, but the value is %s", t.elemType(), l.regTy[val])
 				return
@@ -838,9 +846,14 @@ func (l *lowerer) assign(st *AssignStmt) {
 		return
 	}
 
+	if f, isField := st.Target.(*Field); isField {
+		l.fieldAssign(st, f)
+		return
+	}
+
 	id, ok := st.Target.(*Ident)
 	if !ok {
-		l.errorAt(st, "the assembly backend can only assign to a plain name so far")
+		l.errorAt(st, "the assembly backend can only assign to a plain name, a field or an index")
 		return
 	}
 	slot, known := l.lookup(id.Name)
@@ -848,7 +861,7 @@ func (l *lowerer) assign(st *AssignStmt) {
 		l.errorAt(st, "undefined variable %q", id.Name)
 		return
 	}
-	v := l.expr(st.Value)
+	v := l.rvalue(st.Value)
 	target := l.slotTy[slot]
 
 	// Plain assignment into a float variable accepts the same untyped
@@ -862,61 +875,79 @@ func (l *lowerer) assign(st *AssignStmt) {
 	// counted upwards run forever - a miscompile that produces no output
 	// rather than wrong output, so nothing catches it except a deadline.
 	if st.Op != ASSIGN {
-		isFloat := target.k == kFloat
-		if isFloat && l.regTy[v].k == kInt {
-			v = l.toFloat(v)
-		}
-
-		var op Op
-		switch st.Op {
-		case PLUSEQ:
-			switch {
-			case target.k == kStr:
-				op = OpConcat
-				l.mod.needs("concat")
-			case isFloat:
-				op = OpFAdd
-			default:
-				op = OpAdd
-			}
-		case MINUSEQ:
-			op = pickOp(isFloat, OpFSub, OpSub)
-		case STAREQ:
-			op = pickOp(isFloat, OpFMul, OpMul)
-		case SLASHEQ:
-			op = pickOp(isFloat, OpFDiv, OpDiv)
-		case PERCENTEQ:
-			if isFloat {
-				l.errorAt(st, "%%= needs two ints - use mod(...) for floats")
-				return
-			}
-			op = OpMod
-		case AMPEQ:
-			op = OpBAnd
-		case PIPEEQ:
-			op = OpBOr
-		case CARETEQ:
-			op = OpBXor
-		case SHLEQ:
-			op = OpShl
-		case SHREQ:
-			op = OpShr
-		default:
-			l.errorAt(st, "the assembly backend does not handle %s yet", st.Op)
-			return
-		}
 		cur := l.newReg()
 		l.regTy[cur] = target
 		l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: slot,
 			Comment: id.Name})
-		d := l.newReg()
-		l.regTy[d] = target
-		l.emit(Instr{Op: op, Dst: d, A: cur, B: v})
-		v = d
+		var applied bool
+		v, applied = l.compound(st, st.Op, target, cur, v)
+		if !applied {
+			return
+		}
 	}
 
 	l.emit(Instr{Op: OpStore, A: v, Dst: NoReg, Imm: slot,
 		Comment: id.Name + " " + st.Op.String()})
+}
+
+// compound applies the operator behind a compound assignment, given the
+// target's current value. It reports false once it has explained why it
+// could not, which is the caller's cue to stop rather than store junk.
+//
+// Extracted so that `u.age += 1` on a struct field and `i += 1` on a
+// variable cannot disagree. Ignoring the operator here once turned
+// `i += 1` into `i = 1`, which made every counting loop run forever - a
+// miscompile producing no output rather than wrong output, so nothing
+// catches it except a deadline.
+func (l *lowerer) compound(n Node, k Kind, target vty, cur, v Reg) (Reg, bool) {
+	isFloat := target.k == kFloat
+	if isFloat && l.regTy[v].k == kInt {
+		v = l.toFloat(v)
+	}
+
+	var op Op
+	switch k {
+	case PLUSEQ:
+		switch {
+		case target.k == kStr:
+			op = OpConcat
+			l.mod.needs("concat")
+		case isFloat:
+			op = OpFAdd
+		default:
+			op = OpAdd
+		}
+	case MINUSEQ:
+		op = pickOp(isFloat, OpFSub, OpSub)
+	case STAREQ:
+		op = pickOp(isFloat, OpFMul, OpMul)
+	case SLASHEQ:
+		op = pickOp(isFloat, OpFDiv, OpDiv)
+	case PERCENTEQ:
+		if isFloat {
+			l.errorAt(n, "%%= needs two ints - use mod(...) for floats")
+			return v, false
+		}
+		op = OpMod
+	case AMPEQ:
+		op = OpBAnd
+	case PIPEEQ:
+		op = OpBOr
+	case CARETEQ:
+		op = OpBXor
+	case SHLEQ:
+		op = OpShl
+	case SHREQ:
+		op = OpShr
+	default:
+		l.errorAt(n, "the assembly backend does not handle %s yet", k)
+		return v, false
+	}
+
+	d := l.newReg()
+	l.regTy[d] = target
+	l.emit(Instr{Op: op, Dst: d, A: cur, B: v})
+	return d, true
 }
 
 // pickOp chooses between a float and an int op, the same choice
@@ -1078,7 +1109,7 @@ func (l *lowerer) call(c *Call) Reg {
 		}
 		args := make([]Reg, len(c.Args))
 		for i, a := range c.Args {
-			v := l.expr(a)
+			v := l.rvalue(a)
 			if s.params[i].k == kFloat && l.regTy[v].k == kInt {
 				v = l.toFloat(v)
 			}
@@ -1152,10 +1183,14 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		}
 		a := l.expr(c.Args[0])
 		switch l.regTy[a].k {
+		case kStruct:
+			l.mod.needs("write")
+			l.writeStruct(c, a, l.regTy[a])
+			l.writeLit("\n")
 		case kList:
-			l.printList(a, l.regTy[a])
+			l.printList(c, a, l.regTy[a])
 		case kMap:
-			l.printMap(a, l.regTy[a])
+			l.printMap(c, a, l.regTy[a])
 		case kFloat:
 			l.mod.needs("floattostr")
 			l.emit(Instr{Op: OpPrintFloat, A: a, Dst: NoReg, Comment: "print"})
@@ -1219,7 +1254,7 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			l.errorAt(c, "push needs a list")
 			return l.junk()
 		}
-		v := l.expr(c.Args[1])
+		v := l.rvalue(c.Args[1])
 		if l.regTy[v].k != l.regTy[list].elem {
 			l.errorAt(c, "cannot push %s into %s", l.regTy[v], l.regTy[list])
 			return l.junk()
@@ -1396,7 +1431,10 @@ func (l *lowerer) toStr(v Reg, at Node) Reg {
 		l.emit(Instr{Op: OpFloatToStr, Dst: d, A: v, B: NoReg})
 		return d
 	}
-	l.errorAt(at, "nothing to convert to a string here")
+	// Lists, maps and structs all land here. The Go backend renders each
+	// of them, so this is a gap rather than a rule, and it should say
+	// which type it could not manage rather than only that it could not.
+	l.errorAt(at, "cannot convert %s to a string on the assembly backend yet", l.regTy[v])
 	return l.junk()
 }
 
@@ -1546,6 +1584,12 @@ func (l *lowerer) expr(e Expr) Reg {
 
 	case *Widen:
 		return l.widen(x)
+
+	case *StructLit:
+		return l.structLit(x)
+
+	case *Field:
+		return l.fieldRead(x)
 
 	default:
 		l.errorAt(e.(Node), "the assembly backend does not handle this expression yet")
@@ -1861,11 +1905,15 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 
 	vals := make([]Reg, len(x.Elems))
 	for i, e := range x.Elems {
-		vals[i] = l.expr(e)
+		vals[i] = l.rvalue(e)
 	}
 
 	elem := l.regTy[vals[0]]
-	if elem.k == kList || elem.k == kVoid {
+	// res is a flag beside the kind rather than a kind of its own, so a
+	// list of int! would otherwise pass the kind check below and be
+	// built as a list of int, storing box pointers and reading them back
+	// as numbers. It has to be refused explicitly.
+	if elem.res || elem.k == kList || elem.k == kVoid {
 		l.errorAt(x, "a list of %s is not on the assembly backend yet", elem)
 		return l.junk()
 	}
@@ -1877,7 +1925,7 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 		}
 	}
 
-	t := vListOf(elem.k)
+	t := vty{k: kList, elem: elem.k, name: elem.name}
 	list := l.newList(t, int64(len(vals)))
 	for _, v := range vals {
 		l.listPush(list, v)
@@ -1918,7 +1966,7 @@ func (l *lowerer) mapLit(x *MapLit) Reg {
 	vals := make([]Reg, len(x.Vals))
 	for i := range x.Keys {
 		keys[i] = l.expr(x.Keys[i])
-		vals[i] = l.expr(x.Vals[i])
+		vals[i] = l.rvalue(x.Vals[i])
 	}
 
 	kk := l.regTy[keys[0]]
@@ -1927,8 +1975,12 @@ func (l *lowerer) mapLit(x *MapLit) Reg {
 		l.errorAt(x, "a map keyed by %s is not on the assembly backend yet", kk)
 		return l.junk()
 	}
-	if vk.k == kList || vk.k == kMap || vk.k == kVoid {
+	if vk.res || vk.k == kList || vk.k == kMap || vk.k == kVoid {
 		l.errorAt(x, "a map of %s is not on the assembly backend yet", vk)
+		return l.junk()
+	}
+	if kk.res {
+		l.errorAt(x, "a map keyed by %s is not on the assembly backend yet", kk)
 		return l.junk()
 	}
 	for i := range keys {
@@ -1942,7 +1994,7 @@ func (l *lowerer) mapLit(x *MapLit) Reg {
 		}
 	}
 
-	t := vMapOf(kk.k, vk.k)
+	t := vty{k: kMap, key: kk.k, elem: vk.k, name: vk.name}
 	m := l.newMap(t, int64(len(keys)))
 	for i := range keys {
 		l.mapSet(m, keys[i], vals[i], t)

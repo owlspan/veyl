@@ -358,7 +358,7 @@ func (l *lowerer) moveSlot(block, a, b Reg) {
 //
 // with string keys quoted and entries in sorted order, which they are
 // already in. An empty map is {}.
-func (l *lowerer) printMap(m Reg, t vty) {
+func (l *lowerer) writeMap(n Node, m Reg, t vty) {
 	length := l.field(m, mapLenOff, vInt)
 	keys := l.field(m, mapKeysOff, vInt)
 	vals := l.field(m, mapValsOff, vInt)
@@ -408,11 +408,18 @@ func (l *lowerer) printMap(m Reg, t vty) {
 	v := l.newReg()
 	l.regTy[v] = t.elemType()
 	l.emit(Instr{Op: OpLoadMem, Dst: v, A: vaddr, B: NoReg, Imm: 0})
-	l.writeValue(v, t.elem)
+	l.writeValue(n, v, t.elemType())
 
 	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: iSlot})
 	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
 
 	l.mark(done)
-	l.writeLit("}\n")
+	l.writeLit("}")
+}
+
+// printMap is the same map on a line of its own, separate from
+// writeMap for the same reason printList is.
+func (l *lowerer) printMap(n Node, v Reg, t vty) {
+	l.writeMap(n, v, t)
+	l.writeLit("\n")
 }

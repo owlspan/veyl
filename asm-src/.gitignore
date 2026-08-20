@@ -2,10 +2,11 @@
 /veylasm
 /veylasm.exe
 
-# `go build ./...` drops one of these next to the package it built,
-# named after the directory rather than the module.
+# `go build ./...` drops this next to the package it built, named
+# after the directory rather than the module. Only the .exe: a bare
+# /compiler would match the compiler/ directory itself and silently
+# stop tracking every new file in it.
 /compiler.exe
-/compiler
 
 # programs built from examples
 examples/*.exe
