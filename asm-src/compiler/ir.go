@@ -1416,6 +1416,14 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.osBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.dirBuiltin(c, name); handled {
+		return r
+	}
+
 	l.errorAt(c, "%q is not on the assembly backend yet", name)
 	return l.junk()
 }

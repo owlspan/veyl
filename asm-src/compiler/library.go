@@ -67,6 +67,23 @@ var sigs = map[string]front.Signature{
 	"time.now":   {Ret: Int},
 	"os.env.get": {Params: []*Type{Str}, Ret: Str},
 	"os.env.has": {Params: []*Type{Str}, Ret: Bool},
+	"os.env.set": {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
+
+	// Files, on Win32. Every one of these that can fail says so as a
+	// T!, with the same wording the Go backend produces, which is the
+	// reason they are written against CreateFile rather than fopen.
+	"os.file.read":   {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"os.file.lines":  {Params: []*Type{Str}, Ret: ResultOf(ListOf(Str))},
+	"os.file.write":  {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
+	"os.file.append": {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
+	"os.file.exists": {Params: []*Type{Str}, Ret: Bool},
+	"os.file.size":   {Params: []*Type{Str}, Ret: ResultOf(Int)},
+	"os.file.delete": {Params: []*Type{Str}, Ret: ResultOf(Void)},
+	"os.file.rename": {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
+	"os.dir.is":      {Params: []*Type{Str}, Ret: Bool},
+	"os.dir.list":    {Params: []*Type{Str}, Ret: ResultOf(ListOf(Str))},
+	"os.dir.make":    {Params: []*Type{Str}, Ret: ResultOf(Void)},
+	"os.dir.delete":  {Params: []*Type{Str}, Ret: ResultOf(Void)},
 }
 
 func (asmLibrary) Signature(name string) (front.Signature, bool) {
