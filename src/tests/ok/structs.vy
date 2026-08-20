@@ -124,3 +124,9 @@ if ready {
 if (Point{x: 1.0, y: 0.0}).length() > 0.5 {
     print("parenthesised struct literal in a condition works")
 }
+
+// a field of a list element is written through the element, not a copy
+let pts = [Point{x: 1.0, y: 2.0}, Point{x: 3.0, y: 4.0}]
+pts[0].x = 42.0
+pts[1].y = pts[0].x
+print("after writing through the list {pts}")

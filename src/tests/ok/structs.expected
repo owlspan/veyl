@@ -20,3 +20,4 @@ in a list [User{name: "alan", age: 42, tags: []}, User{name: "grace", age: 45, t
 str() gives Point{x: 2, y: 3}
 plain identifier condition still parses
 parenthesised struct literal in a condition works
+after writing through the list [Point{x: 42, y: 2}, Point{x: 3, y: 42}]

@@ -891,12 +891,24 @@ func staticType(e Expr) *Type {
 }
 
 // lvalue emits an expression in a position that is written to rather
-// than read. It differs from expr in one way: an index is emitted as a
-// plain `xs[i]`, never through the bounds-checked read helper, because
-// `__listGet(xs, i) = v` is not valid Go.
+// than read. It differs from expr in two ways.
+//
+// An index is emitted as a plain `xs[i]`, never through the
+// bounds-checked read helper, because `__listGet(xs, i) = v` is not
+// valid Go.
+//
+// A field goes through addressOf, so that `pts[0].x = 42` reaches the
+// element in the list rather than a copy of it. __listGet returns a
+// value, and Go rejects assigning to a field of one - which is how this
+// was found, as a generated program that would not compile. The asm
+// backend handled it, so the two backends disagreed in the one
+// direction the differential test cannot see.
 func (c *Codegen) lvalue(e Expr) string {
-	if idx, ok := e.(*Index); ok {
-		return fmt.Sprintf("%s[%s]", c.lvalue(idx.X), c.expr(idx.Idx))
+	switch x := e.(type) {
+	case *Index:
+		return fmt.Sprintf("%s[%s]", c.lvalue(x.X), c.expr(x.Idx))
+	case *Field:
+		return c.addressOf(x.X) + "." + goField(x.Name)
 	}
 	return c.expr(e)
 }
