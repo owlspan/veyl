@@ -36,30 +36,40 @@ anywhere in the pipeline:
   `float`, `divf`, `sqrt`, `mod`, `upper`, `lower`, `substr`, `charAt`,
   `indexOf`, `contains`, `startsWith`, `endsWith`, `repeat`
 - the constants `PI` and `E`
-- namespaced calls at any depth: `time.now`, `os.env.get`,
-  `os.env.has`
+- namespaced calls at any depth: a dotted name is looked up like any
+  other, so a namespace is a naming convention rather than a scope
 - maps `{K: V}` with int or str keys: literals, get, set, `len`,
-  `print`, growth, and a missing key reading the zero value
+  growth, a missing key reading the zero value, `keys`, `values`,
+  `has`, `remove`, `clear`, and `for k, v in m`
+- containers inside containers, to any depth: `[][]int`,
+  `{str: []int}`, a list of maps, a struct holding a list
 - the error type `T!`: `fail`, `ok`, `isOk`, `failed`, `errorOf`,
   `valueOr`, `must`, postfix `?` propagation, and `void!`
 - structs: declarations, literals with zero values for omitted fields,
   nested structs, field read and write, compound assignment on a field,
   structs in lists and maps, value semantics, and printing
+- `str()` of a list, map or struct - the same renderer that prints one,
+  with its output pointed at a buffer, so the two cannot disagree
+- the `os` library: `file.read`, `write`, `append`, `lines`, `exists`,
+  `size`, `delete`, `rename`; `dir.is`, `list`, `make`, `delete`;
+  `env.get`, `has`, `set`; and `time.now`
 
 Everything else is a compile error naming what is missing: `impl`
-methods, closures, nullable `?T`, `bytes`, and all but three of the
-namespaced library functions. Also `str()` of a list, map or struct -
-all three print fine, but printing writes to stdout and converting
-needs to build into a buffer, which is a different implementation.
+methods, closures and higher-order functions, nullable `?T`, `bytes`,
+`import` across files, json, and the library functions that are not
+listed above.
 
 Every heap allocation carries an object header - a size and a tag
 saying whether the block holds pointers - so that a collector is
 possible. There is still no collector, so nothing is ever freed, and
 a result costs an allocation per fallible call.
 
-It compiles 4 of the 24 programs in the Go backend's own test suite,
-and every one of the 17 programs in `examples/` produces byte-identical
-output through both backends.
+It compiles 6 of the 24 programs in the Go backend's own test suite,
+and every one of the 21 programs in `examples/` produces byte-identical
+output through both backends - error messages included, which is why
+the `os` library is written against Win32 rather than the C runtime.
+Go's message for a missing file is FormatMessage's sentence and
+strerror's is a different one.
 
 ```
 $ veylasm run examples/floats.vy
@@ -96,6 +106,12 @@ what the memory model on the roadmap is blocked on.
 builtin is caught by the lowerer rather than the checker, so it is
 missed when the checker has already failed on something else. Sharing
 `resolve.go` the way `check.go` is now shared is the obvious fix.
+
+**A string is NUL-terminated bytes**, with no length beside it. So a
+file holding a zero byte reads back short where the Go backend reads it
+whole, and building a string by repeated appending is quadratic. Both
+are arguments for a `bytes` type and a growable buffer rather than
+things to work around.
 
 **Three deliberate float gaps**, each a compile error rather than a
 wrong answer:
@@ -134,6 +150,8 @@ asm-src/
     library.go      asmLibrary - the builtin table, for the checker
     list.go         lists, built in the IR
     map.go          maps, sorted key and value blocks
+    os.go           files and the environment, on Win32
+    osdir.go        directory listing, making and removing
     result.go       the error type T!, built in the IR
     struct.go       struct layout, copying and printing
     strings.go      the string library, built in the IR
@@ -149,7 +167,7 @@ lets the rest of this package write `Expr` and `PLUS` unqualified.
 
 `ir.go` is the boundary. Nothing in it knows an x86 register exists.
 
-**The type checker is shared too, as of the last commit.** What
+**The type checker is shared too.** What
 unblocked it was the builtin table: the two backends do not have the
 same set of builtins, so the checker could not assume either one.
 `frontend/library.go` is the interface it asks instead, and
@@ -326,16 +344,61 @@ have crashed, it would have been `let b = a` quietly aliasing.
 Still missing on structs: `impl` methods, `str()` of one, and a `T!`
 field.
 
-**6. A register allocator.** Where the 20% gap starts closing. Do it
+**6. A foreign call op. Done.** `OpCall` emitted `call __vy_<Sym>` and
+so could only reach functions this compiler wrote. Anything wanting a
+libc or Win32 function had to become its own opcode with its own case
+in `x64.go` - which meant the cost of porting the library was one
+*opcode* per function, not one edit.
+
+`Instr` now carries `Extern`, `Ret32` and `Variadic`. `Ret32`
+sign-extends `eax`, which the many C functions returning an `int` need
+because the top half of `rax` is undefined on such a return.
+`Variadic` puts a float in both the xmm and the integer register, which
+the convention requires when the callee reads a `va_list` and has no
+prototype telling it which file to look in. Both are silent when wrong,
+which is why they are flags rather than something to remember at each
+call site. The three ops that existed only to reach C are gone.
+
+**7. Containers inside containers. Done.** A `vty` carried its element
+as a bare kind, so it could say "list of int" but not "list of list of
+int". It carries a whole type now. The catch: a vty holds a pointer, so
+`==` is no longer type equality, and every place meaning "the same
+type" has to go through `eq()`.
+
+**8. `str()` of a container. Done.** The printing code with its output
+redirected into a buffer, so `print(xs)` and `str(xs)` cannot disagree
+about a character - there is one renderer, not two kept in step. It
+allocates per piece appended, so a long list is quadratic and, with no
+collector, permanent. That is an argument for a growable buffer, not
+for a second renderer.
+
+**9. The os library. Done.** Files, directories and the environment, in
+`os.go` and `osdir.go`, entirely through the foreign call op - no new
+opcode. Written against Win32 rather than the C runtime because the
+failure text has to match Go's, and Go's comes from FormatMessage.
+
+`os.env.set` is the exception that goes through the CRT: a process has
+two environments, the block Win32 keeps and the copy the CRT made at
+startup, and `SetEnvironmentVariable` updates only the one `getenv`
+does not read.
+
+**10. A register allocator.** Where the 20% gap starts closing. Do it
 after functions exist - which they now do - because the whole
 difficulty is knowing which values are live across a call, and a
 version written before calls existed would be written twice.
 
-**7. The collector.** Needs step 1, which is done. Budget a whole session
-minimum; a collector that frees one live object produces a bug that
-surfaces somewhere else entirely, hours later.
+It also shrinks stack frames, which are large here because nothing is
+reused: a 60-line program can need 3,000 virtual registers. That is a
+size problem, not a correctness one - a frame bigger than a page has to
+touch every page on the way down, or Windows never moves the guard page
+and the first write below it faults. `reserve()` in `x64.go` does the
+probing, and has to keep doing it however small frames get.
 
-**8. The byte writer and PE emitter.** What finally removes the MinGW
+**11. The collector.** Needs step 1, which is done. Budget a whole
+session minimum; a collector that frees one live object produces a bug
+that surfaces somewhere else entirely, hours later.
+
+**12. The byte writer and PE emitter.** What finally removes the MinGW
 dependency. Mechanical by then: `x64.go` is replaced and nothing above
 it changes.
 
