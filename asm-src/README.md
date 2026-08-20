@@ -11,7 +11,7 @@ installer, and any hope of pointers or manual memory.
 This backend is how those get bought back.
 
 ```
-hello.vy  ->  [veylasm]  ->  hello.s  ->  [as, ld]  ->  hello.exe
+hello.vl  ->  [veylasm]  ->  hello.s  ->  [as, ld]  ->  hello.exe
 ```
 
 ## Status
@@ -72,14 +72,14 @@ Go's message for a missing file is FormatMessage's sentence and
 strerror's is a different one.
 
 ```
-$ veylasm run examples/floats.vy
+$ veylasm run examples/floats.vl
 5.5
 -2.5
 6
 0.375
 ```
 
-`examples/collatz.vy` is the benchmark - nested loops, 10,000 iterations
+`examples/collatz.vl` is the benchmark - nested loops, 10,000 iterations
 of real integer work - through both backends:
 
 | | via Go | via assembly |
@@ -182,11 +182,11 @@ above - still `src`-only.
 ## Commands
 
 ```
-veylasm f.vy          compile and run
-veylasm run   f.vy    the same thing, spelled out
-veylasm build f.vy    write an executable next to the source
-veylasm asm   f.vy    print the generated assembly
-veylasm ir    f.vy    print the intermediate representation
+veylasm f.vl          compile and run
+veylasm run   f.vl    the same thing, spelled out
+veylasm build f.vl    write an executable next to the source
+veylasm asm   f.vl    print the generated assembly
+veylasm ir    f.vl    print the intermediate representation
 ```
 
 `asm` and `ir` matter more here than `veyl emit` does on the Go
@@ -281,7 +281,7 @@ regenerating rather than trusting:
 
 ```bash
 cd asm-src
-for f in ../src/tests/ok/*.vy; do
+for f in ../src/tests/ok/*.vl; do
   ./veylasm.exe asm "$f" >/dev/null 2>&1 || echo "$f"
 done
 ```
@@ -402,7 +402,7 @@ that surfaces somewhere else entirely, hours later.
 dependency. Mechanical by then: `x64.go` is replaced and nothing above
 it changes.
 
-The two papercuts that used to sit here are done: `veylasm f.vy` is
+The two papercuts that used to sit here are done: `veylasm f.vl` is
 shorthand for `run`, and the linker's real output surfaces instead of
 being swallowed. The one still open is sharing `resolve.go` the way
 `check.go` is shared, so that an undefined name is caught here by a

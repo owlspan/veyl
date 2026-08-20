@@ -208,12 +208,12 @@ func (p *Parser) ParseProgram() *Program {
 	return prog
 }
 
-// parseImport reads `import "helpers.vy"`. The path is a plain string
+// parseImport reads `import "helpers.vl"`. The path is a plain string
 // resolved relative to the file the import appears in - there is no
 // module registry and no search path to learn.
 func (p *Parser) parseImport() *ImportDecl {
 	kw := p.advance() // 'import'
-	pathTok := p.expect(STRING, `a file path in quotes, as in: import "helpers.vy"`)
+	pathTok := p.expect(STRING, `a file path in quotes, as in: import "helpers.vl"`)
 	p.endStmt()
 	if pathTok.Kind != STRING {
 		return nil

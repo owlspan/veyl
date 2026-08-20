@@ -51,7 +51,7 @@ type Manifest struct {
 	// Version is what this package calls itself. Unused for an
 	// application, required for something others will depend on.
 	Version string `json:"version,omitempty"`
-	// Main is the file an importer gets. Defaults to <name>.vy.
+	// Main is the file an importer gets. Defaults to <name>.vl.
 	Main         string            `json:"main,omitempty"`
 	Description  string            `json:"description,omitempty"`
 	Dependencies map[string]string `json:"dependencies,omitempty"`
@@ -190,7 +190,7 @@ func saveLock(dir string, l *Lock) error {
 }
 
 // findProjectRoot walks up from a file looking for veyl.json, so
-// `veyl run src/main.vy` works from anywhere inside a project.
+// `veyl run src/main.vl` works from anywhere inside a project.
 func findProjectRoot(start string) string {
 	dir := start
 	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
@@ -412,7 +412,7 @@ func newPackageResolver(startFile string) *packageResolver {
 	return r
 }
 
-// resolve turns `import "strutil"` into the path of the .vy file that
+// resolve turns `import "strutil"` into the path of the .vl file that
 // package exposes. The error text carries the fix, because "package not
 // found" on its own leaves someone guessing which of three things
 // went wrong.
@@ -447,7 +447,7 @@ func (r *packageResolver) resolve(name string) (string, error) {
 	}
 	main := m.Main
 	if main == "" {
-		main = m.Name + ".vy"
+		main = m.Name + ".vl"
 	}
 	entry := filepath.Join(dir, filepath.FromSlash(main))
 	if _, err := os.Stat(entry); err != nil {

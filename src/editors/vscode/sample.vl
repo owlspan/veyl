@@ -1,7 +1,7 @@
 // A file that touches everything the grammar highlights, so a change
 // to it can be eyeballed in one screen.
 
-import "helpers.vy"
+import "helpers.vl"
 
 pub const LIMIT = 100
 const RATIO = 1.5

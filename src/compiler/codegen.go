@@ -518,7 +518,7 @@ func (c *Codegen) raw(format string, args ...any) {
 }
 
 // line emits a //line directive so errors from the Go backend and any
-// debugger point at the .vy source. It must start at column 1.
+// debugger point at the .vl source. It must start at column 1.
 func (c *Codegen) line(n Node) {
 	l, _ := n.Pos()
 	fmt.Fprintf(&c.body, "//line %s:%d\n", c.srcPath, l)

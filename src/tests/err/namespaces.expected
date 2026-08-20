@@ -1,4 +1,4 @@
-error: namespaces.vy:2:22: there is no builtin called nope.thing.here - "nope" is not a library (try one of: args, bits, bytes, csv, hash, http, json, log, mem, net, os, rand, re, stats, task, term, time, url, win, zip)
-error: namespaces.vy:5:20: there is no builtin called os.file.slurp - did you mean one of: os.file.append, os.file.delete, os.file.exists, os.file.lines, os.file.read, os.file.readOr, ...
-error: namespaces.vy:11:16: os.file.read is a function; did you mean os.file.read(...)?
+error: namespaces.vl:2:22: there is no builtin called nope.thing.here - "nope" is not a library (try one of: args, bits, bytes, csv, hash, http, json, log, mem, net, os, rand, re, stats, task, term, time, url, win, zip)
+error: namespaces.vl:5:20: there is no builtin called os.file.slurp - did you mean one of: os.file.append, os.file.delete, os.file.exists, os.file.lines, os.file.read, os.file.readOr, ...
+error: namespaces.vl:11:16: os.file.read is a function; did you mean os.file.read(...)?
 veyl: 3 error(s)

@@ -1,7 +1,7 @@
-// wordfreq.vy -- count the words in a file and show the commonest.
+// wordfreq.vl -- count the words in a file and show the commonest.
 //
-//     veyl run examples\wordfreq.vy
-//     veyl run examples\wordfreq.vy SYNTAX.md 20
+//     veyl run examples\wordfreq.vl
+//     veyl run examples\wordfreq.vl SYNTAX.md 20
 //
 // A whole small program: arguments, files that might not be there,
 // regular expressions, maps, structs, sorting with your own comparison.
@@ -73,7 +73,7 @@ if len(args) > 1 {
 let outcome = report(path, top)
 if failed(outcome) {
     print("could not read it: {errorOf(outcome)}")
-    print("try: veyl run examples\\wordfreq.vy SYNTAX.md 20")
+    print("try: veyl run examples\\wordfreq.vl SYNTAX.md 20")
     exit(1)
 }
 print("")

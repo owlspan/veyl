@@ -30,7 +30,7 @@ type Stmt interface {
 	stmtNode()
 }
 
-// Program is a whole .vy file: zero or more functions, plus the
+// Program is a whole .vl file: zero or more functions, plus the
 // top-level statements that become main().
 // Program is a whole compilation: the main file plus everything it
 // imported, flattened into one set of declarations. Which file each
@@ -47,7 +47,7 @@ type Program struct {
 	MainFile string
 }
 
-// ImportDecl is `import "helpers.vy"`. The path is relative to the file
+// ImportDecl is `import "helpers.vl"`. The path is relative to the file
 // containing the import.
 type ImportDecl struct {
 	Span

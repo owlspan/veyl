@@ -35,10 +35,10 @@ print("Hello, world!")
 ```
 
 ```
-veyl run hello.vy
+veyl run hello.vl
 ```
 
-Source files use the `.vy` extension. There is no required `main`
+Source files use the `.vl` extension. There is no required `main`
 function - statements at the top level of a file run in order.
 
 ---
@@ -1168,13 +1168,13 @@ Builtin names cannot be redefined.
 
 ## Multiple files
 
-`import` loads another `.vy` file and folds its declarations into your
+`import` loads another `.vl` file and folds its declarations into your
 program. The path is relative to the file that writes it - there is no
 search path, no registry, and no package names to learn.
 
 ```qz
-import "geometry.vy"
-import "shapes/circle.vy"
+import "geometry.vl"
+import "shapes/circle.vl"
 ```
 
 ### `pub` decides what escapes
@@ -1182,7 +1182,7 @@ import "shapes/circle.vy"
 A declaration is private to its own file unless it is marked `pub`:
 
 ```qz
-// geometry.vy
+// geometry.vl
 pub const TAU = 6.283185307179586
 
 pub struct Vec {
@@ -1202,7 +1202,7 @@ fn helper() -> int {      // no pub: this file only
 Using something private from another file is an error that says so:
 
 ```
-error: "helper" is private to geometry.vy
+error: "helper" is private to geometry.vl
        - mark it 'pub fn helper' to use it from another file
 ```
 
@@ -1903,7 +1903,7 @@ for file in args.rest() {
 ```
 
 ```
-veyl run tool.vy --verbose --out=result.txt notes.txt
+veyl run tool.vl --verbose --out=result.txt notes.txt
 ```
 
 Both `--name=value` and `--name value` work, and one dash or two are
@@ -1998,7 +1998,7 @@ print(valueOr(win.registry.read("HKLM", KEY, "ProductName"), "unknown"))
 Note the raw string: registry paths are full of backslashes, and an
 ordinary string would need every one of them doubled.
 
-`examples\windows.vy` exercises all of it, and puts your clipboard back
+`examples\windows.vl` exercises all of it, and puts your clipboard back
 the way it found it.
 
 ### Cross-compiling
@@ -2006,7 +2006,7 @@ the way it found it.
 Set `VEYL_TARGET` to build for a different OS than the one you are on:
 
 ```
-VEYL_TARGET=windows veyl build app.vy
+VEYL_TARGET=windows veyl build app.vl
 ```
 
 `veyl run` needs the target to match your machine; use `veyl build`
@@ -2036,22 +2036,22 @@ defer own unsafe
 
 | Command                  | Effect                                        |
 | ------------------------ | --------------------------------------------- |
-| `veyl run f.vy`        | compile and run                                |
-| `veyl build f.vy`      | write an executable next to the source         |
-| `veyl fmt f.vy`        | reformat the file in place                     |
-| `veyl emit f.vy`       | print the generated Go                         |
-| `veyl tokens f.vy`     | print the token stream                         |
+| `veyl run f.vl`        | compile and run                                |
+| `veyl build f.vl`      | write an executable next to the source         |
+| `veyl fmt f.vl`        | reformat the file in place                     |
+| `veyl emit f.vl`       | print the generated Go                         |
+| `veyl tokens f.vl`     | print the token stream                         |
 | `veyl version`         | print the version                              |
-| `veyl f.vy`            | same as `run`                                  |
+| `veyl f.vl`            | same as `run`                                  |
 
-### Double-clicking a .vy file
+### Double-clicking a .vl file
 
 If Veyl was installed with the file association ticked, opening a
-`.vy` from Explorer asks what to do rather than guessing:
+`.vl` from Explorer asks what to do rather than guessing:
 
 ```
   Veyl 0.17
-  hello.vy
+  hello.vl
 
     [R]  Run it now
     [B]  Build hello.exe, so it can run without Veyl
@@ -2068,8 +2068,8 @@ Right-click offers **Run with Veyl** and **Build .exe with Veyl**
 directly, skipping the menu. The same thing from a terminal:
 
 ```
-veyl open hello.vy            # the menu
-veyl open hello.vy --build    # straight to building
+veyl open hello.vl            # the menu
+veyl open hello.vl --build    # straight to building
 ```
 
 ### The console
@@ -2101,7 +2101,7 @@ qz> double(21)
 | `:list` | every line in the session |
 | `:undo` | drop the last line |
 | `:clear` | start over |
-| `:save <file>` | write the session out as a `.vy` program |
+| `:save <file>` | write the session out as a `.vl` program |
 | `:emit` | show the Go the session compiles to |
 | `:quit` | leave |
 
@@ -2129,7 +2129,7 @@ through untouched. A file that does not lex is left completely alone
 rather than half-rewritten:
 
 ```
-notes.vy does not lex cleanly, so it was left alone
+notes.vl does not lex cleanly, so it was left alone
 ```
 
 ### Warnings
@@ -2137,8 +2137,8 @@ notes.vy does not lex cleanly, so it was left alone
 Some things are worth saying but not worth refusing to compile over:
 
 ```
-warning: app.vy:12:5: this can never run - the 'return' above it always leaves
-warning: app.vy:17:1: "leftover" is declared but never used
+warning: app.vl:12:5: this can never run - the 'return' above it always leaves
+warning: app.vl:17:1: "leftover" is declared but never used
 ```
 
 Warnings go to stderr, and only once the program is known to compile -

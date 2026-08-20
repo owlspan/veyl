@@ -1,6 +1,6 @@
 # Veyl for VS Code
 
-Syntax highlighting for `.vy` files: keywords, types, strings with
+Syntax highlighting for `.vl` files: keywords, types, strings with
 interpolation, the dotted libraries, all 90 bare builtins, and the
 `?`/`!` type markers.
 
@@ -24,7 +24,7 @@ cp -r editors/vscode ~/.vscode/extensions/veyl-lang-0.10.0
 ```
 
 The folder name matters: VS Code expects `name-version` matching
-`package.json`. Restart VS Code, open a `.vy` file, and the language
+`package.json`. Restart VS Code, open a `.vl` file, and the language
 indicator in the status bar should read **Veyl**.
 
 If it does not, run **Developer: Inspect Editor Tokens and Scopes** from
@@ -42,7 +42,7 @@ saving and formatting do not fight each other.
 
 **Does not:** completion, go-to-definition, inline errors, or running
 the formatter on save. Those need a language server, which does not
-exist. Run `veyl fmt file.vy` by hand.
+exist. Run `veyl fmt file.vl` by hand.
 
 Reserved-but-unimplemented words - `defer`, `own`, `unsafe` - are
 highlighted as errors on purpose. The compiler will refuse them, and

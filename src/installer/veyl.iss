@@ -2,7 +2,7 @@
 ;
 ; Produces a Windows installer that places veyl.exe, optionally ships
 ; a private copy of the Go toolchain, adds a PATH entry, and associates
-; .vy files with a right-click "Run with Veyl" verb.
+; .vl files with a right-click "Run with Veyl" verb.
 ;
 ; Do not run iscc against this directly. It expects a staging tree that
 ; installer\build.ps1 produces:
@@ -79,7 +79,7 @@ Name: "editors\vim"; Description: "Vim and Neovim"; Types: custom
 [Tasks]
 Name: "addtopath"; Description: "Add Veyl to PATH so 'veyl' works in any terminal"; \
     GroupDescription: "Setup:"
-Name: "associate"; Description: "Associate .vy files, with an icon and a right-click ""Run with Veyl"""; \
+Name: "associate"; Description: "Associate .vl files, with an icon and a right-click ""Run with Veyl"""; \
     GroupDescription: "Setup:"
 Name: "prompt"; Description: "Add a ""Veyl prompt"" shortcut (a terminal with Veyl already on PATH)"; \
     GroupDescription: "Setup:"
@@ -93,7 +93,7 @@ Source: "..\..\README.md";       DestDir: "{app}"; Components: core; Flags: igno
 
 Source: "..\..\docs\SYNTAX.md";       DestDir: "{app}"; Components: docs; Flags: ignoreversion
 Source: "..\..\docs\TUTORIAL.md";     DestDir: "{app}"; Components: docs; Flags: ignoreversion
-Source: "..\examples\*.vy";   DestDir: "{app}\examples"; Components: docs; Flags: ignoreversion
+Source: "..\examples\*.vl";   DestDir: "{app}\examples"; Components: docs; Flags: ignoreversion
 
 ; Dropped straight into the extensions folder. VS Code scans that
 ; directory at startup, so there is no marketplace step and nothing to
@@ -139,10 +139,10 @@ Source: "..\dist\stage\go\*"; DestDir: "{app}\go"; Components: gotoolchain; \
 ; task was ticked. This is what makes the install usable immediately
 ; instead of after a sign-out and back in.
 Name: "{group}\Veyl prompt"; Filename: "{cmd}"; \
-    Parameters: "/K ""set PATH={app};%PATH% && echo Veyl {#AppVersion} - try: veyl run examples\hello.vy && cd /d {app}"""; \
+    Parameters: "/K ""set PATH={app};%PATH% && echo Veyl {#AppVersion} - try: veyl run examples\hello.vl && cd /d {app}"""; \
     IconFilename: "{app}\veyl.ico"; Tasks: prompt
 Name: "{autodesktop}\Veyl prompt"; Filename: "{cmd}"; \
-    Parameters: "/K ""set PATH={app};%PATH% && echo Veyl {#AppVersion} - try: veyl run examples\hello.vy && cd /d {app}"""; \
+    Parameters: "/K ""set PATH={app};%PATH% && echo Veyl {#AppVersion} - try: veyl run examples\hello.vl && cd /d {app}"""; \
     IconFilename: "{app}\veyl.ico"; Tasks: desktopicon
 
 ; The interactive console, which is what most people will actually
@@ -181,8 +181,8 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
     ValueData: "{olddata};{app}"; Tasks: addtopath; \
     Check: IsAdminInstallMode and NeedsPathEntry(ExpandConstant('{app}'))
 
-; .vy file association and the right-click verb.
-Root: HKA; Subkey: "Software\Classes\.vy"; ValueType: string; ValueName: ""; \
+; .vl file association and the right-click verb.
+Root: HKA; Subkey: "Software\Classes\.vl"; ValueType: string; ValueName: ""; \
     ValueData: "Veyl.Source"; Flags: uninsdeletevalue; Tasks: associate
 Root: HKA; Subkey: "Software\Classes\Veyl.Source"; ValueType: string; ValueName: ""; \
     ValueData: "Veyl source file"; Flags: uninsdeletekey; Tasks: associate

@@ -3,7 +3,7 @@
 A small, fast, readable programming language that compiles to native
 executables.
 
-Veyl source (`.vy`) is translated to Go, which the Go toolchain
+Veyl source (`.vl`) is translated to Go, which the Go toolchain
 compiles to a single self-contained binary. You get native speed and a
 program you can hand to someone with nothing to install - but you write
 something closer to Python than to C++.
@@ -29,7 +29,7 @@ print("")
 ```
 
 ```
-$ veyl run primes.vy
+$ veyl run primes.vl
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
@@ -86,7 +86,7 @@ to ship and no C compiler involved anywhere.
 ## Installing
 
 **The easy way, on Windows:** run `veyl-<version>-setup.exe`. It
-installs the compiler, adds it to PATH if you let it, associates `.vy`
+installs the compiler, adds it to PATH if you let it, associates `.vl`
 files, and ships a private copy of the Go toolchain so there is nothing
 else to install. Then check it:
 
@@ -129,7 +129,7 @@ Open a new terminal afterwards for the change to take effect.
 While working on the compiler itself, skip the rebuild step:
 
 ```
-go run ./compiler run examples\demo.vy
+go run ./compiler run examples\demo.vl
 ```
 
 The first `run` is Go's, the second is Veyl's.
@@ -140,7 +140,7 @@ The first `run` is Go's, the second is Veyl's.
 go test ./...
 ```
 
-Each case is a `.vy` file next to a `.expected` file holding what the
+Each case is a `.vl` file next to a `.expected` file holding what the
 compiler should produce - program output for `tests/ok`, error messages
 for `tests/err`. Adding a test means adding two files, not editing any
 Go code.
@@ -158,13 +158,13 @@ go test -run TestVeyl -update ./compiler
 
 | Command                  | Effect                                        |
 | ------------------------ | --------------------------------------------- |
-| `veyl run f.vy`        | compile and run                                |
-| `veyl build f.vy`      | write an executable next to the source         |
-| `veyl fmt f.vy`        | reformat the file in place                     |
-| `veyl emit f.vy`       | print the generated Go                         |
-| `veyl tokens f.vy`     | print the token stream                         |
+| `veyl run f.vl`        | compile and run                                |
+| `veyl build f.vl`      | write an executable next to the source         |
+| `veyl fmt f.vl`        | reformat the file in place                     |
+| `veyl emit f.vl`       | print the generated Go                         |
+| `veyl tokens f.vl`     | print the token stream                         |
 | `veyl console`         | an interactive console                         |
-| `veyl open f.vy`       | ask whether to run it or build an .exe         |
+| `veyl open f.vl`       | ask whether to run it or build an .exe         |
 | `veyl doctor`          | check the install and report which Go it found |
 | `veyl init [name]`     | start a project here                           |
 | `veyl add <source>`    | add a dependency and fetch it                  |
@@ -173,10 +173,10 @@ go test -run TestVeyl -update ./compiler
 | `veyl builtins`        | list every builtin, for editor tooling         |
 | `veyl editors [dir]`   | regenerate the editor syntax files             |
 | `veyl version`         | print the version                              |
-| `veyl f.vy`            | same as `run`                                  |
+| `veyl f.vl`            | same as `run`                                  |
 
-Anything after the `.vy` file is passed to the program, not to Veyl:
-`veyl run app.vy --verbose` reaches `os.args()`.
+Anything after the `.vl` file is passed to the program, not to Veyl:
+`veyl run app.vl --verbose` reaches `os.args()`.
 
 `emit` is the single most useful debugging tool in the project. When a
 program behaves strangely, look at what it actually compiled to.
@@ -208,7 +208,7 @@ formats would be wrong within a week.
 
 ### Explorer
 
-**On Windows:** double-clicking a `.vy` file asks what you want - run
+**On Windows:** double-clicking a `.vl` file asks what you want - run
 it, or build a standalone `.exe` you can hand to someone. The window
 stays open either way. Right-click gives both directly, without the
 menu.
@@ -284,7 +284,7 @@ fn wordCount(path: str) -> int! {
 ### Multiple files
 
 ```qz
-import "geometry.vy"
+import "geometry.vl"
 ```
 
 `pub` decides what a file exports. A top-level `const` is a global; a
@@ -429,14 +429,14 @@ no cgo, no C compiler, and no DLLs to ship.
 ## Cross-compiling
 
 ```
-VEYL_TARGET=windows veyl build app.vy
+VEYL_TARGET=windows veyl build app.vl
 ```
 
 On Windows cmd:
 
 ```
 set VEYL_TARGET=windows
-veyl build app.vy
+veyl build app.vl
 ```
 
 `veyl run` needs the target to match your machine. Use `build`
@@ -492,7 +492,7 @@ The compiler has grown past the file list above; `token.go`, `lexer.go`,
 ## How the compiler works
 
 ```
-hello.vy
+hello.vl
    |
    |  lexer.go        text into tokens, each tagged with line and column
    v
@@ -520,7 +520,7 @@ resulting binary is moved next to your source. The temp directory is
 deleted afterwards.
 
 **`//line` directives** are what make errors readable. Every emitted
-statement is preceded by a comment pointing at the original `.vy` line,
+statement is preceded by a comment pointing at the original `.vl` line,
 so when the Go backend reports a type error it names your file and your
 line number, not generated code you never wrote.
 
@@ -577,7 +577,7 @@ means, so if the two disagree, the assembly one is wrong. Anything
 outside the subset is a compile error naming what is missing, never
 wrong output.
 
-On `collatz.vy`, nested loops, 10,000 iterations:
+On `collatz.vl`, nested loops, 10,000 iterations:
 
 | | via Go | via assembly |
 | --- | ---: | ---: |

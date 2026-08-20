@@ -1,4 +1,4 @@
-// tools.vy -- a tour of the dotted libraries.
+// tools.vl -- a tour of the dotted libraries.
 //
 // Everything here is a builtin. There are no imports in Veyl.
 

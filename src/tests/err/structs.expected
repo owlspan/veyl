@@ -1,7 +1,7 @@
-error: structs.vy:5:5: struct "Bad" already has a field called "a"
-error: structs.vy:17:5: Point already has a method called "length", defined on line 14
-error: structs.vy:20:5: Point already has a field called "x", so it cannot also have a method with that name
-error: structs.vy:23:5: a method needs 'self' as its first parameter, as in: fn noSelf(self)
-error: structs.vy:29:5: there is no struct called "Nothing" to add methods to
-error: structs.vy:34:9: there is no struct called "Ghost"
+error: structs.vl:5:5: struct "Bad" already has a field called "a"
+error: structs.vl:17:5: Point already has a method called "length", defined on line 14
+error: structs.vl:20:5: Point already has a field called "x", so it cannot also have a method with that name
+error: structs.vl:23:5: a method needs 'self' as its first parameter, as in: fn noSelf(self)
+error: structs.vl:29:5: there is no struct called "Nothing" to add methods to
+error: structs.vl:34:9: there is no struct called "Ghost"
 veyl: 6 error(s)

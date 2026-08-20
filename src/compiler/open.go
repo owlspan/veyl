@@ -11,7 +11,7 @@ import (
 
 func runOpen(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("open needs a .vy file")
+		return fmt.Errorf("open needs a .vl file")
 	}
 
 	path := args[0]
@@ -38,7 +38,7 @@ func runOpen(args []string) error {
 		waitForEnter()
 		return nil
 	}
-	if !strings.HasSuffix(strings.ToLower(abs), ".vy") {
+	if !strings.HasSuffix(strings.ToLower(abs), ".vl") {
 		fmt.Printf("%s is not a Veyl file\n", filepath.Base(abs))
 		waitForEnter()
 		return nil

@@ -1,4 +1,4 @@
-// window.vy -- native Windows GUI from Veyl
+// window.vl -- native Windows GUI from Veyl
 
 setTitle("Veyl Demo")
 

@@ -91,12 +91,12 @@ func TestExtractStripsWrapperDirectory(t *testing.T) {
 	dest := t.TempDir()
 	data := makeTarGz(t, map[string]string{
 		"repo-1.0.0/veyl.json":    `{"name":"x"}`,
-		"repo-1.0.0/src/thing.vy": "pub fn f() {}",
+		"repo-1.0.0/src/thing.vl": "pub fn f() {}",
 	})
 	if err := extractTarGz(data, dest); err != nil {
 		t.Fatalf("extract failed: %v", err)
 	}
-	for _, want := range []string{"veyl.json", filepath.Join("src", "thing.vy")} {
+	for _, want := range []string{"veyl.json", filepath.Join("src", "thing.vl")} {
 		if _, err := os.Stat(filepath.Join(dest, want)); err != nil {
 			t.Errorf("%s was not extracted: %v", want, err)
 		}
@@ -133,7 +133,7 @@ func TestHashDirIsContentAddressed(t *testing.T) {
 	}
 
 	a, b := t.TempDir(), t.TempDir()
-	files := map[string]string{"veyl.json": `{"name":"x"}`, "x.vy": "pub fn f() {}"}
+	files := map[string]string{"veyl.json": `{"name":"x"}`, "x.vl": "pub fn f() {}"}
 	write(a, files)
 	write(b, files)
 
@@ -151,7 +151,7 @@ func TestHashDirIsContentAddressed(t *testing.T) {
 
 	// The hash is what notices a moved tag, so a one-byte edit has to
 	// change it.
-	write(b, map[string]string{"x.vy": "pub fn f() { }"})
+	write(b, map[string]string{"x.vl": "pub fn f() { }"})
 	hb2, err := hashDir(b)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestHashDirIsContentAddressed(t *testing.T) {
 
 	// So does a renamed file with the same bytes.
 	c := t.TempDir()
-	write(c, map[string]string{"veyl.json": `{"name":"x"}`, "renamed.vy": "pub fn f() {}"})
+	write(c, map[string]string{"veyl.json": `{"name":"x"}`, "renamed.vl": "pub fn f() {}"})
 	hc, err := hashDir(c)
 	if err != nil {
 		t.Fatal(err)
@@ -182,13 +182,13 @@ func TestFindProjectRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Found from a nested directory, so `veyl run src/main.vy` works
+	// Found from a nested directory, so `veyl run src/main.vl` works
 	// from anywhere inside a project.
 	if got := findProjectRoot(deep); got != root {
 		t.Errorf("from a nested dir got %q, want %q", got, root)
 	}
 	// And from a file rather than a directory.
-	f := filepath.Join(deep, "main.vy")
+	f := filepath.Join(deep, "main.vl")
 	if err := os.WriteFile(f, []byte("print(1)"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -213,11 +213,11 @@ func writeProject(t *testing.T) string {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		manifest := `{"name":"` + name + `","version":"1.0.0","main":"` + name + `.vy"}`
+		manifest := `{"name":"` + name + `","version":"1.0.0","main":"` + name + `.vl"}`
 		if err := os.WriteFile(filepath.Join(dir, manifestName), []byte(manifest), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, name+".vy"), []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name+".vl"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -258,7 +258,7 @@ fn secret() -> str {
 
 func runVeyl(t *testing.T, veyl, dir, src string) (string, error) {
 	t.Helper()
-	path := filepath.Join(dir, "main.vy")
+	path := filepath.Join(dir, "main.vl")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}

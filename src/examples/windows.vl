@@ -1,4 +1,4 @@
-// windows.vy -- the Win32 half of the library.
+// windows.vl -- the Win32 half of the library.
 //
 // Windows only. Using any of this while building for another OS is a
 // compile error rather than a runtime crash.

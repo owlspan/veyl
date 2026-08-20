@@ -2,10 +2,10 @@ package main
 
 // The driver for the assembly backend.
 //
-//     veylasm run   f.vy    compile and run
-//     veylasm build f.vy    write an executable next to the source
-//     veylasm asm   f.vy    print the generated assembly
-//     veylasm ir    f.vy    print the intermediate representation
+//     veylasm run   f.vl    compile and run
+//     veylasm build f.vl    write an executable next to the source
+//     veylasm asm   f.vl    print the generated assembly
+//     veylasm ir    f.vl    print the intermediate representation
 //
 // `asm` and `ir` are the debugging tools, and they matter more here than
 // `veyl emit` does on the Go backend: when a register allocator produces
@@ -34,10 +34,10 @@ const Version = "0.1.0-slice"
 const usage = `veylasm ` + Version + ` - the Veyl assembly backend
 
 usage:
-  veylasm run   <file.vy>    compile and run
-  veylasm build <file.vy>    compile to an executable next to the source
-  veylasm asm   <file.vy>    print the generated assembly
-  veylasm ir    <file.vy>    print the intermediate representation
+  veylasm run   <file.vl>    compile and run
+  veylasm build <file.vl>    compile to an executable next to the source
+  veylasm asm   <file.vl>    print the generated assembly
+  veylasm ir    <file.vl>    print the intermediate representation
   veylasm version            print the version
 
 This backend handles a subset of Veyl: integers, floats, bools, strings,
@@ -62,10 +62,10 @@ func main() {
 		fmt.Print(usage)
 		return
 	}
-	// `veylasm f.vy` means `veylasm run f.vy`, matching the Go backend.
-	// A first argument ending in .vy can only be a file, since no command
+	// `veylasm f.vl` means `veylasm run f.vl`, matching the Go backend.
+	// A first argument ending in .vl can only be a file, since no command
 	// does, so this cannot shadow one.
-	if strings.HasSuffix(cmd, ".vy") {
+	if strings.HasSuffix(cmd, ".vl") {
 		args = append([]string{"run"}, args...)
 		cmd = "run"
 	}

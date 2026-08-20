@@ -1,13 +1,13 @@
-error: results.vy:10:9: int! might have failed - unwrap it with '?', must(...) or valueOr(...) first
-error: results.vy:11:9: int! might have failed - unwrap it with '?', must(...) or valueOr(...) first
-error: results.vy:17:16: needsInt expects int for "n", got int!
-error: results.vy:21:25: '?' returns the failure from "cannotFail", so "cannotFail" must return a type ending in '!' - it returns int
-error: results.vy:27:17: '?' needs a value that can fail, and int cannot
-error: results.vy:31:12: isOk expects a value that can fail, and int cannot
-error: results.vy:32:15: errorOf expects a value that can fail, and str cannot
-error: results.vy:33:12: must expects a value that can fail, and []int cannot
-error: results.vy:34:15: valueOr expects a value that can fail, and int cannot
-error: results.vy:38:5: function "notAResult" returns int but this returns a failure
-error: results.vy:42:18: valueOr expects int here, got str
-error: results.vy:46:5: function "wrongInner" returns str! but this returns int
+error: results.vl:10:9: int! might have failed - unwrap it with '?', must(...) or valueOr(...) first
+error: results.vl:11:9: int! might have failed - unwrap it with '?', must(...) or valueOr(...) first
+error: results.vl:17:16: needsInt expects int for "n", got int!
+error: results.vl:21:25: '?' returns the failure from "cannotFail", so "cannotFail" must return a type ending in '!' - it returns int
+error: results.vl:27:17: '?' needs a value that can fail, and int cannot
+error: results.vl:31:12: isOk expects a value that can fail, and int cannot
+error: results.vl:32:15: errorOf expects a value that can fail, and str cannot
+error: results.vl:33:12: must expects a value that can fail, and []int cannot
+error: results.vl:34:15: valueOr expects a value that can fail, and int cannot
+error: results.vl:38:5: function "notAResult" returns int but this returns a failure
+error: results.vl:42:18: valueOr expects int here, got str
+error: results.vl:46:5: function "wrongInner" returns str! but this returns int
 veyl: 12 error(s)

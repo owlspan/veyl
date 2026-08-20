@@ -79,9 +79,9 @@ try {
     $savedPath = $env:PATH
     $env:PATH = "$env:SystemRoot\System32"
     try {
-        $out = & (Join-Path $stage 'veyl.exe') run (Join-Path $repo 'examples\hello.vy')
-        if ($LASTEXITCODE -ne 0) { throw "the staged toolchain could not compile hello.vy" }
-        if ($out -notmatch 'Hello world') { throw "unexpected output from hello.vy: $out" }
+        $out = & (Join-Path $stage 'veyl.exe') run (Join-Path $repo 'examples\hello.vl')
+        if ($LASTEXITCODE -ne 0) { throw "the staged toolchain could not compile hello.vl" }
+        if ($out -notmatch 'Hello world') { throw "unexpected output from hello.vl: $out" }
     } finally {
         $env:PATH = $savedPath
     }

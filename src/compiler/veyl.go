@@ -17,13 +17,13 @@ const Version = "0.17.02"
 const usage = `Veyl ` + Version + ` - a small language that compiles to native executables
 
 usage:
-  veyl run    <file.vy>    compile and run
-  veyl build  <file.vy>    compile to an executable next to the source
-  veyl fmt    <file.vy>    reformat the file in place
-  veyl emit   <file.vy>    print the generated Go
-  veyl tokens <file.vy>    print the token stream
+  veyl run    <file.vl>    compile and run
+  veyl build  <file.vl>    compile to an executable next to the source
+  veyl fmt    <file.vl>    reformat the file in place
+  veyl emit   <file.vl>    print the generated Go
+  veyl tokens <file.vl>    print the token stream
   veyl console             an interactive console
-  veyl open   <file.vy>    ask whether to run it or build an .exe
+  veyl open   <file.vl>    ask whether to run it or build an .exe
   veyl builtins            list every builtin, for editor tooling
   veyl editors [dir]       regenerate the editor syntax files
   veyl doctor              check that everything Veyl needs is present
@@ -37,9 +37,9 @@ packages:
   veyl install             fetch everything the manifest lists
   veyl packages            list what is installed
 
-  veyl <file.vy>           same as 'run'
+  veyl <file.vl>           same as 'run'
 
-Anything after the .vy file is passed to the program, not to Veyl.
+Anything after the .vl file is passed to the program, not to Veyl.
 
 environment:
   VEYL_TARGET=windows      cross-compile for another OS
@@ -59,8 +59,8 @@ func main() {
 		os.Exit(64)
 	}
 
-	// Anything after the .vy file belongs to the program being run, not
-	// to the compiler, so `veyl run app.vy --verbose` passes
+	// Anything after the .vl file belongs to the program being run, not
+	// to the compiler, so `veyl run app.vl --verbose` passes
 	// --verbose through to os.args rather than trying to interpret it.
 	cmd, path := "run", ""
 	var progArgs []string
@@ -139,8 +139,8 @@ func main() {
 }
 
 func run(cmd, path string, progArgs []string) error {
-	if !strings.HasSuffix(path, ".vy") {
-		return fmt.Errorf("%s is not a .vy file", path)
+	if !strings.HasSuffix(path, ".vl") {
+		return fmt.Errorf("%s is not a .vl file", path)
 	}
 
 	abs, err := filepath.Abs(path)
@@ -228,7 +228,7 @@ func run(cmd, path string, progArgs []string) error {
 	}
 
 	// ---- hand off to the Go toolchain ----
-	exeName := strings.TrimSuffix(name, ".vy")
+	exeName := strings.TrimSuffix(name, ".vl")
 	if target == "windows" {
 		exeName += ".exe"
 	}
@@ -343,7 +343,7 @@ func formatFile(abs, name, src string) error {
 
 // ---- modules ----
 //
-// An import loads another .vy file and folds its declarations into the
+// An import loads another .vl file and folds its declarations into the
 // same program. There is no module registry, no search path and no
 // package naming: a path is a path, relative to the file that wrote it.
 //
@@ -390,8 +390,8 @@ func (l *loader) resolve(prog *Program, from string) {
 
 		// A path names a file; a bare word names a package. The two
 		// cannot be confused, because a file import has always had to
-		// end in .vy and a package name never may.
-		if strings.HasSuffix(imp.Path, ".vy") {
+		// end in .vl and a package name never may.
+		if strings.HasSuffix(imp.Path, ".vl") {
 			target = imp.Path
 			if !filepath.IsAbs(target) {
 				target = filepath.Join(filepath.Dir(from), target)
@@ -406,7 +406,7 @@ func (l *loader) resolve(prog *Program, from string) {
 			// Something with a dot, a slash or a drive letter was meant
 			// to be a file. Reading it as a package name would answer a
 			// question nobody asked ("no package called notes.txt").
-			l.ErrorAt(imp, "an import must name a .vy file, got %q", imp.Path)
+			l.ErrorAt(imp, "an import must name a .vl file, got %q", imp.Path)
 			continue
 		} else {
 			if l.pkgs == nil {

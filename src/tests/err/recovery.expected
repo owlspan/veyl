@@ -1,5 +1,5 @@
-error: recovery.vy:5:24: expected ')' to close the parameter list, found "->"
-error: recovery.vy:13:1: expected ']' to close the list opened on line 9, found "print"
-error: recovery.vy:19:1: expected '}' to close the map opened on line 15, found "let"
-error: recovery.vy:20:1: expected ')' to close the group opened on line 19, found "print"
+error: recovery.vl:5:24: expected ')' to close the parameter list, found "->"
+error: recovery.vl:13:1: expected ']' to close the list opened on line 9, found "print"
+error: recovery.vl:19:1: expected '}' to close the map opened on line 15, found "let"
+error: recovery.vl:20:1: expected ')' to close the group opened on line 19, found "print"
 veyl: 4 error(s)

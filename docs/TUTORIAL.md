@@ -27,19 +27,19 @@ works see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Hello
 
-Put this in `hello.vy`:
+Put this in `hello.vl`:
 
 ```qz
 print("Hello, world!")
 ```
 
 ```
-veyl run hello.vy
+veyl run hello.vl
 ```
 
 No `main`, no imports, no semicolons. Top-level statements run in order.
 
-`veyl build hello.vy` gives you `hello.exe` instead - one file, no
+`veyl build hello.vl` gives you `hello.exe` instead - one file, no
 runtime to install, nothing to ship alongside it.
 
 > Veyl compiles through Go, so **Go has to be installed**. Your
@@ -370,12 +370,12 @@ let pages = task.map(urls, fn(u: str) -> str {
 
 Everything has finished by the time it returns.
 
-**A whole program** is in `examples\wordfreq.vy` - arguments, a file
+**A whole program** is in `examples\wordfreq.vl` - arguments, a file
 that might not be there, a pattern, a map, a struct, and sorting with
 your own comparison, in about sixty lines:
 
 ```
-veyl run examples\wordfreq.vy SYNTAX.md 10
+veyl run examples\wordfreq.vl SYNTAX.md 10
 ```
 
 ---
@@ -383,14 +383,14 @@ veyl run examples\wordfreq.vy SYNTAX.md 10
 ## Several files
 
 ```qz
-import "helpers.vy"
+import "helpers.vl"
 ```
 
 The path is relative to the file that writes it. A declaration is
 private unless marked `pub`:
 
 ```qz
-// helpers.vy
+// helpers.vl
 pub const TAU = 6.283185307179586
 
 pub fn shout(text: str) -> str {
@@ -410,8 +410,8 @@ A top-level `const` is a global, visible inside functions. A top-level
 ## Where to go next
 
 ```
-veyl fmt yourfile.vy      tidy the formatting
-veyl emit yourfile.vy     see the Go it generates
+veyl fmt yourfile.vl      tidy the formatting
+veyl emit yourfile.vl     see the Go it generates
 veyl builtins             list everything available
 ```
 

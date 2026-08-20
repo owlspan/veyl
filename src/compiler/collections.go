@@ -1147,7 +1147,7 @@ func registerCollections() {
 // Without it a runtime failure reaches the terminal as a Go panic:
 // a goroutine dump, hexadecimal offsets, and words like "interface
 // conversion" that describe the backend rather than the program. The
-// //line directives mean the frames already carry .vy paths, so the
+// //line directives mean the frames already carry .vl paths, so the
 // stack can be filtered down to the Veyl ones and printed as a
 // traceback the person who wrote the program can act on.
 var crashHelperDefs = map[string]helperDef{
@@ -1190,14 +1190,14 @@ func __explain(msg string) string {
 	return msg
 }
 
-// __qzFrames pulls the .vy locations out of a Go stack, innermost
-// first. Frame lines look like "\tC:/path/thing.vy:12 +0x1d".
+// __qzFrames pulls the .vl locations out of a Go stack, innermost
+// first. Frame lines look like "\tC:/path/thing.vl:12 +0x1d".
 func __qzFrames(stack string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, line := range strings.Split(stack, "\n") {
 		line = strings.TrimSpace(line)
-		i := strings.Index(line, ".vy:")
+		i := strings.Index(line, ".vl:")
 		if i < 0 {
 			continue
 		}

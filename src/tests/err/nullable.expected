@@ -1,14 +1,14 @@
-error: nullable.vy:5:13: ?int might be nil - check it first with 'if maybe != nil'
-error: nullable.vy:6:13: ?int might be nil - check it first with 'if maybe != nil'
-error: nullable.vy:7:13: ?int might be nil - check it first with 'if maybe != nil'
-error: nullable.vy:10:1: "bad" is declared as int but the value is nil
-error: nullable.vy:11:1: cannot assign nil to "plain", which is int
-error: nullable.vy:14:10: int can never be nil, so this comparison is always true
-error: nullable.vy:22:16: needsInt expects int for "n", got ?int
-error: nullable.vy:25:5: function "givesInt" returns int but this returns ?int
-error: nullable.vy:32:13: ?int might be nil - check it first with 'if maybe != nil'
-error: nullable.vy:36:17: ?int might be nil - check it first with 'if maybe != nil'
-error: nullable.vy:40:1: cannot tell what "nothing" can hold - annotate it, as in: let nothing: ?int = nil
-error: nullable.vy:43:1: "wrong" is declared as ?str but the value is int
-error: nullable.vy:47:25: ?int might be nil - put it in a variable and check that for nil first
+error: nullable.vl:5:13: ?int might be nil - check it first with 'if maybe != nil'
+error: nullable.vl:6:13: ?int might be nil - check it first with 'if maybe != nil'
+error: nullable.vl:7:13: ?int might be nil - check it first with 'if maybe != nil'
+error: nullable.vl:10:1: "bad" is declared as int but the value is nil
+error: nullable.vl:11:1: cannot assign nil to "plain", which is int
+error: nullable.vl:14:10: int can never be nil, so this comparison is always true
+error: nullable.vl:22:16: needsInt expects int for "n", got ?int
+error: nullable.vl:25:5: function "givesInt" returns int but this returns ?int
+error: nullable.vl:32:13: ?int might be nil - check it first with 'if maybe != nil'
+error: nullable.vl:36:17: ?int might be nil - check it first with 'if maybe != nil'
+error: nullable.vl:40:1: cannot tell what "nothing" can hold - annotate it, as in: let nothing: ?int = nil
+error: nullable.vl:43:1: "wrong" is declared as ?str but the value is int
+error: nullable.vl:47:25: ?int might be nil - put it in a variable and check that for nil first
 veyl: 13 error(s)

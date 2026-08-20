@@ -20,7 +20,7 @@
           "veyl"
         ],
         "extensions": [
-          ".vy"
+          ".vl"
         ],
         "configuration": "./language-configuration.json",
         "icon": {

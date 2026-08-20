@@ -66,7 +66,7 @@ func cmdInit(args []string) error {
 	m := &Manifest{
 		Name:         name,
 		Version:      "0.1.0",
-		Main:         name + ".vy",
+		Main:         name + ".vl",
 		Dependencies: map[string]string{},
 	}
 	if err := saveManifest(wd, m); err != nil {

@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-// The test suite is data-driven. Each case is a .vy file paired with a
+// The test suite is data-driven. Each case is a .vl file paired with a
 // .expected file:
 //
-//	tests/ok/NAME.vy   + tests/ok/NAME.expected    program output
-//	tests/err/NAME.vy  + tests/err/NAME.expected   compiler errors
+//	tests/ok/NAME.vl   + tests/ok/NAME.expected    program output
+//	tests/err/NAME.vl  + tests/err/NAME.expected   compiler errors
 //
 // Adding a test means adding two files, never touching this one. To
 // regenerate the .expected files after an intentional change:
@@ -45,13 +45,13 @@ func TestVeylOK(t *testing.T) {
 }
 
 // The golden suite runs every program without arguments, so it cannot
-// see whether `veyl run app.vy a b` reaches os.args. It did not: the
+// see whether `veyl run app.vl a b` reaches os.args. It did not: the
 // driver read the file from args[1] and dropped the rest, silently,
 // while an example documented the opposite.
 func TestRunForwardsArguments(t *testing.T) {
 	veyl := buildCompiler(t)
 
-	src := filepath.Join(t.TempDir(), "args.vy")
+	src := filepath.Join(t.TempDir(), "args.vl")
 	prog := "for a in os.args() {\n    print(a)\n}\n"
 	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
 		t.Fatal(err)
@@ -87,11 +87,11 @@ func TestFormatPreservesBehaviour(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sources, err := filepath.Glob(filepath.Join(work, "**", "*.vy"))
+	sources, err := filepath.Glob(filepath.Join(work, "**", "*.vl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	top, _ := filepath.Glob(filepath.Join(work, "*.vy"))
+	top, _ := filepath.Glob(filepath.Join(work, "*.vl"))
 	sources = append(sources, top...)
 
 	for _, src := range sources {
@@ -119,13 +119,13 @@ func TestFormatPreservesBehaviour(t *testing.T) {
 		_ = before
 	}
 
-	cases, err := filepath.Glob(filepath.Join(work, "*.vy"))
+	cases, err := filepath.Glob(filepath.Join(work, "*.vl"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, src := range cases {
 		src := src
-		name := strings.TrimSuffix(filepath.Base(src), ".vy")
+		name := strings.TrimSuffix(filepath.Base(src), ".vl")
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -172,7 +172,7 @@ func copyTree(from, to string) error {
 func runSuite(t *testing.T, dir string, wantFailure bool) {
 	veyl := buildCompiler(t)
 
-	cases, err := filepath.Glob(filepath.Join(dir, "*.vy"))
+	cases, err := filepath.Glob(filepath.Join(dir, "*.vl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func runSuite(t *testing.T, dir string, wantFailure bool) {
 
 	for _, src := range cases {
 		src := src
-		name := strings.TrimSuffix(filepath.Base(src), ".vy")
+		name := strings.TrimSuffix(filepath.Base(src), ".vl")
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -198,7 +198,7 @@ func runSuite(t *testing.T, dir string, wantFailure bool) {
 				t.Fatalf("expected success, got %v:\n%s", runErr, got)
 			}
 
-			golden := strings.TrimSuffix(src, ".vy") + ".expected"
+			golden := strings.TrimSuffix(src, ".vl") + ".expected"
 			if *update {
 				if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
 					t.Fatal(err)
@@ -236,13 +236,13 @@ func normalizeNewlines(s string) string {
 
 // A runtime failure used to reach the terminal as a Go panic: a
 // goroutine dump, hex offsets, and Go's vocabulary rather than Veyl's.
-// The //line directives mean the stack already carries .vy paths, so it
+// The //line directives mean the stack already carries .vl paths, so it
 // can be filtered into a traceback naming the program's own lines.
 func TestRuntimeErrorsAreVeylShaped(t *testing.T) {
 	veyl := buildCompiler(t)
 	dir := t.TempDir()
 
-	src := filepath.Join(dir, "boom.vy")
+	src := filepath.Join(dir, "boom.vl")
 	prog := `fn inner(n: int) -> int {
     return 100 / n
 }
@@ -268,7 +268,7 @@ print(outer())
 		t.Errorf("missing the explained message, got:\n%s", got)
 	}
 	// Innermost frame first, then the caller: a real traceback.
-	if !strings.Contains(got, "at boom.vy:2") || !strings.Contains(got, "at boom.vy:6") {
+	if !strings.Contains(got, "at boom.vl:2") || !strings.Contains(got, "at boom.vl:6") {
 		t.Errorf("missing the Veyl traceback, got:\n%s", got)
 	}
 	// None of Go's internals should survive.
@@ -355,7 +355,7 @@ func TestConsole(t *testing.T) {
 		if !strings.Contains(got, "10") {
 			t.Errorf("the session should still work afterwards:\n%s", got)
 		}
-		if strings.Contains(got, "session.vy") || strings.Contains(got, "Temp") {
+		if strings.Contains(got, "session.vl") || strings.Contains(got, "Temp") {
 			t.Errorf("the temporary path leaked into the message:\n%s", got)
 		}
 	})

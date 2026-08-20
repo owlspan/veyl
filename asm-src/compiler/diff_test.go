@@ -74,7 +74,7 @@ func TestBackendsAgree(t *testing.T) {
 	veyl := goBackend(t)
 	veylasm := asmBackend(t)
 
-	programs, err := filepath.Glob(filepath.Join("..", "examples", "*.vy"))
+	programs, err := filepath.Glob(filepath.Join("..", "examples", "*.vl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestUnsupportedIsAnError(t *testing.T) {
 			// One file per case: these subtests run in parallel, and a
 			// shared path would have them overwriting each other's source
 			// and passing for the wrong reason.
-			p := filepath.Join(dir, strings.ReplaceAll(name, " ", "_")+".vy")
+			p := filepath.Join(dir, strings.ReplaceAll(name, " ", "_")+".vl")
 			if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
 				t.Fatal(err)
 			}

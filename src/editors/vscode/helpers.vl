@@ -1,4 +1,4 @@
-// Imported by sample.vy, so the sample is a real program rather than a
+// Imported by sample.vl, so the sample is a real program rather than a
 // snippet that only looks like one.
 
 pub const GREETING = "hello"

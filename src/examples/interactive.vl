@@ -1,4 +1,4 @@
-// interactive.vy -- input, validation, and pause
+// interactive.vl -- input, validation, and pause
 
 fn describe(age: int) -> str {
     if age < 0 {

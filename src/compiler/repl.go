@@ -68,7 +68,7 @@ func runConsole() error {
 // read collects one input, continuing across lines while brackets are
 // open so a function or a loop can be typed the way it is written.
 func (c *console) read() (string, bool) {
-	fmt.Print(paint("vy> ", "36"))
+	fmt.Print(paint("vl> ", "36"))
 	if !c.in.Scan() {
 		return "", false
 	}
@@ -174,11 +174,11 @@ func (c *console) command(line string) bool {
 
 	case ":save":
 		if rest == "" {
-			fmt.Println("  usage: :save <file.vy>")
+			fmt.Println("  usage: :save <file.vl>")
 			break
 		}
-		if !strings.HasSuffix(rest, ".vy") {
-			rest += ".vy"
+		if !strings.HasSuffix(rest, ".vl") {
+			rest += ".vl"
 		}
 		if err := os.WriteFile(rest, []byte(c.program()), 0o644); err != nil {
 			fmt.Printf("  could not save: %v\n", err)
@@ -210,7 +210,7 @@ func (c *console) help() {
   :list            every line in the session
   :undo            drop the last line
   :clear           start over
-  :save <file>     write the session out as a .vy program
+  :save <file>     write the session out as a .vl program
   :emit            show the Go the session compiles to
   :quit            leave
 
@@ -335,7 +335,7 @@ func (c *console) build(src string) (out, goSrc, errs string) {
 	}
 	defer os.RemoveAll(dir)
 
-	path := filepath.Join(dir, "session.vy")
+	path := filepath.Join(dir, "session.vl")
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		return "", "", fmt.Sprintf("  %v\n", err)
 	}
@@ -401,14 +401,14 @@ func tidyErrors(s string) string {
 		}
 		// A Go backend error names the temporary file it was compiling.
 		// That path is an implementation detail of the console.
-		if i := strings.Index(line, "session.vy:"); i > 0 {
+		if i := strings.Index(line, "session.vl:"); i > 0 {
 			line = line[i:]
 		}
 		line = strings.TrimPrefix(line, "error: ")
-		// "session.vy:12:5: message" -> "message", since neither the
+		// "session.vl:12:5: message" -> "message", since neither the
 		// file nor the line number of a synthesised session means
 		// anything to the person typing.
-		if i := strings.Index(line, "session.vy:"); i == 0 {
+		if i := strings.Index(line, "session.vl:"); i == 0 {
 			if rest := strings.SplitN(line, ": ", 2); len(rest) == 2 {
 				line = rest[1]
 			}
