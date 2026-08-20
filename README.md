@@ -8,6 +8,11 @@ compiles to a single self-contained binary. You get native speed and a
 program you can hand to someone with nothing to install - but you write
 something closer to Python than to C++.
 
+There is also a second, newer backend that emits x86-64 assembly
+directly, with no Go anywhere in the pipeline. It covers a subset of
+the language so far; the Go backend is the default and is what Veyl
+means. See [the second backend](#the-second-backend).
+
 ```qz
 fn isPrime(n: int) -> bool {
     if n < 2 { return false }
@@ -519,6 +524,11 @@ statement is preceded by a comment pointing at the original `.vy` line,
 so when the Go backend reports a type error it names your file and your
 line number, not generated code you never wrote.
 
+That describes the Go backend, which is the default. The assembly
+backend replaces these last two stages with a lowering pass and an
+emitter, keeping the lexer, parser and type checker unchanged; see
+[the second backend](#the-second-backend).
+
 More detail in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
@@ -545,7 +555,8 @@ More detail in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | v0.17   | namespaced imports, tracebacks, `url`/`zip`/`args`/`bits` |
 | v0.17   | a `bytes` type, an interactive console, `void!`     |
 | **v0.17.02** | **four editors, an Explorer menu, the Veyl rename** |
-| next    | generics, then the C backend                        |
+| unreleased | a second backend: Veyl to x86-64, no Go in the pipeline |
+| next    | generics                                            |
 
 **The type checker was the bottleneck for everything below it**, and it
 is now in place. Lists, maps, structs, JSON and modules all need the
@@ -553,11 +564,39 @@ compiler to know the type of an expression, and it does: `check.go`
 walks the tree between resolve and codegen and returns a type for every
 node.
 
-The next structural pieces are a real `bytes` type - which files,
-sockets, crypto and any future FFI all want - and generics, without
-which containers like `Set` and `Queue` cannot be written in Veyl
-itself. After those, the C backend, which is what buys back manual
-memory and pointers.
+### The second backend
+
+There is now an **assembly backend** in `asm-src/`, sharing the whole
+front end and replacing only the last two stages: it lowers to a
+three-address IR and emits x86-64 rather than Go source. No Go is
+involved in compiling with it, and none is present in what it produces.
+
+It covers a subset of the language and is checked against the Go
+backend byte for byte - the Go backend is the definition of what Veyl
+means, so if the two disagree, the assembly one is wrong. Anything
+outside the subset is a compile error naming what is missing, never
+wrong output.
+
+On `collatz.vy`, nested loops, 10,000 iterations:
+
+| | via Go | via assembly |
+| --- | ---: | ---: |
+| runtime, best of 5 | 67 ms | 81 ms |
+| executable size | 2,524,160 bytes | 123,027 bytes |
+
+About 20% slower and 20 times smaller. The size difference is the Go
+runtime, which is what is no longer there; the speed difference is that
+every value still round-trips through a stack slot, because there is no
+register allocator yet.
+
+See [asm-src/README.md](asm-src/README.md) for what it covers and what
+it does not. This is what replaces the C backend that earlier versions
+of this file promised: the goal was manual memory and a binary with no
+runtime in it, and a backend that emits machine code reaches that
+without a second C toolchain in the way.
+
+The other structural piece still missing is generics, without which
+containers like `Set` and `Queue` cannot be written in Veyl itself.
 
 ---
 
@@ -580,8 +619,11 @@ Honest list of what v0.17.02 does not do.
 - **Nil narrowing is syntactic.** `if x != nil` narrows inside the
   block, and `&&` chains work, but an early `return` does not narrow
   the rest of the function.
-- **Garbage collected.** Manual memory, pointers, and `unsafe` require
-  a C backend and are not available.
+- **Garbage collected.** Manual memory, pointers, and `unsafe` are not
+  available. Programs built through the Go backend inherit Go's
+  collector; the assembly backend has none at all yet and frees
+  nothing, which is fine for a program that runs and exits and not for
+  one that loops.
 - **The formatter does not reflow lines.** `veyl fmt` fixes
   indentation and spacing; where you break a line is left to you.
 - **The installer is Windows only.** `installer\veyl.iss` builds a

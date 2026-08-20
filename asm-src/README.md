@@ -40,19 +40,25 @@ anywhere in the pipeline:
   `os.env.has`
 - maps `{K: V}` with int or str keys: literals, get, set, `len`,
   `print`, growth, and a missing key reading the zero value
+- the error type `T!`: `fail`, `ok`, `isOk`, `failed`, `errorOf`,
+  `valueOr`, `must`, postfix `?` propagation, and `void!`
+- structs: declarations, literals with zero values for omitted fields,
+  nested structs, field read and write, compound assignment on a field,
+  structs in lists and maps, value semantics, and printing
 
-Everything else is a compile error naming what is missing: structs,
-closures, the error type `T!`, nullable `?T`, and all but three of the
-namespaced library functions. Also `str()` of a list or a map - both
-print fine, but printing writes to stdout and converting needs to build
-into a buffer, which is a different implementation.
+Everything else is a compile error naming what is missing: `impl`
+methods, closures, nullable `?T`, `bytes`, and all but three of the
+namespaced library functions. Also `str()` of a list, map or struct -
+all three print fine, but printing writes to stdout and converting
+needs to build into a buffer, which is a different implementation.
 
 Every heap allocation carries an object header - a size and a tag
 saying whether the block holds pointers - so that a collector is
-possible. There is still no collector.
+possible. There is still no collector, so nothing is ever freed, and
+a result costs an allocation per fallible call.
 
 It compiles 4 of the 24 programs in the Go backend's own test suite,
-and every one of the 15 programs in `examples/` produces byte-identical
+and every one of the 17 programs in `examples/` produces byte-identical
 output through both backends.
 
 ```
@@ -128,6 +134,8 @@ asm-src/
     library.go      asmLibrary - the builtin table, for the checker
     list.go         lists, built in the IR
     map.go          maps, sorted key and value blocks
+    result.go       the error type T!, built in the IR
+    struct.go       struct layout, copying and printing
     strings.go      the string library, built in the IR
     veylasm.go      the driver
     diff_test.go
@@ -235,11 +243,10 @@ here you write IR and usually a libc call. A function absent from
 `library.go` is a type error naming it, so the subset stays honest
 without anyone maintaining a list of what is missing.
 
-The one that should come before writing many of them is the **error
-type `T!`**. Every library function in Veyl reports failure as `T!`
-rather than panicking, and without results here they can only be
-ported in a lying form. It changes the calling convention too, so doing
-it after twenty of them exist means rewriting twenty.
+The one that had to come before writing many of them was the **error
+type `T!`**, which is now done - see below. Every library function in
+Veyl reports failure as `T!` rather than panicking, so without results
+here they could only have been ported in a lying form.
 
 **3. Maps. Done.** Sorted rather than hashed: the Go backend sorts keys
 when it prints or iterates, so keeping the array sorted at all times
@@ -250,27 +257,94 @@ hash table later.
 It did not move parity, which is worth knowing: all seven programs that
 reported a map as their first error had something else behind it.
 
-**4. Structs.** Cheapest of the remaining big three: fixed field
-offsets, no allocation strategy to invent, and `alloc`/`loadmem`/
-`storemem` already do everything needed.
+Neither did `T!` or structs. Parity is still 4 of 24. What did change
+is what the other twenty are waiting on, and the list is worth
+regenerating rather than trusting:
 
-**5. A register allocator.** Where the 20% gap starts closing. Do it
+```bash
+cd asm-src
+for f in ../src/tests/ok/*.vy; do
+  ./veylasm.exe asm "$f" >/dev/null 2>&1 || echo "$f"
+done
+```
+
+| blocker | n |
+|---|---:|
+| inference for an empty literal with no annotation | 5 |
+| unimplemented library functions | 4 |
+| `str()` of a list, map or struct | 3 |
+| higher-order: `map`, closures | 3 |
+| `impl` methods | 1 |
+| `bytes` | 1 |
+| `push` arity and list slicing | 1 |
+| float `min`/`max` | 1 |
+| map value inference | 1 |
+
+The two worth doing next are at the top. Neither is a large feature:
+inference is carrying the hint into call arguments and map values,
+where today it only reaches a `let` annotation, and `str()` of a
+container is the printing code writing into a buffer rather than to
+stdout. Between them they account for eight of the twenty.
+
+**4. The error type `T!`. Done.** A result is a two-word heap object:
+the failure reason, then the value. The layout does not depend on what
+it carries, which is what lets `?` propagate a failure out of a `str!`
+and into an `int!` by handing back the object it was given rather than
+unpacking and rebuilding one - a failure crosses any number of frames
+as a single pointer.
+
+Boxing rather than returning a pair is what keeps the IR
+three-address and the calling convention unchanged. The Go backend
+returns a two-field struct by value; doing that here would have meant
+classifying an aggregate return, which is the corner of the Windows x64
+ABI with the most rules and the least payoff. The cost is an allocation
+per fallible call, unbounded while nothing is freed.
+
+Boxing a plain value into the `T!` a function promises is not decided
+by the lowerer. The checker already inserts a `Widen` node at every
+such site, the way it does for nullables, so there is one place that
+can forget rather than five.
+
+**5. Structs. Done.** Fixed field offsets, so every access is a load or
+a store at an offset known at compile time.
+
+The header is where the interest is. A struct is the first thing here
+that is genuinely mixed - some words pointers, some not - so the
+block-at-a-time tags could not describe one. Fields are reordered to
+put every pointer first and the count goes in the eight spare bits the
+header already had, which keeps "is this word a pointer" a single
+number at no per-instance cost. The reordering is invisible: fields are
+reached by name through a compile-time offset.
+
+Value semantics were the part needing care. A struct is a Go struct on
+the Go backend, so it copies on assignment, on being passed and on being
+returned; here it is a pointer, so the copy is written out. `rvalue`
+copies only when the source is a place - a literal or a call result is
+already a fresh object nobody else holds. Getting this wrong would not
+have crashed, it would have been `let b = a` quietly aliasing.
+
+Still missing on structs: `impl` methods, `str()` of one, and a `T!`
+field.
+
+**6. A register allocator.** Where the 20% gap starts closing. Do it
 after functions exist - which they now do - because the whole
 difficulty is knowing which values are live across a call, and a
 version written before calls existed would be written twice.
 
-**6. The collector.** Needs step 1, which is done. Budget a whole session
+**7. The collector.** Needs step 1, which is done. Budget a whole session
 minimum; a collector that frees one live object produces a bug that
 surfaces somewhere else entirely, hours later.
 
-**7. The byte writer and PE emitter.** What finally removes the MinGW
+**8. The byte writer and PE emitter.** What finally removes the MinGW
 dependency. Mechanical by then: `x64.go` is replaced and nothing above
 it changes.
 
-Two papercuts worth ten minutes whenever:
-
-Both papercuts listed here are done: `veylasm f.vy` is shorthand for
-`run`, and the linker's real output surfaces instead of being swallowed.
+The two papercuts that used to sit here are done: `veylasm f.vy` is
+shorthand for `run`, and the linker's real output surfaces instead of
+being swallowed. The one still open is sharing `resolve.go` the way
+`check.go` is shared, so that an undefined name is caught here by a
+resolver rather than late, by the lowerer, and missed entirely when the
+checker has already failed on something else.
 
 A note on what this is not for. It will not be faster than the Go
 backend for a long time, and probably starts out several times slower.
