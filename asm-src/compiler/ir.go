@@ -320,23 +320,6 @@ const (
 	OpLoadByte  // Dst = zero-extended byte at [A + B]
 	OpStoreByte // byte at [A + B] = low byte of the value in Imm's slot
 
-	// The first of the namespaced library functions. It is its own op
-	// rather than a general foreign call because the general one has to
-	// settle argument classification and shadow space first, and time()
-	// takes a null pointer and returns an integer - the one shape that
-	// needs none of that.
-	OpTimeNow // Dst = time(NULL)
-
-	// Three-way string comparison, negative, zero or positive like the
-	// strcmp it calls. Needed to keep a map sorted by string key; the
-	// existing streq only answers equality.
-	OpStrCmp // Dst = strcmp(A, B)
-
-	// getenv. Returns the raw pointer, which is NULL when the variable
-	// is unset - the null check is done in the IR by whichever builtin
-	// asked, because get and has want different answers to it.
-	OpGetEnv // Dst = getenv(A)
-
 	// must() failed: write the reason to stderr and stop. Its own op
 	// rather than a call because it does not return, so the emitter must
 	// not be free to schedule anything after it.
@@ -357,7 +340,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"timenow", "strcmp", "getenv", "mustfail",
+	"mustfail",
 }
 
 func (o Op) String() string {
@@ -382,6 +365,20 @@ type Instr struct {
 	// came before it.
 	RetType vty    // OpCall only: whether the result comes back in rax or xmm0
 	Sym     string // OpCall only: the function being called
+	Extern  bool   // OpCall only: Sym is a raw symbol, not a Veyl function.
+	// Veyl functions are emitted as __vy_<name> so that a
+	// program calling its own fn strlen cannot collide with
+	// libc; a foreign symbol has to be called by the name the
+	// linker knows, so the emitter must be told which it is.
+	Ret32 bool // OpCall only: Sym returns a C int, so only eax is
+	// meaningful and the emitter must sign-extend it. The
+	// upper half of rax is undefined on such a return, and
+	// reading it whole gives a value that is usually right.
+	Variadic bool // OpCall only: Sym is a C variadic. The Windows x64
+	// convention says a float passed in the variadic part
+	// goes in both the xmm and the matching integer
+	// register, because the callee reading a va_list has
+	// no prototype telling it which file to look in.
 	Comment string // the Veyl this came from, carried into the .s file
 }
 
@@ -413,9 +410,14 @@ type Module struct {
 	Strings []string
 	Floats  []float64
 	Helpers map[string]bool // runtime helpers actually used
+	Externs map[string]bool // foreign symbols called directly, declared
+	// as .extern at the top of the .s file
 }
 
 func (m *Module) needs(h string) { m.Helpers[h] = true }
+
+// needsExtern records a foreign symbol so the emitter declares it.
+func (m *Module) needsExtern(sym string) { m.Externs[sym] = true }
 
 // intern adds a string constant to the pool, reusing an existing entry
 // when the same text appears twice.
@@ -488,7 +490,7 @@ type loopTarget struct {
 // mistake should not hide the next one.
 func Lower(p *Program, file string) (*Module, []string) {
 	l := &lowerer{
-		mod:  &Module{Helpers: map[string]bool{}},
+		mod:  &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
 		file: file,
 		sigs: map[string]sig{},
 	}
@@ -1128,6 +1130,35 @@ func (l *lowerer) call(c *Call) Reg {
 	return l.builtin(c, name)
 }
 
+// ccall emits a call to a foreign symbol - libc, or anything else the
+// linker can find - rather than to a Veyl function.
+//
+// This is the seam the library is ported through. Before it, OpCall
+// could only name __vy_<sym>, so a builtin that wanted to reach a C
+// function had to become its own Op with its own hand-written case in
+// x64.go. Now the shape a call needs - place the arguments, know which
+// are floats, know where the result comes back - is expressed once.
+//
+// The caller is responsible for the argument types being right. Nothing
+// here checks them against a C prototype, because there is no C
+// prototype to check against; getting one wrong is the same class of
+// mistake as getting an extern declaration wrong in C.
+func (l *lowerer) ccall(sym string, args []Reg, argTypes []vty, ret vty, ret32, variadic bool) Reg {
+	l.mod.needsExtern(sym)
+	if len(args) > l.fn.MaxCallArgs {
+		l.fn.MaxCallArgs = len(args)
+	}
+	d := NoReg
+	if ret.k != kVoid {
+		d = l.newReg()
+		l.regTy[d] = ret
+	}
+	l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
+		ArgTypes: argTypes, RetType: ret, Sym: sym, Extern: true,
+		Ret32: ret32, Variadic: variadic, Comment: sym + "()"})
+	return d
+}
+
 // builtin covers the handful of library functions this backend has. The
 // Go backend has 302; the gap is almost entirely things that need a
 // heap and a runtime rather than things that need syntax.
@@ -1171,11 +1202,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		if !arity(0) {
 			return l.junk()
 		}
-		l.mod.needs("timenow")
-		d := l.newReg()
-		l.regTy[d] = vInt
-		l.emit(Instr{Op: OpTimeNow, Dst: d, A: NoReg, B: NoReg, Comment: "time.now()"})
-		return d
+		// time(NULL): the null argument is a register holding zero
+		// like any other, which is the whole point of the foreign-call
+		// op - the shape of the call is not special-cased anywhere.
+		return l.ccall("time", []Reg{l.constant(0)}, []vty{vInt}, vInt, false, false)
 
 	case "print":
 		if !arity(1) {
@@ -1877,7 +1907,11 @@ func (f *Func) String() string {
 			for i, a := range in.Args {
 				parts[i] = fmt.Sprintf("v%d", a)
 			}
-			line += fmt.Sprintf(" %s(%s)", in.Sym, strings.Join(parts, ", "))
+			sym := in.Sym
+			if in.Extern {
+				sym = "c:" + sym
+			}
+			line += fmt.Sprintf(" %s(%s)", sym, strings.Join(parts, ", "))
 		default:
 			line += fmt.Sprintf(" v%d, v%d", in.A, in.B)
 		}
@@ -1936,12 +1970,8 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 
 // getenv lowers one environment lookup to the raw pointer, NULL and all.
 func (l *lowerer) getenv(arg Expr) Reg {
-	l.mod.needs("getenv")
 	name := l.expr(arg)
-	d := l.newReg()
-	l.regTy[d] = vStr
-	l.emit(Instr{Op: OpGetEnv, Dst: d, A: name, B: NoReg, Comment: "os.env"})
-	return d
+	return l.ccall("getenv", []Reg{name}, []vty{vStr}, vStr, false, false)
 }
 
 // mapLit builds a map from its entries. The key and value types come

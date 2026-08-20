@@ -86,11 +86,8 @@ func (l *lowerer) newMap(t vty, capacity int64) Reg {
 // strcmp itself, which is already linked for string equality.
 func (l *lowerer) keyCmp(a, b Reg, kk vkind) Reg {
 	if kk == kStr {
-		l.mod.needs("strcmp3")
-		d := l.newReg()
-		l.regTy[d] = vInt
-		l.emit(Instr{Op: OpStrCmp, Dst: d, A: a, B: b, Comment: "key compare"})
-		return d
+		// strcmp returns a C int, so only eax is meaningful.
+		return l.ccall("strcmp", []Reg{a, b}, []vty{vStr, vStr}, vInt, true, false)
 	}
 	return l.arith(OpSub, a, b)
 }

@@ -29,6 +29,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -179,8 +180,22 @@ func Emit(m *Module) string {
 // externs lists the C runtime functions actually referenced. Emitting
 // only what is used keeps the generated assembly readable and matches
 // how the Go backend pulls in imports on demand.
+// sortedKeys makes the .extern block deterministic. Two compilations of
+// the same program have to produce the same bytes, and a map does not.
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (e *Emitter) externs() []string {
 	out := []string{"printf"}
+	for _, sym := range sortedKeys(e.mod.Externs) {
+		out = append(out, sym)
+	}
 	if e.mod.Helpers["concat"] {
 		out = append(out, "malloc", "strlen", "strcpy", "strcat")
 	}
@@ -195,15 +210,6 @@ func (e *Emitter) externs() []string {
 	}
 	if e.mod.Helpers["alloc"] {
 		out = append(out, "malloc")
-	}
-	if e.mod.Helpers["timenow"] {
-		out = append(out, "time")
-	}
-	if e.mod.Helpers["strcmp3"] {
-		out = append(out, "strcmp")
-	}
-	if e.mod.Helpers["getenv"] {
-		out = append(out, "getenv")
 	}
 	if e.mod.Helpers["bounds"] {
 		out = append(out, "snprintf", "_write", "exit", "fflush")
@@ -532,28 +538,6 @@ func (e *Emitter) instr(in Instr) {
 		e.line("pop rbp")
 		e.line("ret")
 
-	case OpStrCmp:
-		// strcmp returns an int in eax; movsxd widens it so the sign
-		// survives into the 64-bit slot the comparison will read.
-		e.line("mov rcx, %s", e.regAddr(in.A))
-		e.line("mov rdx, %s", e.regAddr(in.B))
-		e.line("call strcmp")
-		e.line("movsxd rax, eax")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
-
-	case OpGetEnv:
-		e.line("mov rcx, %s", e.regAddr(in.A))
-		e.line("call getenv")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
-
-	case OpTimeNow:
-		// time(NULL). A null argument means the return value is the only
-		// result, so there is nothing to spill and no pointer to keep
-		// alive across the call.
-		e.line("xor ecx, ecx")
-		e.line("call time")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
-
 	case OpPrintInt:
 		e.line("lea rcx, __fmt_int[rip]")
 		e.line("mov rdx, %s", e.regAddr(in.A))
@@ -720,12 +704,27 @@ func (e *Emitter) call(in Instr) {
 	for i := 0; i < len(in.Args) && i < 4; i++ {
 		if in.ArgTypes[i].k == kFloat {
 			e.line("movsd %s, %s", xmmArgs[i], e.regAddr(in.Args[i]))
+			if in.Variadic {
+				// A callee walking a va_list cannot know the argument
+				// was a double, so the convention says put it in both
+				// files and let the callee read whichever it decides on.
+				// Omitting this is quiet in the worst way: printf("%d")
+				// still works and printf("%f") prints garbage.
+				e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
+			}
 		} else {
 			e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
 		}
 	}
-	e.line("call __vy_%s", in.Sym)
+	if in.Extern {
+		e.line("call %s", in.Sym)
+	} else {
+		e.line("call __vy_%s", in.Sym)
+	}
 	if in.Dst != NoReg {
+		if in.Ret32 {
+			e.line("movsxd rax, eax")
+		}
 		if in.RetType.k == kFloat {
 			e.line("movsd %s, xmm0", e.regAddr(in.Dst))
 		} else {
