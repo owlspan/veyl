@@ -420,3 +420,219 @@ func (l *lowerer) printMap(n Node, v Reg, t vty) {
 	l.writeMap(n, v, t)
 	l.writeLit("\n")
 }
+
+// keys and values copy a map's blocks out as lists.
+//
+// The Go backend sorts both, for the same reason map iteration there is
+// sorted: a program whose output changes between runs is a bad first
+// experience. Here they come out sorted with nothing to do, because
+// sorted is how the map is stored - the one place this representation
+// pays off against a hash table.
+func (l *lowerer) mapBlockToList(m Reg, t vty, off int64, elem vty) Reg {
+	list := l.newList(vListOf(elem), initialCap)
+	block := l.field(m, off, vInt)
+
+	iSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: iSlot})
+
+	top := l.newLabel()
+	done := l.newLabel()
+	l.mark(top)
+
+	i := l.load(iSlot, vInt)
+	more := l.compare(OpLt, i, l.field(m, mapLenOff, vInt))
+	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: done})
+
+	addr := l.newReg()
+	l.regTy[addr] = vInt
+	l.emit(Instr{Op: OpIndexAddr, Dst: addr, A: block, B: i})
+	v := l.newReg()
+	l.regTy[v] = elem
+	l.emit(Instr{Op: OpLoadMem, Dst: v, A: addr, B: NoReg, Imm: 0})
+	l.listPush(list, v)
+
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: iSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+
+	l.mark(done)
+	return list
+}
+
+// mapRemove deletes a key, closing the gap so the entries stay sorted
+// and contiguous. A key that is not there is not an error, which is what
+// Go's delete does.
+func (l *lowerer) mapRemove(m, key Reg, t vty) {
+	idxSlot := l.temp(vInt)
+	hitSlot := l.temp(vInt)
+	l.mapScan(m, key, t, idxSlot, hitSlot)
+
+	done := l.newLabel()
+	hit := l.load(hitSlot, vInt)
+	found := l.compare(OpNe, hit, l.constant(0))
+	l.emit(Instr{Op: OpJumpNot, A: found, Dst: NoReg, Imm: done})
+
+	keys := l.field(m, mapKeysOff, vInt)
+	vals := l.field(m, mapValsOff, vInt)
+	length := l.field(m, mapLenOff, vInt)
+
+	// Shift everything after the hole one place left, front to back.
+	iSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.load(idxSlot, vInt), Dst: NoReg, Imm: iSlot})
+
+	top := l.newLabel()
+	shifted := l.newLabel()
+	l.mark(top)
+
+	i := l.load(iSlot, vInt)
+	last := l.arith(OpSub, length, l.constant(1))
+	more := l.compare(OpLt, i, last)
+	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: shifted})
+
+	next := l.arith(OpAdd, i, l.constant(1))
+	l.copyCell(keys, next, i)
+	l.copyCell(vals, next, i)
+
+	l.emit(Instr{Op: OpStore, A: next, Dst: NoReg, Imm: iSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+
+	l.mark(shifted)
+	l.emit(Instr{Op: OpStoreMem, A: m, B: l.arith(OpSub, length, l.constant(1)),
+		Imm: mapLenOff})
+
+	l.mark(done)
+}
+
+// copyCell moves one word within a block.
+func (l *lowerer) copyCell(block, from, to Reg) {
+	src := l.newReg()
+	l.regTy[src] = vInt
+	l.emit(Instr{Op: OpIndexAddr, Dst: src, A: block, B: from})
+	v := l.newReg()
+	l.regTy[v] = vInt
+	l.emit(Instr{Op: OpLoadMem, Dst: v, A: src, B: NoReg, Imm: 0})
+	dst := l.newReg()
+	l.regTy[dst] = vInt
+	l.emit(Instr{Op: OpIndexAddr, Dst: dst, A: block, B: to})
+	l.emit(Instr{Op: OpStoreMem, A: dst, B: v, Imm: 0})
+}
+
+// mapBuiltin lowers keys, values, remove and clear.
+func (l *lowerer) mapBuiltin(c *Call, name string) (Reg, bool) {
+	switch name {
+	case "keys", "values", "remove", "clear":
+	default:
+		return NoReg, false
+	}
+
+	m := l.expr(c.Args[0])
+	t := l.regTy[m]
+
+	// clear is the one of these that also takes a list. Emptying either
+	// is a length of zero: the elements are unreachable after it, and
+	// nothing is freed here anyway.
+	if name == "clear" {
+		switch t.k {
+		case kMap:
+			l.emit(Instr{Op: OpStoreMem, A: m, B: l.constant(0), Imm: mapLenOff})
+			return l.void(), true
+		case kList:
+			l.emit(Instr{Op: OpStoreMem, A: m, B: l.constant(0), Imm: listLenOff})
+			return l.void(), true
+		}
+		l.errorAt(c, "clear expects a list or a map, got %s", t)
+		return l.junk(), true
+	}
+
+	if t.k != kMap {
+		l.errorAt(c, "%s expects a map, got %s", name, t)
+		return l.junk(), true
+	}
+
+	switch name {
+	case "keys":
+		return l.mapBlockToList(m, t, mapKeysOff, t.keyType()), true
+	case "values":
+		return l.mapBlockToList(m, t, mapValsOff, t.elemType()), true
+	}
+
+	key := l.expr(c.Args[1])
+	if l.regTy[key].k != t.key {
+		l.errorAt(c, "this map is keyed by %s, but the key is %s", t.keyType(), l.regTy[key])
+		return l.junk(), true
+	}
+	l.mapRemove(m, key, t)
+	return l.void(), true
+}
+
+// forMap lowers `for k, v in m`, and `for k in m` when only one name is
+// given.
+//
+// The entries come out in key order because that is how they are
+// stored - the Go backend has to sort on every iteration to promise the
+// same thing.
+//
+// The length is read once, before the first iteration, matching the Go
+// backend's range over a sorted key slice: inserting inside the loop
+// does not make it run longer. Unlike a list, the blocks themselves can
+// move when the map grows, so each iteration re-reads them through the
+// header.
+func (l *lowerer) forMap(st *ForStmt, m Reg, t vty) {
+	l.pushScope()
+
+	mapSlot := l.temp(t)
+	l.emit(Instr{Op: OpStore, A: m, Dst: NoReg, Imm: mapSlot, Comment: "for ... in"})
+
+	held := l.load(mapSlot, t)
+	lenSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.field(held, mapLenOff, vInt), Dst: NoReg, Imm: lenSlot})
+
+	iSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: iSlot})
+
+	keySlot := l.declare(st.Var, t.keyType())
+	valSlot := int64(-1)
+	if st.Var2 != "" {
+		valSlot = l.declare(st.Var2, t.elemType())
+	}
+
+	top := l.newLabel()
+	cont := l.newLabel()
+	done := l.newLabel()
+	l.mark(top)
+
+	i := l.load(iSlot, vInt)
+	more := l.compare(OpLt, i, l.load(lenSlot, vInt))
+	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: done})
+
+	cur := l.load(mapSlot, t)
+	l.emit(Instr{Op: OpStore, A: l.cellAt(cur, mapKeysOff, i, t.keyType()),
+		Dst: NoReg, Imm: keySlot, Comment: st.Var})
+	if valSlot >= 0 {
+		l.emit(Instr{Op: OpStore, A: l.cellAt(cur, mapValsOff, i, t.elemType()),
+			Dst: NoReg, Imm: valSlot, Comment: st.Var2})
+	}
+
+	l.loops = append(l.loops, loopTarget{brk: done, cont: cont})
+	l.stmt(st.Body)
+	l.loops = l.loops[:len(l.loops)-1]
+
+	l.mark(cont)
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, l.load(iSlot, vInt), l.constant(1)),
+		Dst: NoReg, Imm: iSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+
+	l.mark(done)
+	l.popScope()
+}
+
+// cellAt reads one entry out of a map's key or value block.
+func (l *lowerer) cellAt(m Reg, off int64, i Reg, elem vty) Reg {
+	block := l.field(m, off, vInt)
+	addr := l.newReg()
+	l.regTy[addr] = vInt
+	l.emit(Instr{Op: OpIndexAddr, Dst: addr, A: block, B: i})
+	d := l.newReg()
+	l.regTy[d] = elem
+	l.emit(Instr{Op: OpLoadMem, Dst: d, A: addr, B: NoReg, Imm: 0})
+	return d
+}

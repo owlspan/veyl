@@ -611,6 +611,12 @@ func (c *Codegen) stmt(s Stmt) {
 		if idx, ok := st.Target.(*Index); ok && idx.T != nil && idx.T.Kind == KList {
 			value := c.expr(st.Value)
 			if st.Op != ASSIGN {
+				// The read side needs its own helper pulled in. Without
+				// this, a program whose only use of listGet was a
+				// compound assignment generated a call to a function
+				// that was never emitted, and Go reported an undefined
+				// name in a file the user never wrote.
+				c.need(nil, []string{"listGet"})
 				value = fmt.Sprintf("(__listGet(%s, %s) %s %s)",
 					c.expr(idx.X), c.expr(idx.Idx), strings.TrimSuffix(goAssignOp(st.Op), "="), value)
 			}

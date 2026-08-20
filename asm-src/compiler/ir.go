@@ -883,15 +883,29 @@ func (l *lowerer) stmt(s Stmt) {
 
 func (l *lowerer) assign(st *AssignStmt) {
 	if idx, isIndex := st.Target.(*Index); isIndex {
-		if st.Op != ASSIGN {
-			l.errorAt(st, "compound assignment into a list is not on this backend yet")
-			return
-		}
+		// The collection and the index are each lowered once, so
+		// `counts[next()] += 1` does not advance next() twice - a
+		// compound assignment reads and writes the same place, and
+		// working out where it is twice would be a different place.
 		coll := l.expr(idx.X)
 		t := l.regTy[coll]
 		switch t.k {
 		case kList:
-			l.listSet(coll, l.expr(idx.Idx), l.rvalue(st.Value))
+			key := l.expr(idx.Idx)
+			val := l.rvalueAs(st.Value, t.elemType())
+			if st.Op != ASSIGN {
+				cur := l.listGet(coll, key, t.elemType())
+				out, good := l.compound(st, st.Op, t.elemType(), cur, val)
+				if !good {
+					return
+				}
+				val = out
+			}
+			if !l.regTy[val].eq(t.elemType()) {
+				l.errorAt(st, "this list holds %s, but the value is %s", t.elemType(), l.regTy[val])
+				return
+			}
+			l.listSet(coll, key, val)
 			return
 		case kMap:
 			key := l.expr(idx.Idx)
@@ -899,7 +913,18 @@ func (l *lowerer) assign(st *AssignStmt) {
 				l.errorAt(st, "this map is keyed by %s, but the index is %s", t.keyType(), l.regTy[key])
 				return
 			}
-			val := l.rvalue(st.Value)
+			val := l.rvalueAs(st.Value, t.elemType())
+			if st.Op != ASSIGN {
+				// A missing key reads as the zero value, which is what
+				// makes `counts[word] += 1` the idiom it is on the Go
+				// backend too.
+				cur := l.mapGet(st, coll, key, t)
+				out, good := l.compound(st, st.Op, t.elemType(), cur, val)
+				if !good {
+					return
+				}
+				val = out
+			}
 			if !l.regTy[val].eq(t.elemType()) {
 				l.errorAt(st, "this map holds %s, but the value is %s", t.elemType(), l.regTy[val])
 				return
@@ -1046,8 +1071,8 @@ func (l *lowerer) toFloat(v Reg) Reg {
 // known here, so the step must be a literal for now: a dynamic one needs
 // a runtime sign test that nothing yet writes programs to exercise.
 func (l *lowerer) forRange(st *ForStmt) {
-	if st.Var2 != "" {
-		l.errorAt(st, "the two-variable for form is not on the assembly backend yet")
+	if st.Var2 != "" && st.Coll == nil {
+		l.errorAt(st, "the two-variable for form needs a list or a map to iterate")
 		return
 	}
 	if st.Coll != nil {
@@ -1344,6 +1369,28 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		}
 		return l.push(c)
 
+	case "has":
+		if !arity(2) {
+			return l.junk()
+		}
+		m := l.expr(c.Args[0])
+		t := l.regTy[m]
+		if t.k != kMap {
+			l.errorAt(c, "has expects a map, got %s", t)
+			return l.junk()
+		}
+		key := l.expr(c.Args[1])
+		if l.regTy[key].k != t.key {
+			l.errorAt(c, "this map is keyed by %s, but the key is %s", t.keyType(), l.regTy[key])
+			return l.junk()
+		}
+		// One scan answers it: mapScan reports where the key is and
+		// whether it was there at all, and only the second is wanted.
+		idxSlot := l.temp(vInt)
+		hitSlot := l.temp(vInt)
+		l.mapScan(m, key, t, idxSlot, hitSlot)
+		return l.compare(OpNe, l.load(hitSlot, vInt), l.constant(0))
+
 	case "str":
 		if !arity(1) {
 			return l.junk()
@@ -1421,6 +1468,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.dirBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.mapBuiltin(c, name); handled {
 		return r
 	}
 

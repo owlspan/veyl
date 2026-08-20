@@ -63,3 +63,32 @@ fn total(scores: {str: int}, k: str) -> int {
     return scores[k] + len(scores)
 }
 print(total(m, "apple"))
+
+// keys and values come out in key order with nothing to do, because
+// sorted is how this map is stored. The Go backend has to sort on every
+// call to promise the same thing.
+let scores = {"cy": 51, "ada": 36, "bo": 24}
+print(str(keys(scores)))
+print(str(values(scores)))
+print(has(scores, "ada"))
+print(has(scores, "nobody"))
+
+// Iterating binds both names, in the same order.
+for name, score in scores {
+    print(name + " scored " + str(score))
+}
+
+// A missing key reads as the zero value, which is what makes counting
+// with += the idiom it is.
+let counts: {str: int} = {}
+for word in ["a", "b", "a", "c", "a"] {
+    counts[word] += 1
+}
+print(str(counts))
+
+remove(scores, "bo")
+print(str(scores))
+remove(scores, "was never here")
+print(len(scores))
+clear(scores)
+print(str(scores))

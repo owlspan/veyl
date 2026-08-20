@@ -450,8 +450,19 @@ func (l *lowerer) strOf(n Node, v Reg, t vty) Reg {
 func (l *lowerer) forList(st *ForStmt) {
 	coll := l.expr(st.Coll)
 	t := l.regTy[coll]
+	if t.k == kMap {
+		l.forMap(st, coll, t)
+		return
+	}
 	if t.k != kList {
-		l.errorAt(st, "only a list can be iterated on this backend so far")
+		l.errorAt(st, "only a list or a map can be iterated on this backend so far")
+		return
+	}
+	if st.Var2 != "" {
+		// `for i, v in xs` on a list would want the index in the first
+		// name. Nothing here builds that yet, and doing it silently
+		// wrong would bind the element to both.
+		l.errorAt(st, "iterating a list with two names is not on the assembly backend yet")
 		return
 	}
 

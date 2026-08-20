@@ -95,6 +95,16 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkLen}, true
 	case "push":
 		return front.Signature{Check: checkPush}, true
+	case "has":
+		return front.Signature{Check: checkHas}, true
+	case "keys":
+		return front.Signature{Check: checkKeys}, true
+	case "values":
+		return front.Signature{Check: checkValues}, true
+	case "remove":
+		return front.Signature{Check: checkRemove}, true
+	case "clear":
+		return front.Signature{Check: checkClear}, true
 
 	// The error type. These mirror the Go backend's declarations exactly,
 	// because a program that type-checks on one backend and not on the
@@ -152,6 +162,84 @@ func checkLen(c *Checker, x *Call, args []*Type) *Type {
 	}
 	c.ErrorAt(x, "len needs a str, a list or a map, got %s", args[0])
 	return Unknown
+}
+
+// checkHas mirrors the Go backend's declaration exactly. A program that
+// type-checks on one backend and not the other would be a language with
+// two definitions.
+func checkHas(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 2 {
+		c.ErrorAt(x, "has takes 2 arguments, got %d", len(args))
+		return Bool
+	}
+	if args[0].IsUnknown() {
+		return Bool
+	}
+	if args[0].Kind != KMap {
+		c.ErrorAt(x.Args[0], "has expects a map, got %s", args[0])
+		return Bool
+	}
+	if !args[1].IsUnknown() && !args[1].Equal(args[0].Key) {
+		c.ErrorAt(x.Args[1], "has expects %s for argument 2, got %s", args[0].Key, args[1])
+	}
+	return Bool
+}
+
+// mapArg is the shared front of keys, values and remove: one map
+// argument, or a type error naming what came instead.
+func mapArg(c *Checker, x *Call, args []*Type, name string, want int) (*Type, bool) {
+	if len(args) != want {
+		c.ErrorAt(x, "%s takes %d argument(s), got %d", name, want, len(args))
+		return nil, false
+	}
+	if args[0].IsUnknown() {
+		return nil, false
+	}
+	if args[0].Kind != KMap {
+		c.ErrorAt(x.Args[0], "%s expects a map, got %s", name, args[0])
+		return nil, false
+	}
+	return args[0], true
+}
+
+func checkClear(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 1 {
+		c.ErrorAt(x, "clear takes 1 argument, got %d", len(args))
+		return Void
+	}
+	switch args[0].Kind {
+	case KMap, KList, KUnknown:
+		return Void
+	}
+	c.ErrorAt(x.Args[0], "clear expects a list or a map, got %s", args[0])
+	return Void
+}
+
+func checkKeys(c *Checker, x *Call, args []*Type) *Type {
+	m, ok := mapArg(c, x, args, "keys", 1)
+	if !ok {
+		return Unknown
+	}
+	return ListOf(m.Key)
+}
+
+func checkValues(c *Checker, x *Call, args []*Type) *Type {
+	m, ok := mapArg(c, x, args, "values", 1)
+	if !ok {
+		return Unknown
+	}
+	return ListOf(m.Elem)
+}
+
+func checkRemove(c *Checker, x *Call, args []*Type) *Type {
+	m, ok := mapArg(c, x, args, "remove", 2)
+	if !ok {
+		return Void
+	}
+	if !args[1].IsUnknown() && !args[1].Equal(m.Key) {
+		c.ErrorAt(x.Args[1], "remove expects %s for argument 2, got %s", m.Key, args[1])
+	}
+	return Void
 }
 
 func checkPush(c *Checker, x *Call, args []*Type) *Type {
