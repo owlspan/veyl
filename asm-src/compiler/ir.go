@@ -24,9 +24,10 @@ import (
 
 // A vty is the type information this backend tracks.
 //
-// The real type checker lives in ../../src/compiler/check.go and is not
-// shared yet, so this is not type checking - a program that is wrong
-// will still compile to something. Run it through the Go backend first.
+// The real type checker lives in ../../frontend/check.go and runs before
+// this, shared with the Go backend, so this is not type checking. It is
+// the subset of what the checker already worked out that the lowerer
+// needs to keep around while it emits.
 //
 // What this does buy is knowing which of print, concat or compare to
 // emit, which is not optional: `print` of a comparison has to write
