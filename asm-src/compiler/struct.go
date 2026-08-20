@@ -241,7 +241,7 @@ func (l *lowerer) structLit(x *StructLit) Reg {
 	for _, f := range lay.fields {
 		var v Reg
 		if e, has := given[f.name]; has {
-			v = l.rvalue(e)
+			v = l.rvalueAs(e, f.t)
 			if f.t.k == kFloat && l.regTy[v].k == kInt {
 				v = l.toFloat(v)
 			}

@@ -392,10 +392,10 @@ func (l *lowerer) writeMap(n Node, m Reg, t vty) {
 
 	if t.key == kStr {
 		l.writeLit("\"")
-		l.emit(Instr{Op: OpWriteStr, A: k, Dst: NoReg})
+		l.emitStr(k)
 		l.writeLit("\"")
 	} else {
-		l.emit(Instr{Op: OpWriteInt, A: k, Dst: NoReg})
+		l.emitInt(k)
 	}
 	l.writeLit(": ")
 

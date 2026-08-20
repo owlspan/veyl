@@ -300,7 +300,10 @@ func (l *lowerer) resultBuiltin(c *Call, name string) (Reg, bool) {
 		if !good {
 			return l.junk(), true
 		}
-		alt := l.expr(c.Args[1])
+		// The fallback has to be the same type as what the result
+		// carries, so that type is a hint: valueOr(r, []) knows what
+		// the empty list holds even though the literal does not.
+		alt := l.rvalueAs(c.Args[1], t.inner())
 		if t.inner().k == kFloat && l.regTy[alt].k == kInt {
 			alt = l.toFloat(alt)
 		}

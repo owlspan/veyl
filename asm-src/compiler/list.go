@@ -341,19 +341,19 @@ func (l *lowerer) writeValue(n Node, v Reg, t vty) {
 		l.writeMap(n, v, t)
 	case kStr:
 		l.writeLit("\"")
-		l.emit(Instr{Op: OpWriteStr, A: v, Dst: NoReg})
+		l.emitStr(v)
 		l.writeLit("\"")
 	case kBool:
 		l.mod.needs("booltostr")
 		s := l.newReg()
 		l.regTy[s] = vStr
 		l.emit(Instr{Op: OpBoolToStr, Dst: s, A: v, B: NoReg})
-		l.emit(Instr{Op: OpWriteStr, A: s, Dst: NoReg})
+		l.emitStr(s)
 	case kFloat:
 		l.mod.needs("floattostr")
-		l.emit(Instr{Op: OpWriteFloat, A: v, Dst: NoReg})
+		l.emitFloat(v)
 	default:
-		l.emit(Instr{Op: OpWriteInt, A: v, Dst: NoReg})
+		l.emitInt(v)
 	}
 }
 
@@ -369,7 +369,76 @@ func (l *lowerer) writeLit(s string) {
 	r := l.newReg()
 	l.regTy[r] = vStr
 	l.emit(Instr{Op: OpStr, Dst: r, A: NoReg, B: NoReg, Imm: l.mod.intern(s)})
-	l.emit(Instr{Op: OpWriteStr, A: r, Dst: NoReg})
+	l.emitStr(r)
+}
+
+// emitStr, emitInt and emitFloat write one piece to wherever writes are
+// currently going: stdout, or the buffer str() set up.
+//
+// Everything that renders a container goes through these three, which
+// is what makes str(xs) and print(xs) produce the same characters by
+// construction rather than by two pieces of code being kept in step.
+func (l *lowerer) emitStr(v Reg) {
+	if l.buf < 0 {
+		l.emit(Instr{Op: OpWriteStr, A: v, Dst: NoReg})
+		return
+	}
+	// Append by concatenation, reloading the buffer each time, because
+	// the writes happen inside loops whose bodies run an unknown number
+	// of times and a register cannot carry a value across that.
+	l.mod.needs("concat")
+	cur := l.newReg()
+	l.regTy[cur] = vStr
+	l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: l.buf})
+	d := l.newReg()
+	l.regTy[d] = vStr
+	l.emit(Instr{Op: OpConcat, Dst: d, A: cur, B: v})
+	l.emit(Instr{Op: OpStore, A: d, Dst: NoReg, Imm: l.buf})
+}
+
+func (l *lowerer) emitInt(v Reg) {
+	if l.buf < 0 {
+		l.emit(Instr{Op: OpWriteInt, A: v, Dst: NoReg})
+		return
+	}
+	l.mod.needs("inttostr")
+	d := l.newReg()
+	l.regTy[d] = vStr
+	l.emit(Instr{Op: OpIntToStr, Dst: d, A: v, B: NoReg})
+	l.emitStr(d)
+}
+
+func (l *lowerer) emitFloat(v Reg) {
+	if l.buf < 0 {
+		l.emit(Instr{Op: OpWriteFloat, A: v, Dst: NoReg})
+		return
+	}
+	l.mod.needs("floattostr")
+	d := l.newReg()
+	l.regTy[d] = vStr
+	l.emit(Instr{Op: OpFloatToStr, Dst: d, A: v, B: NoReg})
+	l.emitStr(d)
+}
+
+// strOf renders a list, map or struct into a string.
+//
+// It is the printing code with its output redirected, so the two cannot
+// disagree. The cost is one allocation per piece appended, which for a
+// long list is quadratic and, with nothing freed, permanent. A rope or
+// a growable buffer is the fix when that matters; correctness first.
+func (l *lowerer) strOf(n Node, v Reg, t vty) Reg {
+	slot := l.temp(vStr)
+	l.emit(Instr{Op: OpStore, A: l.emptyStr(), Dst: NoReg, Imm: slot})
+
+	saved := l.buf
+	l.buf = slot
+	l.writeValue(n, v, t)
+	l.buf = saved
+
+	d := l.newReg()
+	l.regTy[d] = vStr
+	l.emit(Instr{Op: OpLoad, Dst: d, A: NoReg, B: NoReg, Imm: slot})
+	return d
 }
 
 // forList lowers `for x in xs`.

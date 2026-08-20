@@ -131,7 +131,6 @@ func TestUnsupportedIsAnError(t *testing.T) {
 		"mixed map":       "let m = {\"a\": 1, \"b\": \"two\"}\nprint(len(m))\n",
 		"float key":       "let m = {1.5: 2}\nprint(len(m))\n",
 		"wrong key type":  "let m: {str: int} = {\"a\": 1}\nprint(m[1])\n",
-		"struct to str":   "struct P {\n x: int\n}\nlet p = P{x: 1}\nprint(str(p))\n",
 		"struct T! field": "struct P {\n x: int!\n}\nlet p = P{}\nprint(1)\n",
 		"nullable":        "let x: ?int = nil\nprint(x)\n",
 		"list of results": "fn f() -> int! {\n return 1\n}\nlet xs = [f()]\nprint(len(xs))\n",

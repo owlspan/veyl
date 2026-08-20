@@ -474,6 +474,13 @@ type lowerer struct {
 	// because a function signature can name one.
 	structs map[string]*structLayout
 
+	// buf is the stack slot a string being built lives in, or -1 when
+	// writes go to stdout. Rendering a container into a string reuses
+	// the code that prints one, pointed at a buffer instead - the two
+	// have to agree character for character, and the only way to be
+	// sure of that is for there to be one of them.
+	buf int64
+
 	// hint is the type the surrounding context expects. An empty list
 	// literal has no element to infer from, so `let xs: []int = []` can
 	// only work if the annotation reaches the literal.
@@ -493,6 +500,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		mod:  &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
 		file: file,
 		sigs: map[string]sig{},
+		buf:  -1,
 	}
 
 	// Struct layouts before signatures, because a parameter or a return
@@ -668,6 +676,25 @@ func (l *lowerer) newLabel() int64 {
 	return n
 }
 
+// rvalueAs lowers an expression in a context that already knows what
+// type it wants.
+//
+// It exists for the empty literal. `[]` and `{}` carry no element to
+// infer from, so the only thing that can type one is what surrounds it,
+// and before this the only surrounding that reached the literal was a
+// let annotation. An argument, a return and a struct field all know
+// what they want just as precisely.
+//
+// The hint is restored rather than cleared, so a nested expression sees
+// the hint of the position it is actually in.
+func (l *lowerer) rvalueAs(e Expr, want vty) Reg {
+	saved := l.hint
+	l.hint = want
+	v := l.rvalue(e)
+	l.hint = saved
+	return v
+}
+
 func (l *lowerer) mark(label int64) {
 	l.emit(Instr{Op: OpLabel, A: NoReg, Dst: NoReg, Imm: label})
 }
@@ -786,7 +813,12 @@ func (l *lowerer) stmt(s Stmt) {
 			l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg, Comment: "return"})
 			return
 		}
-		v := l.rvalue(st.Value)
+		// A function returning []int can be returned an empty literal,
+		// so the return type is a hint like any other. Strip the `!`
+		// first: `return []` inside a []int! is boxed by a Widen the
+		// checker inserted, and what the literal has to build is the
+		// list, not the result around it.
+		v := l.rvalueAs(st.Value, l.fn.Ret.inner())
 
 		// Boxing a plain value into the T! a function promises is not
 		// decided here: the checker already marked the spot with a
@@ -1111,7 +1143,7 @@ func (l *lowerer) call(c *Call) Reg {
 		}
 		args := make([]Reg, len(c.Args))
 		for i, a := range c.Args {
-			v := l.rvalue(a)
+			v := l.rvalueAs(a, s.params[i])
 			if s.params[i].k == kFloat && l.regTy[v].k == kInt {
 				v = l.toFloat(v)
 			}
@@ -1460,10 +1492,9 @@ func (l *lowerer) toStr(v Reg, at Node) Reg {
 		l.regTy[d] = vStr
 		l.emit(Instr{Op: OpFloatToStr, Dst: d, A: v, B: NoReg})
 		return d
+	case kList, kMap, kStruct:
+		return l.strOf(at, v, l.regTy[v])
 	}
-	// Lists, maps and structs all land here. The Go backend renders each
-	// of them, so this is a gap rather than a rule, and it should say
-	// which type it could not manage rather than only that it could not.
 	l.errorAt(at, "cannot convert %s to a string on the assembly backend yet", l.regTy[v])
 	return l.junk()
 }
