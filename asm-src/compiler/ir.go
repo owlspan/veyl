@@ -45,23 +45,27 @@ const (
 	kStruct
 )
 
-// A vty is a kind plus, for a list, the kind of its elements, and for a
-// map, the kinds of its keys and values. One level only: [][]int needs
-// elem to be a vty rather than a vkind, and nothing is served by paying
-// for that before lists themselves work.
+// A vty is a kind plus, for a list, the type of its elements, and for a
+// map, the type of its keys and values.
 //
-// name carries the one thing a bare kind cannot: which struct. It names
-// the struct itself when k is kStruct, and the element's struct when a
-// list or map holds one, which is what lets users[0].email resolve a
-// field after the index has thrown the element kind away.
+// el is a *vty rather than a vkind, which is what makes [][]int and
+// {str: []str} expressible. It was a kind when lists were new, and the
+// cost of that was paid twice: json needs a map of lists, and every
+// error message about a nested type had to lie about a level it could
+// not represent. A pointer rather than a value because a type cannot
+// contain itself by value.
+//
+// name carries the one thing a bare kind cannot: which struct. With el
+// holding a whole type, it names only the struct itself, never an
+// element's - that was a workaround for the missing level.
 //
 // res is the `!` suffix. It is a flag rather than a kind because a
 // result's layout does not depend on what it carries, so int! and str!
 // differ only in how the value word is read back out.
 type vty struct {
 	k    vkind
-	elem vkind // list: the element kind. map: the value kind.
-	key  vkind // map only: the key kind.
+	el   *vty  // list: the element type. map: the value type.
+	key  vkind // map only: the key kind, still only int or str
 	res  bool  // T!: the value is boxed alongside a failure reason
 	name string
 }
@@ -74,8 +78,8 @@ var (
 	vStr   = vty{k: kStr}
 )
 
-func vListOf(e vkind) vty     { return vty{k: kList, elem: e} }
-func vMapOf(kk, vk vkind) vty { return vty{k: kMap, elem: vk, key: kk} }
+func vListOf(e vty) vty          { return vty{k: kList, el: &e} }
+func vMapOf(kk vkind, v vty) vty { return vty{k: kMap, el: &v, key: kk} }
 
 func vStructOf(name string) vty { return vty{k: kStruct, name: name} }
 
@@ -88,9 +92,37 @@ func vResultOf(t vty) vty { t.res = true; return t }
 func (t vty) inner() vty { t.res = false; return t }
 
 // elemType is the type of what comes out of indexing this list or map.
-// The name travels with it, so indexing a []User yields a User rather
-// than an anonymous pointer.
-func (t vty) elemType() vty { return vty{k: t.elem, name: t.name} }
+//
+// A list or map with no element type is one that was never built - the
+// zero vty, which reads as void. Returning that rather than crashing
+// keeps a lowering bug reporting a type error instead of a panic.
+func (t vty) elemType() vty {
+	if t.el == nil {
+		return vVoid
+	}
+	return *t.el
+}
+
+// elemKind is the kind of the element, for the many places that only
+// need to know int from str from pointer.
+func (t vty) elemKind() vkind { return t.elemType().k }
+
+// eq is type equality. It has to be a method now that a vty holds a
+// pointer: `a == b` compares the pointer, so two separately built
+// []int values would come out unequal. Every place that means "the
+// same type" must go through here.
+func (t vty) eq(o vty) bool {
+	if t.k != o.k || t.key != o.key || t.res != o.res || t.name != o.name {
+		return false
+	}
+	if (t.el == nil) != (o.el == nil) {
+		return false
+	}
+	if t.el == nil {
+		return true
+	}
+	return t.el.eq(*o.el)
+}
 
 // keyType is the type of a map's keys.
 func (t vty) keyType() vty { return vty{k: t.key} }
@@ -127,7 +159,7 @@ func (t vty) String() string {
 	case kList:
 		return "[]" + t.elemType().String()
 	case kMap:
-		return "{" + vty{k: t.key}.String() + ": " + t.elemType().String() + "}"
+		return "{" + t.keyType().String() + ": " + t.elemType().String() + "}"
 	}
 	return "void"
 }
@@ -183,13 +215,12 @@ func vtyOf(t *Type) (vty, bool) {
 
 	case KList:
 		e, ok := vtyOf(t.Elem)
-		// A list stores one kind per element, so an element that needs
-		// more than a kind to describe it cannot go in one. A struct is
-		// the exception the name field buys.
-		if !ok || e.res || e.k == kVoid || e.k == kList || e.k == kMap {
+		// A list of results is still refused. Every element would be a
+		// separate box, and nothing here unboxes one out of a container.
+		if !ok || e.res || e.k == kVoid {
 			return vVoid, false
 		}
-		return vty{k: kList, elem: e.k, name: e.name}, true
+		return vListOf(e), true
 
 	case KMap:
 		kt, kok := vtyOf(t.Key)
@@ -200,10 +231,10 @@ func vtyOf(t *Type) (vty, bool) {
 		if kt.k != kInt && kt.k != kStr {
 			return vVoid, false
 		}
-		if vt.res || vt.k == kVoid || vt.k == kList || vt.k == kMap {
+		if vt.res || vt.k == kVoid {
 			return vVoid, false
 		}
-		return vty{k: kMap, key: kt.k, elem: vt.k, name: vt.name}, true
+		return vMapOf(kt.k, vt), true
 	}
 	return vVoid, false
 }
@@ -724,7 +755,7 @@ func (l *lowerer) stmt(s Stmt) {
 			// into a float slot - Go's own untyped-constant rule, which
 			// Veyl copies - so that combination is promoted rather than
 			// rejected here.
-			if declared != t {
+			if !declared.eq(t) {
 				if declared.k == kFloat && t.k == kInt {
 					v = l.toFloat(v)
 				} else {
@@ -869,7 +900,7 @@ func (l *lowerer) assign(st *AssignStmt) {
 				return
 			}
 			val := l.rvalue(st.Value)
-			if l.regTy[val].k != t.elem {
+			if !l.regTy[val].eq(t.elemType()) {
 				l.errorAt(st, "this map holds %s, but the value is %s", t.elemType(), l.regTy[val])
 				return
 			}
@@ -1311,18 +1342,7 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		if !arity(2) {
 			return l.junk()
 		}
-		list := l.expr(c.Args[0])
-		if l.regTy[list].k != kList {
-			l.errorAt(c, "push needs a list")
-			return l.junk()
-		}
-		v := l.rvalue(c.Args[1])
-		if l.regTy[v].k != l.regTy[list].elem {
-			l.errorAt(c, "cannot push %s into %s", l.regTy[v], l.regTy[list])
-			return l.junk()
-		}
-		l.listPush(list, v)
-		return l.void()
+		return l.push(c)
 
 	case "str":
 		if !arity(1) {
@@ -1585,7 +1605,7 @@ func (l *lowerer) expr(e Expr) Reg {
 				l.errorAt(x, "this map is keyed by %s, but the index is %s", t.keyType(), l.regTy[key])
 				return l.junk()
 			}
-			return l.mapGet(coll, key, t)
+			return l.mapGet(x, coll, key, t)
 		}
 		l.errorAt(x, "only a list or a map can be indexed on this backend so far")
 		return l.junk()
@@ -1954,6 +1974,65 @@ func (f *Func) String() string {
 	return out
 }
 
+// push appends to a list.
+//
+// A list is a header on the heap and growing it replaces the element
+// block inside that header, never the header itself, so pushing through
+// a variable, a field or a list element mutates the list everyone else
+// is holding and there is nothing to write back.
+//
+// A *map* value is the exception, and only when the key is absent.
+// Reading a missing key yields a zero value that is not in the map, so
+// pushing into it would append to something nobody can reach again -
+// silently, since the push itself works. The Go backend copies out,
+// mutates and writes back; this does the same by storing the list under
+// the key afterwards. Storing it when the key was already there writes
+// the same pointer over itself and costs one scan.
+//
+// The map and the key are each lowered once, so push(g[next()], v) does
+// not advance next() twice - the same guarantee the Go backend's
+// mutate() makes.
+func (l *lowerer) push(c *Call) Reg {
+	idx, intoIndex := c.Args[0].(*Index)
+	if intoIndex {
+		if m := l.expr(idx.X); l.regTy[m].k == kMap {
+			t := l.regTy[m]
+			key := l.expr(idx.Idx)
+			if l.regTy[key].k != t.key {
+				l.errorAt(c, "this map is keyed by %s, but the index is %s", t.keyType(), l.regTy[key])
+				return l.junk()
+			}
+			list := l.mapGet(c, m, key, t)
+			if !l.pushInto(c, list, c.Args[1]) {
+				return l.junk()
+			}
+			l.mapSet(m, key, list, t)
+			return l.void()
+		}
+	}
+
+	list := l.expr(c.Args[0])
+	if !l.pushInto(c, list, c.Args[1]) {
+		return l.junk()
+	}
+	return l.void()
+}
+
+// pushInto is the part that is the same however the list was reached.
+func (l *lowerer) pushInto(c *Call, list Reg, arg Expr) bool {
+	if l.regTy[list].k != kList {
+		l.errorAt(c, "push needs a list")
+		return false
+	}
+	v := l.rvalueAs(arg, l.regTy[list].elemType())
+	if !l.regTy[v].eq(l.regTy[list].elemType()) {
+		l.errorAt(c, "cannot push %s into %s", l.regTy[v], l.regTy[list])
+		return false
+	}
+	l.listPush(list, v)
+	return true
+}
+
 // listLit builds a list from its elements. The element type comes from
 // the first element, which is what the Go backend's inference does for
 // a literal with no annotation to guide it.
@@ -1978,7 +2057,7 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 	// list of int! would otherwise pass the kind check below and be
 	// built as a list of int, storing box pointers and reading them back
 	// as numbers. It has to be refused explicitly.
-	if elem.res || elem.k == kList || elem.k == kVoid {
+	if elem.res || elem.k == kVoid {
 		l.errorAt(x, "a list of %s is not on the assembly backend yet", elem)
 		return l.junk()
 	}
@@ -1990,7 +2069,7 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 		}
 	}
 
-	t := vty{k: kList, elem: elem.k, name: elem.name}
+	t := vListOf(elem)
 	list := l.newList(t, int64(len(vals)))
 	for _, v := range vals {
 		l.listPush(list, v)
@@ -2036,7 +2115,7 @@ func (l *lowerer) mapLit(x *MapLit) Reg {
 		l.errorAt(x, "a map keyed by %s is not on the assembly backend yet", kk)
 		return l.junk()
 	}
-	if vk.res || vk.k == kList || vk.k == kMap || vk.k == kVoid {
+	if vk.res || vk.k == kVoid {
 		l.errorAt(x, "a map of %s is not on the assembly backend yet", vk)
 		return l.junk()
 	}
@@ -2055,7 +2134,7 @@ func (l *lowerer) mapLit(x *MapLit) Reg {
 		}
 	}
 
-	t := vty{k: kMap, key: kk.k, elem: vk.k, name: vk.name}
+	t := vMapOf(kk.k, vk)
 	m := l.newMap(t, int64(len(keys)))
 	for i := range keys {
 		l.mapSet(m, keys[i], vals[i], t)

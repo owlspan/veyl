@@ -123,11 +123,8 @@ func TestUnsupportedIsAnError(t *testing.T) {
 	cases := map[string]string{
 		"undefined":       "print(nope)\n",
 		"bare empty":      "let xs = []\nprint(len(xs))\n",
-		"nested list":     "let xs = [[1], [2]]\nprint(xs[0])\n",
 		"mixed list":      "let xs = [1, \"two\"]\nprint(xs[0])\n",
 		"bare empty map":  "let m = {}\nprint(len(m))\n",
-		"nested map":      "let m = {\"a\": {\"b\": 1}}\nprint(len(m))\n",
-		"map of list":     "let m = {\"a\": [1, 2]}\nprint(len(m))\n",
 		"mixed map":       "let m = {\"a\": 1, \"b\": \"two\"}\nprint(len(m))\n",
 		"float key":       "let m = {1.5: 2}\nprint(len(m))\n",
 		"wrong key type":  "let m: {str: int} = {\"a\": 1}\nprint(m[1])\n",

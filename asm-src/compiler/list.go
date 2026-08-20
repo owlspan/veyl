@@ -72,7 +72,7 @@ const (
 // One level deep is all the vty tracks, which is all this needs: a
 // list of strings holds pointers, a list of anything else does not.
 func elemTag(t vty) int64 {
-	if t.elem == kStr {
+	if t.elemType().holdsPointer() {
 		return tagPtrs
 	}
 	return tagWords

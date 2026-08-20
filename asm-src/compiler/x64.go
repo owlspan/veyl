@@ -262,6 +262,38 @@ func escapeAsm(s string) string {
 	return b.String()
 }
 
+// pageSize is what Windows commits a stack page at a time in. It is a
+// property of the operating system, not of the processor.
+const pageSize = 4096
+
+// reserve opens the stack frame.
+//
+// A frame smaller than a page is one `sub rsp`. A larger one has to
+// touch every page on the way down, because Windows grows a thread's
+// stack by trapping a write to the single guard page sitting below the
+// committed region and moving it down one page. Moving rsp past that
+// page without writing to it means the guard is never hit, and the
+// first write below it is an access violation instead.
+//
+// This cost hours. The symptom is a program that segfaults sometimes:
+// whether the write lands on an uncommitted page depends on how much
+// stack earlier calls happened to commit, so the same executable runs
+// and faults on alternate attempts. It appeared when a program first
+// had a frame over 4 KB, which made it look like a bug in whatever
+// feature that program was using.
+//
+// The probes are written out rather than looped so that every line is
+// still one instruction, and so that nothing needs a scratch register
+// at a point where the frame does not exist yet.
+func (e *Emitter) reserve(bytes int) {
+	for bytes > pageSize {
+		e.line("sub rsp, %d", pageSize)
+		e.line("mov qword ptr [rsp], 0")
+		bytes -= pageSize
+	}
+	e.line("sub rsp, %d", bytes)
+}
+
 func (e *Emitter) function(f *Func) {
 	e.f = f
 	name := f.Name
@@ -275,7 +307,7 @@ func (e *Emitter) function(f *Func) {
 		f.NParams, f.NSlots, f.NRegs))
 	e.line("push rbp")
 	e.line("mov rbp, rsp")
-	e.line("sub rsp, %d", e.frameSize())
+	e.reserve(e.frameSize())
 
 	if f.Name == "main" {
 		// Put stdout in binary mode. The C runtime otherwise translates

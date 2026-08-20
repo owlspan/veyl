@@ -56,7 +56,7 @@ func keyTag(t vty) int64 {
 }
 
 func valTag(t vty) int64 {
-	if t.elem == kStr {
+	if t.elemType().holdsPointer() {
 		return tagPtrs
 	}
 	return tagWords
@@ -165,17 +165,17 @@ func (l *lowerer) mapKeyReg(t vty) vty { return vty{k: t.key} }
 // mapGet returns the value for a key, or the zero value when the key is
 // absent. That is the Go backend's behaviour and so it is the
 // definition: a missing int key reads 0, a missing str key reads "".
-func (l *lowerer) mapGet(m, key Reg, t vty) Reg {
+func (l *lowerer) mapGet(n Node, m, key Reg, t vty) Reg {
 	idxSlot := l.temp(vInt)
 	hitSlot := l.temp(vInt)
 	l.mapScan(m, key, t, idxSlot, hitSlot)
 
+	// The zero for an absent key is the same zero a struct field gets,
+	// which for a container is a real empty one rather than a null
+	// pointer. Once a map can hold a list, reading a missing key and
+	// then asking its length has to answer 0, not fault.
 	out := l.temp(t.elemType())
-	if t.elem == kStr {
-		l.emit(Instr{Op: OpStore, A: l.emptyStr(), Dst: NoReg, Imm: out})
-	} else {
-		l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: out})
-	}
+	l.emit(Instr{Op: OpStore, A: l.zeroOf(n, t.elemType(), 0), Dst: NoReg, Imm: out})
 
 	done := l.newLabel()
 	hit := l.newReg()
