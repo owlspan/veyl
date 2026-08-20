@@ -827,7 +827,16 @@ func buildCollectionBuiltins() {
 			emitT: func(c *Codegen, x *Call, a []string) string {
 				inner := "any"
 				if x.Want != nil && x.Want.IsResult() {
-					inner = x.Want.Elem.Go()
+					// void! is __Res[__Unit], because Go has no void to
+					// instantiate the generic with. Type.Go() knows that
+					// about the whole result, but this needs the type
+					// argument on its own, and KVoid has no Go spelling
+					// of its own to fall back on.
+					if x.Want.Elem != nil && x.Want.Elem.Kind == KVoid {
+						inner = "__Unit"
+					} else {
+						inner = x.Want.Elem.Go()
+					}
 				}
 				return "__fail[" + inner + "](" + a[0] + ")"
 			},

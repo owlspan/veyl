@@ -132,6 +132,8 @@ func Emit(m *Module) string {
 	e.b.WriteString("    .asciz \"%s\"\n")
 	e.label("__fmt_bounds")
 	e.b.WriteString("    .asciz \"runtime error: index %lld is out of range for a list of length %lld\\n\"\n")
+	e.label("__fmt_must")
+	e.b.WriteString("    .asciz \"runtime error: %s\\n\"\n")
 	e.label("__str_true")
 	e.b.WriteString("    .asciz \"true\"\n")
 	e.label("__str_false")
@@ -204,7 +206,10 @@ func (e *Emitter) externs() []string {
 		out = append(out, "getenv")
 	}
 	if e.mod.Helpers["bounds"] {
-		out = append(out, "snprintf", "_write", "exit")
+		out = append(out, "snprintf", "_write", "exit", "fflush")
+	}
+	if e.mod.Helpers["must"] {
+		out = append(out, "snprintf", "_write", "exit", "fflush")
 	}
 	if e.mod.Helpers["floattostr"] {
 		out = append(out, "malloc", "strlen", "strcpy", "snprintf", "strtod")
@@ -274,6 +279,15 @@ func (e *Emitter) function(f *Func) {
 		// 1 is stdout, 0x8000 is _O_BINARY.
 		e.comment("stdout to binary mode, so newlines match the Go backend")
 		e.line("mov ecx, 1")
+		e.line("mov edx, 32768")
+		e.line("call _setmode")
+
+		// stderr needs the same treatment and was missed at first,
+		// because nothing wrote there until a runtime abort carried a
+		// message. The bounds and must helpers both end up on fd 2, and
+		// their text has to match the Go backend byte for byte too.
+		e.comment("stderr too, for the runtime abort messages")
+		e.line("mov ecx, 2")
 		e.line("mov edx, 32768")
 		e.line("call _setmode")
 	}
@@ -674,6 +688,10 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov rdx, %s", e.regAddr(in.B))
 		e.line("call __vy_bounds")
 
+	case OpMustFail:
+		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("call __vy_must")
+
 	default:
 		e.comment(fmt.Sprintf("unhandled op %s", in.Op))
 	}
@@ -787,18 +805,47 @@ __vy_bounds:
     push rbp
     mov rbp, rsp
     sub rsp, 256
-    mov r10, rcx
-    mov r11, rdx
+    mov qword ptr [rbp-208], rcx
+    mov qword ptr [rbp-216], rdx
+    xor ecx, ecx
+    call fflush
     lea rcx, [rbp-200]
     mov rdx, 180
     lea r8, __fmt_bounds[rip]
-    mov r9, r10
-    mov qword ptr [rsp+32], r11
+    mov r9, qword ptr [rbp-208]
+    mov rax, qword ptr [rbp-216]
+    mov qword ptr [rsp+32], rax
     call snprintf
-    mov r10d, eax
+    mov r8d, eax
     mov ecx, 2
     lea rdx, [rbp-200]
-    mov r8d, r10d
+    call _write
+    mov ecx, 1
+    call exit
+`)
+	}
+
+	if e.mod.Helpers["must"] {
+		// The same descriptor-rather-than-FILE* reasoning as __vy_bounds
+		// above, and the same fixed buffer. A reason longer than the
+		// buffer is truncated rather than overrunning it, which is what
+		// snprintf is for.
+		e.b.WriteString(`
+__vy_must:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 256
+    mov qword ptr [rbp-208], rcx
+    xor ecx, ecx
+    call fflush
+    lea rcx, [rbp-200]
+    mov rdx, 180
+    lea r8, __fmt_must[rip]
+    mov r9, qword ptr [rbp-208]
+    call snprintf
+    mov r8d, eax
+    mov ecx, 2
+    lea rdx, [rbp-200]
     call _write
     mov ecx, 1
     call exit

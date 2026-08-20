@@ -2,6 +2,11 @@
 /veylasm
 /veylasm.exe
 
+# `go build ./...` drops one of these next to the package it built,
+# named after the directory rather than the module.
+/compiler.exe
+/compiler
+
 # programs built from examples
 examples/*.exe
 examples/*.s

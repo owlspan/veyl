@@ -42,16 +42,28 @@ const (
 	kStr
 	kList
 	kMap
+	kStruct
 )
 
 // A vty is a kind plus, for a list, the kind of its elements, and for a
 // map, the kinds of its keys and values. One level only: [][]int needs
 // elem to be a vty rather than a vkind, and nothing is served by paying
 // for that before lists themselves work.
+//
+// name carries the one thing a bare kind cannot: which struct. It names
+// the struct itself when k is kStruct, and the element's struct when a
+// list or map holds one, which is what lets users[0].email resolve a
+// field after the index has thrown the element kind away.
+//
+// res is the `!` suffix. It is a flag rather than a kind because a
+// result's layout does not depend on what it carries, so int! and str!
+// differ only in how the value word is read back out.
 type vty struct {
 	k    vkind
 	elem vkind // list: the element kind. map: the value kind.
 	key  vkind // map only: the key kind.
+	res  bool  // T!: the value is boxed alongside a failure reason
+	name string
 }
 
 var (
@@ -65,13 +77,42 @@ var (
 func vListOf(e vkind) vty     { return vty{k: kList, elem: e} }
 func vMapOf(kk, vk vkind) vty { return vty{k: kMap, elem: vk, key: kk} }
 
+func vStructOf(name string) vty { return vty{k: kStruct, name: name} }
+
+// vResultOf is T!. Wrapping twice is refused rather than flattened: the
+// checker has already ruled out T!!, so a second wrap here would be a
+// lowering bug worth seeing.
+func vResultOf(t vty) vty { t.res = true; return t }
+
+// inner is the T inside a T!.
+func (t vty) inner() vty { t.res = false; return t }
+
 // elemType is the type of what comes out of indexing this list or map.
-func (t vty) elemType() vty { return vty{k: t.elem} }
+// The name travels with it, so indexing a []User yields a User rather
+// than an anonymous pointer.
+func (t vty) elemType() vty { return vty{k: t.elem, name: t.name} }
 
 // keyType is the type of a map's keys.
 func (t vty) keyType() vty { return vty{k: t.key} }
 
+// holdsPointer reports whether a value of this type is a pointer into
+// the heap, which is what a collector needs to know about any word it
+// finds. A result is a pointer to its box whatever it carries.
+func (t vty) holdsPointer() bool {
+	if t.res {
+		return true
+	}
+	switch t.k {
+	case kStr, kList, kMap, kStruct:
+		return true
+	}
+	return false
+}
+
 func (t vty) String() string {
+	if t.res {
+		return t.inner().String() + "!"
+	}
 	switch t.k {
 	case kInt:
 		return "int"
@@ -81,57 +122,88 @@ func (t vty) String() string {
 		return "bool"
 	case kStr:
 		return "str"
+	case kStruct:
+		return t.name
 	case kList:
-		return "[]" + vty{k: t.elem}.String()
+		return "[]" + t.elemType().String()
 	case kMap:
-		return "{" + vty{k: t.key}.String() + ": " + vty{k: t.elem}.String() + "}"
+		return "{" + vty{k: t.key}.String() + ": " + t.elemType().String() + "}"
 	}
 	return "void"
 }
 
-// typeOfName maps a written type annotation onto what this backend
-// tracks. Anything else is reported where it is used.
+// typeOfName resolves the written text of a type annotation to the vty
+// this backend tracks.
+//
+// The grammar is not restated here. front.ParseType is the same
+// function the checker runs, so the two cannot drift on what `[]int!`
+// or `{str: User}` mean. What is local is which of those types this
+// backend can actually build, and that is what the second return value
+// answers.
 func typeOfName(s string) (vty, bool) {
-	switch s {
-	case "int":
-		return vInt, true
-	case "float":
-		return vFloat, true
-	case "bool":
-		return vBool, true
-	case "str":
-		return vStr, true
-	case "":
+	if strings.TrimSpace(s) == "" {
 		return vVoid, true
 	}
-	if strings.HasPrefix(s, "[]") {
-		e, ok := typeOfName(strings.TrimSpace(s[2:]))
-		if !ok || e.k == kVoid || e.k == kList {
-			return vVoid, false
-		}
-		return vListOf(e.k), true
+	t := ParseType(s)
+	if t == nil {
+		return vVoid, false
 	}
-	// {K: V}. The colon is found rather than split on, because neither a
-	// key nor a value type contains one at this depth - nested maps are
-	// rejected below along with every other compound.
-	if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
-		body := s[1 : len(s)-1]
-		i := strings.Index(body, ":")
-		if i < 0 {
+	return vtyOf(t)
+}
+
+// vtyOf narrows a checked Type down to the subset the lowerer can
+// build, reporting false for the rest. Everything it refuses is a
+// feature that is not here yet rather than a program that is wrong, so
+// the caller turns it into "not on the assembly backend yet" naming the
+// type as it was written.
+func vtyOf(t *Type) (vty, bool) {
+	if t == nil {
+		return vVoid, false
+	}
+	switch t.Kind {
+	case KVoid:
+		return vVoid, true
+	case KInt:
+		return vInt, true
+	case KFloat:
+		return vFloat, true
+	case KBool:
+		return vBool, true
+	case KStr:
+		return vStr, true
+	case KStruct:
+		return vStructOf(t.Name), true
+
+	case KResult:
+		inner, ok := vtyOf(t.Elem)
+		if !ok || inner.res {
 			return vVoid, false
 		}
-		kt, kok := typeOfName(strings.TrimSpace(body[:i]))
-		vt, vok := typeOfName(strings.TrimSpace(body[i+1:]))
+		return vResultOf(inner), true
+
+	case KList:
+		e, ok := vtyOf(t.Elem)
+		// A list stores one kind per element, so an element that needs
+		// more than a kind to describe it cannot go in one. A struct is
+		// the exception the name field buys.
+		if !ok || e.res || e.k == kVoid || e.k == kList || e.k == kMap {
+			return vVoid, false
+		}
+		return vty{k: kList, elem: e.k, name: e.name}, true
+
+	case KMap:
+		kt, kok := vtyOf(t.Key)
+		vt, vok := vtyOf(t.Elem)
 		if !kok || !vok {
 			return vVoid, false
 		}
 		if kt.k != kInt && kt.k != kStr {
 			return vVoid, false
 		}
-		if vt.k == kVoid || vt.k == kList || vt.k == kMap {
+		if vt.res || vt.k == kVoid || vt.k == kList || vt.k == kMap {
 			return vVoid, false
 		}
-		return vMapOf(kt.k, vt.k), true
+		return vty{k: kMap, key: kt.k, elem: vt.k, name: vt.name}, true
 	}
 	return vVoid, false
 }
@@ -264,6 +336,11 @@ const (
 	// is unset - the null check is done in the IR by whichever builtin
 	// asked, because get and has want different answers to it.
 	OpGetEnv // Dst = getenv(A)
+
+	// must() failed: write the reason to stderr and stop. Its own op
+	// rather than a call because it does not return, so the emitter must
+	// not be free to schedule anything after it.
+	OpMustFail // A is the reason; does not return
 )
 
 var opNames = [...]string{
@@ -280,7 +357,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"timenow", "strcmp", "getenv",
+	"timenow", "strcmp", "getenv", "mustfail",
 }
 
 func (o Op) String() string {
@@ -628,6 +705,14 @@ func (l *lowerer) stmt(s Stmt) {
 		l.assign(st)
 
 	case *ExprStmt:
+		// A bare `f(x)?` is a statement, not a dead expression: the `?`
+		// is the whole point of it, discarding the value but not the
+		// failure. Everything else that is not a call really does
+		// nothing, and saying so is a warning worth keeping.
+		if try, ok := st.X.(*Try); ok {
+			l.tryExpr(try)
+			return
+		}
 		call, ok := st.X.(*Call)
 		if !ok {
 			l.errorAt(st, "this statement does nothing")
@@ -680,11 +765,24 @@ func (l *lowerer) stmt(s Stmt) {
 
 	case *ReturnStmt:
 		if st.Value == nil {
+			// A bare `return` from a function declared void! still owes
+			// the caller a result to inspect, so it returns a successful
+			// one. Anywhere else it returns nothing at all.
+			if l.fn.Ret.res {
+				l.emit(Instr{Op: OpRet, A: l.resOk(l.constant(0), l.fn.Ret),
+					Dst: NoReg, Comment: "return ok"})
+				return
+			}
 			l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg, Comment: "return"})
 			return
 		}
 		v := l.expr(st.Value)
-		if l.fn.Ret.k == kFloat && l.regTy[v].k == kInt {
+
+		// Boxing a plain value into the T! a function promises is not
+		// decided here: the checker already marked the spot with a
+		// Widen, the same way it does for a nullable. All that is left
+		// is the int-to-float promotion it does not represent as a node.
+		if l.fn.Ret.k == kFloat && !l.fn.Ret.res && l.regTy[v].k == kInt {
 			v = l.toFloat(v)
 		}
 		l.emit(Instr{Op: OpRet, A: v, Dst: NoReg, Comment: "return"})
@@ -1193,6 +1291,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return d
 	}
 
+	if r, handled := l.resultBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.stringBuiltin(c, name); handled {
 		return r
 	}
@@ -1438,6 +1540,12 @@ func (l *lowerer) expr(e Expr) Reg {
 
 	case *Binary:
 		return l.binary(x)
+
+	case *Try:
+		return l.tryExpr(x)
+
+	case *Widen:
+		return l.widen(x)
 
 	default:
 		l.errorAt(e.(Node), "the assembly backend does not handle this expression yet")
