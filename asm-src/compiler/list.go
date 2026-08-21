@@ -58,8 +58,23 @@ const (
 // object needs to know how much of it there is, and the allocator is
 // the only place that still knows.
 const (
-	objHeader = 8
-	tagShift  = 8
+	// Two words in front of every object: the tag and size, then the
+	// link that threads every allocation onto one list.
+	//
+	// The list is what makes the heap walkable. A collector has to be
+	// able to visit everything, and there is no other way to find an
+	// object here - malloc does not hand back an enumeration and this
+	// compiler does not allocate out of its own pages.
+	//
+	// The link's low bit is the mark. malloc returns memory aligned to
+	// at least 16 bytes, so bit 0 of a pointer to a header is always
+	// zero and is free to borrow.
+	objHeader  = 16
+	objTagOff  = 0
+	objNextOff = 8
+	objMarkBit = 1
+
+	tagShift = 8
 
 	tagBytes = 0 // raw bytes, never scanned: the characters of a string
 	tagWords = 1 // eight-byte slots holding no pointers: []int, []float
@@ -83,14 +98,25 @@ func elemTag(t vty) int64 {
 // runtime alloc helper, so that x64.go stays a translator and the
 // layout stays visible in `veylasm ir`.
 func (l *lowerer) allocObj(bytes Reg, tag int64) Reg {
-	raw := l.allocRaw(l.arith(OpAdd, bytes, l.constant(objHeader)))
-
 	// tag is below 256 and the size is shifted past it, so no bit of one
 	// can reach the other and an add is an or.
 	word := l.arith(OpAdd, l.arith(OpShl, bytes, l.constant(tagShift)), l.constant(tag))
-	l.emit(Instr{Op: OpStoreMem, A: raw, B: word, Imm: 0})
+	return l.allocTagged(bytes, word)
+}
 
-	return l.arith(OpAdd, raw, l.constant(objHeader))
+// allocTagged is allocObj for an object whose header word is worked out
+// by the caller, which is what a struct and a JSON node need.
+//
+// Every allocation goes through here, and every one is threaded onto the
+// object list before it is handed back. Missing that is not a leak, it
+// is a live object the collector cannot see.
+func (l *lowerer) allocTagged(bytes, header Reg) Reg {
+	raw := l.allocRaw(l.arith(OpAdd, bytes, l.constant(objHeader)))
+	l.emit(Instr{Op: OpStoreMem, A: raw, B: header, Imm: objTagOff})
+
+	obj := l.arith(OpAdd, raw, l.constant(objHeader))
+	l.trackObject(raw, obj, bytes)
+	return obj
 }
 
 // initialCap is what an empty list grows to on its first push. Four is

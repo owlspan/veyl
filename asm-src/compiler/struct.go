@@ -154,9 +154,7 @@ func (l *lowerer) layoutOf(n Node, t vty) (*structLayout, bool) {
 // allocStruct allocates a zeroed instance. Every field is written, so
 // nothing downstream ever reads a word the allocator left dirty.
 func (l *lowerer) allocStruct(lay *structLayout) Reg {
-	raw := l.allocRaw(l.constant(lay.bytes + objHeader))
-	l.emit(Instr{Op: OpStoreMem, A: raw, B: l.constant(lay.header()), Imm: 0})
-	obj := l.arith(OpAdd, raw, l.constant(objHeader))
+	obj := l.allocTagged(l.constant(lay.bytes), l.constant(lay.header()))
 	l.regTy[obj] = vStructOf(lay.name)
 	return obj
 }

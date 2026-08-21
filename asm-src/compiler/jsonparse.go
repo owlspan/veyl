@@ -44,10 +44,8 @@ const (
 var vNodeList = vListOf(vStr)
 
 func (l *lowerer) newJSONNode(kind int64) Reg {
-	raw := l.allocRaw(l.constant(jsonNodeSize + objHeader))
 	header := int64(jsonNodeSize)<<structSizeShift | int64(jsonNodePtrs)<<structNPtrShift | tagStruct
-	l.emit(Instr{Op: OpStoreMem, A: raw, B: l.constant(header), Imm: 0})
-	node := l.arith(OpAdd, raw, l.constant(objHeader))
+	node := l.allocTagged(l.constant(jsonNodeSize), l.constant(header))
 	l.regTy[node] = vStr
 
 	l.emit(Instr{Op: OpStoreMem, A: node, B: l.emptyStr(), Imm: jnStr})

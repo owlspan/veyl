@@ -18,6 +18,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -394,6 +395,10 @@ const (
 	// Last in this block on purpose: opNames is positional, so a new op
 	// added in the middle renames every op after it.
 	OpGlobalAddr
+
+	// Dst = rsp. The collector needs somewhere to start reading the
+	// stack from, and the stack is where every live pointer is.
+	OpStackPtr
 )
 
 var opNames = [...]string{
@@ -410,7 +415,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"mustfail", "globaladdr",
+	"mustfail", "globaladdr", "stackptr",
 }
 
 func (o Op) String() string {
@@ -545,6 +550,14 @@ type lowerer struct {
 	// is emitted once however many times it is called.
 	helpers map[string]bool
 
+	// gcStress makes every statement collect first. It exists to be
+	// turned on for the whole test suite: a collector that frees a live
+	// object is otherwise a bug that shows up somewhere else entirely,
+	// hours later, and running every program with collection at every
+	// statement turns that into a failure at the statement responsible.
+	gcStress bool
+	inHelper bool
+
 	// Declared structs, by name. Filled before anything is lowered,
 	// because a function signature can name one.
 	structs map[string]*structLayout
@@ -585,6 +598,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		globals:  map[string]int64{},
 		globalTy: map[int64]vty{},
 		buf:      -1,
+		gcStress: os.Getenv("VEYL_GC_STRESS") != "",
 	}
 
 	// Struct layouts before signatures, because a parameter or a return
@@ -641,7 +655,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 			l.errorAt(g, "a global of type %s is not on the assembly backend yet", g.T)
 			continue
 		}
-		slot := int64(len(l.globals))
+		slot := int64(len(l.globals)) + gcReserved
 		l.globals[g.Name] = slot
 		l.globalTy[slot] = t
 	}
@@ -665,7 +679,13 @@ func Lower(p *Program, file string) (*Module, []string) {
 		done[g.Name] = true
 		l.globalInit(g)
 	}
-	l.mod.NGlobals = len(l.globals)
+	// The runtime's own words sit ahead of the program's, so a program
+	// with no globals at all still has somewhere to keep the object
+	// list. How many there are in total is written down where the
+	// collector can read it, since it scans them as roots and the count
+	// is not known until here.
+	l.mod.NGlobals = len(l.globals) + gcReserved
+	l.rtStore(gcNGlobSlot, l.constant(int64(l.mod.NGlobals)))
 	for _, st := range p.Main {
 		l.stmt(st)
 	}
@@ -885,6 +905,13 @@ func (l *lowerer) mark(label int64) {
 // ---- statements ----
 
 func (l *lowerer) stmt(s Stmt) {
+	// Stress mode. Not inside a helper: the collector is written in the
+	// IR itself, and collecting on the way into collecting would not
+	// terminate.
+	if l.gcStress && !l.inHelper {
+		l.collect()
+	}
+
 	switch st := s.(type) {
 	case *LetStmt:
 		saved := l.hint
@@ -1680,6 +1707,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.jsonPathBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.memBuiltin(c, name); handled {
 		return r
 	}
 
@@ -2721,6 +2752,8 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 	// already being built.
 	savedFn, savedSlots, savedRegs := l.fn, l.slotTy, l.regTy
 	savedScopes, savedLoops, savedBuf := l.scopes, l.loops, l.buf
+	savedInHelper := l.inHelper
+	l.inHelper = true
 
 	l.fn = &Func{Name: name, NParams: len(params), ParamTypes: params, Ret: ret}
 	l.slotTy = map[int64]vty{}
@@ -2743,6 +2776,7 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 
 	l.fn, l.slotTy, l.regTy = savedFn, savedSlots, savedRegs
 	l.scopes, l.loops, l.buf = savedScopes, savedLoops, savedBuf
+	l.inHelper = savedInHelper
 	return name
 }
 
