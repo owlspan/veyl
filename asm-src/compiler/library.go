@@ -89,6 +89,25 @@ var sigs = map[string]front.Signature{
 	"os.dir.list":    {Params: []*Type{Str}, Ret: ResultOf(ListOf(Str))},
 	"os.dir.make":    {Params: []*Type{Str}, Ret: ResultOf(Void)},
 	"os.dir.delete":  {Params: []*Type{Str}, Ret: ResultOf(Void)},
+	"os.run":         {Params: []*Type{Str, ListOf(Str)}, Ret: ResultOf(Str)},
+	"url.build":      {Params: []*Type{Str, MapOf(Str, Str)}, Ret: Str},
+	"os.file.readOr": {Params: []*Type{Str, Str}, Ret: Str},
+	"os.path.base":   {Params: []*Type{Str}, Ret: Str},
+	"os.path.dir":    {Params: []*Type{Str}, Ret: Str},
+	"os.path.ext":    {Params: []*Type{Str}, Ret: Str},
+	"os.pid":         {Ret: Int},
+	"os.cpus":        {Ret: Int},
+	"os.hostname":    {Ret: Str},
+	"replace":        {Params: []*Type{Str, Str, Str}, Ret: Str},
+
+	// The older spellings the Go backend still accepts. Same functions,
+	// so they are the same names here rather than a second lowering.
+	"os.read.file":   {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"os.write.file":  {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
+	"os.list.dir":    {Params: []*Type{Str}, Ret: ResultOf(ListOf(Str))},
+	"os.make.dir":    {Params: []*Type{Str}, Ret: ResultOf(Void)},
+	"os.delete.file": {Params: []*Type{Str}, Ret: ResultOf(Void)},
+	"os.append.file": {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
 }
 
 func (asmLibrary) Signature(name string) (front.Signature, bool) {
@@ -110,6 +129,8 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkFind}, true
 	case "min", "max":
 		return front.Signature{Check: checkMinMax}, true
+	case "os.path.join":
+		return front.Signature{Check: checkPathJoin}, true
 	case "toInt":
 		return front.Signature{Check: checkToInt}, true
 	case "first", "last", "pop":
@@ -369,6 +390,20 @@ func checkFind(c *Checker, x *Call, args []*Type) *Type {
 		c.ErrorAt(x.Args[1], "find expects %s for argument 2, got %s", m.Key, args[1])
 	}
 	return NullableOf(m.Elem)
+}
+
+// checkPathJoin is variadic over strings.
+func checkPathJoin(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) < 1 {
+		c.ErrorAt(x, "os.path.join takes at least 1 argument")
+		return Str
+	}
+	for i, a := range args {
+		if !a.IsUnknown() && a.Kind != KStr {
+			c.ErrorAt(x.Args[i], "os.path.join expects str for argument %d, got %s", i+1, a)
+		}
+	}
+	return Str
 }
 
 func checkClear(c *Checker, x *Call, args []*Type) *Type {

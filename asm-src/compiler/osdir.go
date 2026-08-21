@@ -19,9 +19,9 @@ const (
 
 func (l *lowerer) dirBuiltin(c *Call, name string) (Reg, bool) {
 	switch name {
-	case "os.dir.list":
+	case "os.dir.list", "os.list.dir":
 		return l.dirList(c), true
-	case "os.dir.make":
+	case "os.dir.make", "os.make.dir":
 		return l.dirMake(c), true
 	case "os.dir.delete":
 		return l.dirDelete(c), true

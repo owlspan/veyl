@@ -668,7 +668,40 @@ func Lower(p *Program, file string) (*Module, []string) {
 	l.popScope()
 	l.mod.Funcs = append(l.mod.Funcs, l.fn)
 
+	l.checkLabels()
 	return l.mod, l.errs
+}
+
+// checkLabels reports a jump to a label nothing ever marked.
+//
+// That is a bug in this compiler, not in the program, and without this
+// it surfaces as the linker complaining about an undefined reference to
+// `.Lmain_164` - a name from a file the user never saw, at a moment when
+// they have every reason to think their own code is at fault. It has
+// happened twice: a branch written with an early return that skipped
+// its own mark, and a label created for a case that turned out not to
+// need one.
+func (l *lowerer) checkLabels() {
+	for _, f := range l.mod.Funcs {
+		marked := map[int64]bool{}
+		for _, in := range f.Code {
+			if in.Op == OpLabel {
+				marked[in.Imm] = true
+			}
+		}
+		for _, in := range f.Code {
+			switch in.Op {
+			case OpJump, OpJumpIf, OpJumpNot:
+				if !marked[in.Imm] {
+					l.errs = append(l.errs, fmt.Sprintf(
+						"%s: internal error: %s jumps to label L%d, which is never "+
+							"placed - this is a compiler bug, not a mistake in the program",
+						l.file, f.Name, in.Imm))
+					return
+				}
+			}
+		}
+	}
 }
 
 func (l *lowerer) function(fd *FnDecl) {
@@ -1627,6 +1660,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.mapBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.moreBuiltin(c, name); handled {
 		return r
 	}
 
