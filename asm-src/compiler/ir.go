@@ -541,6 +541,10 @@ type lowerer struct {
 	loops []loopTarget
 	sigs  map[string]sig
 
+	// Helper functions written directly in the IR, by symbol, so each
+	// is emitted once however many times it is called.
+	helpers map[string]bool
+
 	// Declared structs, by name. Filled before anything is lowered,
 	// because a function signature can name one.
 	structs map[string]*structLayout
@@ -1667,6 +1671,18 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.jsonBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.decodeBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.jsonPathBuiltin(c, name); handled {
+		return r
+	}
+
 	l.errorAt(c, "%q is not on the assembly backend yet", name)
 	return l.junk()
 }
@@ -2674,5 +2690,73 @@ func (l *lowerer) readGlobal(slot int64) Reg {
 	d := l.newReg()
 	l.regTy[d] = l.globalTy[slot]
 	l.emit(Instr{Op: OpLoadMem, Dst: d, A: l.globalAddr(slot), B: NoReg, Imm: 0})
+	return d
+}
+
+// ---- IR helper functions ----
+
+// helperFunc emits a function written directly in the IR, once, and
+// returns the symbol to call it by.
+//
+// Everything else in this compiler is inlined at its use site, which is
+// fine for a loop whose depth the type decides. It is not fine for
+// anything that recurses on data: the JSON parser calls itself for every
+// nested value, and inlining that to a fixed depth made the compiler
+// allocate three gigabytes before it gave up. A real function recurses
+// at runtime, where the depth costs stack rather than code.
+//
+// The signature is registered before the body is lowered, so the body
+// can call itself.
+func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args []Reg)) string {
+	if l.helpers == nil {
+		l.helpers = map[string]bool{}
+	}
+	if l.helpers[name] {
+		return name
+	}
+	l.helpers[name] = true
+
+	// Everything about the function being lowered is swapped out and
+	// back, because a helper is emitted in the middle of whatever was
+	// already being built.
+	savedFn, savedSlots, savedRegs := l.fn, l.slotTy, l.regTy
+	savedScopes, savedLoops, savedBuf := l.scopes, l.loops, l.buf
+
+	l.fn = &Func{Name: name, NParams: len(params), ParamTypes: params, Ret: ret}
+	l.slotTy = map[int64]vty{}
+	l.regTy = map[Reg]vty{}
+	l.scopes = nil
+	l.loops = nil
+	l.buf = -1
+	l.pushScope()
+
+	args := make([]Reg, len(params))
+	for i, t := range params {
+		d := l.newReg()
+		l.regTy[d] = t
+		l.emit(Instr{Op: OpParam, Dst: d, A: NoReg, B: NoReg, Imm: int64(i)})
+		args[i] = d
+	}
+	body(args)
+	l.popScope()
+	l.mod.Funcs = append(l.mod.Funcs, l.fn)
+
+	l.fn, l.slotTy, l.regTy = savedFn, savedSlots, savedRegs
+	l.scopes, l.loops, l.buf = savedScopes, savedLoops, savedBuf
+	return name
+}
+
+// callHelper calls a function made by helperFunc.
+func (l *lowerer) callHelper(name string, args []Reg, argTypes []vty, ret vty) Reg {
+	if len(args) > l.fn.MaxCallArgs {
+		l.fn.MaxCallArgs = len(args)
+	}
+	d := NoReg
+	if ret.k != kVoid || ret.res || ret.null {
+		d = l.newReg()
+		l.regTy[d] = ret
+	}
+	l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
+		ArgTypes: argTypes, RetType: ret, Sym: name, Comment: name + "()"})
 	return d
 }
