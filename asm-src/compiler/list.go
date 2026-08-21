@@ -458,14 +458,6 @@ func (l *lowerer) forList(st *ForStmt) {
 		l.errorAt(st, "only a list or a map can be iterated on this backend so far")
 		return
 	}
-	if st.Var2 != "" {
-		// `for i, v in xs` on a list would want the index in the first
-		// name. Nothing here builds that yet, and doing it silently
-		// wrong would bind the element to both.
-		l.errorAt(st, "iterating a list with two names is not on the assembly backend yet")
-		return
-	}
-
 	l.pushScope()
 
 	listSlot := l.temp(t)
@@ -481,7 +473,16 @@ func (l *lowerer) forList(st *ForStmt) {
 	iSlot := l.temp(vInt)
 	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: iSlot})
 
-	varSlot := l.declare(st.Var, t.elemType())
+	// `for i, v in xs` puts the index in the first name and the element
+	// in the second; `for v in xs` binds only the element. The two forms
+	// differ in which name gets which, not in how the loop runs.
+	idxSlot := int64(-1)
+	varName := st.Var
+	if st.Var2 != "" {
+		idxSlot = l.declare(st.Var, vInt)
+		varName = st.Var2
+	}
+	varSlot := l.declare(varName, t.elemType())
 
 	top := l.newLabel()
 	cont := l.newLabel()
@@ -500,8 +501,11 @@ func (l *lowerer) forList(st *ForStmt) {
 	list := l.newReg()
 	l.regTy[list] = t
 	l.emit(Instr{Op: OpLoad, Dst: list, A: NoReg, B: NoReg, Imm: listSlot})
+	if idxSlot >= 0 {
+		l.emit(Instr{Op: OpStore, A: i, Dst: NoReg, Imm: idxSlot, Comment: st.Var})
+	}
 	l.emit(Instr{Op: OpStore, A: l.listGet(list, i, t.elemType()), Dst: NoReg,
-		Imm: varSlot, Comment: st.Var})
+		Imm: varSlot, Comment: varName})
 
 	l.loops = append(l.loops, loopTarget{brk: done, cont: cont})
 	l.stmt(st.Body)

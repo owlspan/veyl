@@ -1364,7 +1364,8 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return l.junk()
 
 	case "push":
-		if !arity(2) {
+		if len(c.Args) < 2 {
+			l.errorAt(c, "push takes at least 2 arguments, got %d", len(c.Args))
 			return l.junk()
 		}
 		return l.push(c)
@@ -1398,7 +1399,16 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return l.toStr(l.expr(c.Args[0]), c)
 
 	case "abs", "min", "max":
-		return l.intMath(c, name)
+		return l.numMath(c, name)
+
+	case "floor", "ceil", "round", "trunc":
+		// Straight to libm. C's round is half away from zero, which is
+		// what math.Round does, so the two backends agree on 2.5.
+		if !arity(1) {
+			return l.junk()
+		}
+		return l.ccall(name, []Reg{l.numeric(c.Args[0])}, []vty{vFloat},
+			vFloat, false, false)
 
 	case "int":
 		if !arity(1) {
@@ -1459,6 +1469,16 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	// Before the string library, because contains and indexOf take
+	// either a list or a str and the list side settles both.
+	if r, handled := l.listBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.strListBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.stringBuiltin(c, name); handled {
 		return r
 	}
@@ -1492,41 +1512,80 @@ func (l *lowerer) numeric(e Expr) Reg {
 	return v
 }
 
-// intMath covers abs, min and max, which are worth having because they
-// need no runtime at all - just a compare and a conditional move.
-func (l *lowerer) intMath(c *Call, name string) Reg {
+// numMath covers abs, min and max. They are worth having built in
+// because none of them needs a runtime call - a compare and a branch is
+// the whole implementation.
+//
+// All three take int or float, the same as on the Go backend, where abs
+// is `math.Abs` and always yields a float while min and max hand back
+// the type of their first argument. Matching that exactly matters more
+// than it looks: `abs(-7)` is a float on the Go backend, so a program
+// dividing by it gets float division, and an int here would have made
+// the two backends disagree about arithmetic rather than about a type.
+func (l *lowerer) numMath(c *Call, name string) Reg {
 	if name == "abs" {
 		if len(c.Args) != 1 {
 			l.errorAt(c, "abs takes 1 argument, got %d", len(c.Args))
 			return l.junk()
 		}
-		a := l.expr(c.Args[0])
+		a := l.numeric(c.Args[0])
 		neg := l.newReg()
-		l.regTy[neg] = vInt
-		l.emit(Instr{Op: OpNeg, Dst: neg, A: a, B: NoReg})
-		zero := l.newReg()
-		l.regTy[zero] = vInt
-		l.emit(Instr{Op: OpConst, Dst: zero, A: NoReg, B: NoReg, Imm: 0})
-		isNeg := l.newReg()
-		l.regTy[isNeg] = vBool
-		l.emit(Instr{Op: OpLt, Dst: isNeg, A: a, B: zero})
-		return l.pick(isNeg, neg, a, vInt)
+		l.regTy[neg] = vFloat
+		l.emit(Instr{Op: OpFNeg, Dst: neg, A: a, B: NoReg})
+		isNeg := l.compare(OpFLt, a, l.floatConst(0))
+		return l.pick(isNeg, neg, a, vFloat)
 	}
 
-	if len(c.Args) != 2 {
-		l.errorAt(c, "%s takes 2 arguments, got %d", name, len(c.Args))
+	if len(c.Args) < 2 {
+		l.errorAt(c, "%s takes at least 2 arguments, got %d", name, len(c.Args))
 		return l.junk()
 	}
-	a := l.expr(c.Args[0])
-	b := l.expr(c.Args[1])
-	cond := l.newReg()
-	l.regTy[cond] = vBool
-	if name == "min" {
-		l.emit(Instr{Op: OpLt, Dst: cond, A: a, B: b})
-	} else {
-		l.emit(Instr{Op: OpGt, Dst: cond, A: a, B: b})
+
+	// The first argument decides the type, which is the Go backend's
+	// `sameAsFirst`. A later float in an int call is a truncation rather
+	// than a promotion, so it is refused instead of silently rounded.
+	args := make([]Reg, len(c.Args))
+	for i, a := range c.Args {
+		args[i] = l.expr(a)
 	}
-	return l.pick(cond, a, b, vInt)
+	float := l.regTy[args[0]].k == kFloat
+	for i, v := range args {
+		switch {
+		case float && l.regTy[v].k == kInt:
+			args[i] = l.toFloat(v)
+		case !float && l.regTy[v].k == kFloat:
+			l.errorAt(c.Args[i], "%s started with an int, so argument %d cannot be a float",
+				name, i+1)
+			return l.junk()
+		}
+	}
+
+	t := vInt
+	lt, gt := OpLt, OpGt
+	if float {
+		t = vFloat
+		lt, gt = OpFLt, OpFGt
+	}
+
+	// Folded left to right, so a wider call is the two-argument case
+	// repeated rather than its own shape.
+	best := args[0]
+	for _, v := range args[1:] {
+		op := gt
+		if name == "min" {
+			op = lt
+		}
+		best = l.pick(l.compare(op, best, v), best, v, t)
+	}
+	return best
+}
+
+// floatConst is a float literal as a register.
+func (l *lowerer) floatConst(v float64) Reg {
+	d := l.newReg()
+	l.regTy[d] = vFloat
+	l.emit(Instr{Op: OpFConst, Dst: d, A: NoReg, B: NoReg, Imm: l.mod.internFloat(v)})
+	return d
 }
 
 // pick is a branching select: the value of `cond ? whenTrue : whenFalse`.
@@ -2062,7 +2121,7 @@ func (l *lowerer) push(c *Call) Reg {
 				return l.junk()
 			}
 			list := l.mapGet(c, m, key, t)
-			if !l.pushInto(c, list, c.Args[1]) {
+			if !l.pushAll(c, list) {
 				return l.junk()
 			}
 			l.mapSet(m, key, list, t)
@@ -2071,10 +2130,20 @@ func (l *lowerer) push(c *Call) Reg {
 	}
 
 	list := l.expr(c.Args[0])
-	if !l.pushInto(c, list, c.Args[1]) {
+	if !l.pushAll(c, list) {
 		return l.junk()
 	}
 	return l.void()
+}
+
+// pushAll appends every argument after the first, left to right.
+func (l *lowerer) pushAll(c *Call, list Reg) bool {
+	for _, a := range c.Args[1:] {
+		if !l.pushInto(c, list, a) {
+			return false
+		}
+	}
+	return true
 }
 
 // pushInto is the part that is the same however the list was reached.
@@ -2112,6 +2181,28 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 	}
 
 	elem := l.regTy[vals[0]]
+
+	// A literal mixing ints and floats is a list of floats, which is
+	// what the checker decides and what the Go backend emits for
+	// `[1, 2.5, 3]`. The ints are widened here rather than being
+	// rejected as a mismatch.
+	mixed := false
+	for _, v := range vals {
+		if l.regTy[v].k == kFloat {
+			mixed = true
+		}
+	}
+	if mixed && elem.k == kInt {
+		elem = vFloat
+	}
+	if mixed {
+		for i, v := range vals {
+			if l.regTy[v].k == kInt {
+				vals[i] = l.toFloat(v)
+			}
+		}
+	}
+
 	// res is a flag beside the kind rather than a kind of its own, so a
 	// list of int! would otherwise pass the kind check below and be
 	// built as a list of int, storing box pointers and reading them back

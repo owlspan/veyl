@@ -32,7 +32,7 @@ var sigs = map[string]front.Signature{
 	"str": {Params: []*Type{Any}, Ret: Str},
 
 	// Numbers.
-	"abs": {Params: []*Type{Int}, Ret: Int},
+	"abs": {Params: []*Type{Numeric}, Ret: Float},
 	// Numeric accepts int or float and always yields a float, matching
 	// the Go backend: divf(7, 2) is 3.5 however its arguments were
 	// written.
@@ -40,20 +40,23 @@ var sigs = map[string]front.Signature{
 	"float": {Params: []*Type{Numeric}, Ret: Float},
 	"divf":  {Params: []*Type{Numeric, Numeric}, Ret: Float},
 	"sqrt":  {Params: []*Type{Numeric}, Ret: Float},
+	"floor": {Params: []*Type{Numeric}, Ret: Float},
+	"ceil":  {Params: []*Type{Numeric}, Ret: Float},
+	"round": {Params: []*Type{Numeric}, Ret: Float},
+	"trunc": {Params: []*Type{Numeric}, Ret: Float},
 	"mod":   {Params: []*Type{Numeric, Numeric}, Ret: Float},
-	"min":   {Params: []*Type{Int, Int}, Ret: Int},
-	"max":   {Params: []*Type{Int, Int}, Ret: Int},
 
 	// Strings.
 	"upper":      {Params: []*Type{Str}, Ret: Str},
 	"lower":      {Params: []*Type{Str}, Ret: Str},
 	"substr":     {Params: []*Type{Str, Int, Int}, Ret: Str},
 	"charAt":     {Params: []*Type{Str, Int}, Ret: Str},
-	"indexOf":    {Params: []*Type{Str, Str}, Ret: Int},
-	"contains":   {Params: []*Type{Str, Str}, Ret: Bool},
 	"startsWith": {Params: []*Type{Str, Str}, Ret: Bool},
 	"endsWith":   {Params: []*Type{Str, Str}, Ret: Bool},
 	"repeat":     {Params: []*Type{Str, Int}, Ret: Str},
+	"split":      {Params: []*Type{Str, Str}, Ret: ListOf(Str)},
+	"chars":      {Params: []*Type{Str}, Ret: ListOf(Str)},
+	"lines":      {Params: []*Type{Str}, Ret: ListOf(Str)},
 
 	// The namespaced library. A dotted name is looked up here exactly
 	// like a plain one - the checker flattens `time.now` to that string
@@ -95,8 +98,28 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkLen}, true
 	case "push":
 		return front.Signature{Check: checkPush}, true
+	case "contains":
+		return front.Signature{Check: checkContains}, true
+	case "indexOf":
+		return front.Signature{Check: checkIndexOf}, true
 	case "has":
 		return front.Signature{Check: checkHas}, true
+	case "min", "max":
+		return front.Signature{Check: checkMinMax}, true
+	case "first", "last", "pop":
+		return front.Signature{Check: checkElemOf}, true
+	case "sum":
+		return front.Signature{Check: checkSum}, true
+	case "reverse", "sort":
+		return front.Signature{Check: checkSameList}, true
+	case "slice":
+		return front.Signature{Check: checkSlice}, true
+	case "join":
+		return front.Signature{Check: checkJoin}, true
+	case "insert":
+		return front.Signature{Check: checkInsert}, true
+	case "removeAt":
+		return front.Signature{Check: checkRemoveAt}, true
 	case "keys":
 		return front.Signature{Check: checkKeys}, true
 	case "values":
@@ -202,6 +225,117 @@ func mapArg(c *Checker, x *Call, args []*Type, name string, want int) (*Type, bo
 	return args[0], true
 }
 
+// checkMinMax mirrors the Go backend: two or more numbers, and the type
+// of the first one back.
+func checkMinMax(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) < 2 {
+		c.ErrorAt(x, "min and max take at least 2 arguments, got %d", len(args))
+		return Unknown
+	}
+	for i, a := range args {
+		if a.IsUnknown() {
+			continue
+		}
+		if a.Kind != KInt && a.Kind != KFloat {
+			c.ErrorAt(x.Args[i], "min and max need numbers, got %s", a)
+			return Unknown
+		}
+	}
+	return args[0]
+}
+
+// listArg is the shared front of the list library: one list argument,
+// or a type error naming what came instead.
+func listArg(c *Checker, x *Call, args []*Type, name string, want int) (*Type, bool) {
+	if len(args) != want {
+		c.ErrorAt(x, "%s takes %d argument(s), got %d", name, want, len(args))
+		return nil, false
+	}
+	if args[0].IsUnknown() {
+		return nil, false
+	}
+	if args[0].Kind != KList {
+		c.ErrorAt(x.Args[0], "%s expects a list, got %s", name, args[0])
+		return nil, false
+	}
+	return args[0], true
+}
+
+func checkElemOf(c *Checker, x *Call, args []*Type) *Type {
+	xs, ok := listArg(c, x, args, "this", 1)
+	if !ok {
+		return Unknown
+	}
+	return xs.Elem
+}
+
+func checkSum(c *Checker, x *Call, args []*Type) *Type {
+	xs, ok := listArg(c, x, args, "sum", 1)
+	if !ok {
+		return Unknown
+	}
+	if xs.Elem.Kind != KInt && xs.Elem.Kind != KFloat {
+		c.ErrorAt(x.Args[0], "sum needs a list of numbers, got %s", xs)
+		return Unknown
+	}
+	return xs.Elem
+}
+
+func checkSameList(c *Checker, x *Call, args []*Type) *Type {
+	xs, ok := listArg(c, x, args, "this", 1)
+	if !ok {
+		return Unknown
+	}
+	return xs
+}
+
+func checkSlice(c *Checker, x *Call, args []*Type) *Type {
+	xs, ok := listArg(c, x, args, "slice", 3)
+	if !ok {
+		return Unknown
+	}
+	wantInt(c, x, args, 1, "slice")
+	wantInt(c, x, args, 2, "slice")
+	return xs
+}
+
+func checkJoin(c *Checker, x *Call, args []*Type) *Type {
+	if _, ok := listArg(c, x, args, "join", 2); !ok {
+		return Str
+	}
+	if !args[1].IsUnknown() && args[1].Kind != KStr {
+		c.ErrorAt(x.Args[1], "join expects str for argument 2, got %s", args[1])
+	}
+	return Str
+}
+
+func checkInsert(c *Checker, x *Call, args []*Type) *Type {
+	xs, ok := listArg(c, x, args, "insert", 3)
+	if !ok {
+		return Void
+	}
+	wantInt(c, x, args, 1, "insert")
+	if !args[2].IsUnknown() && !args[2].Equal(xs.Elem) {
+		c.ErrorAt(x.Args[2], "insert expects %s for argument 3, got %s", xs.Elem, args[2])
+	}
+	return Void
+}
+
+func checkRemoveAt(c *Checker, x *Call, args []*Type) *Type {
+	xs, ok := listArg(c, x, args, "removeAt", 2)
+	if !ok {
+		return Unknown
+	}
+	wantInt(c, x, args, 1, "removeAt")
+	return xs.Elem
+}
+
+func wantInt(c *Checker, x *Call, args []*Type, i int, name string) {
+	if !args[i].IsUnknown() && args[i].Kind != KInt {
+		c.ErrorAt(x.Args[i], "%s expects int for argument %d, got %s", name, i+1, args[i])
+	}
+}
+
 func checkClear(c *Checker, x *Call, args []*Type) *Type {
 	if len(args) != 1 {
 		c.ErrorAt(x, "clear takes 1 argument, got %d", len(args))
@@ -242,18 +376,63 @@ func checkRemove(c *Checker, x *Call, args []*Type) *Type {
 	return Void
 }
 
-func checkPush(c *Checker, x *Call, args []*Type) *Type {
+// checkContains and checkIndexOf take a str or a list, and mirror the Go
+// backend down to the wording of the error that steers a map to has().
+func seqArg(c *Checker, x *Call, args []*Type, name string) bool {
 	if len(args) != 2 {
-		c.ErrorAt(x, "push takes 2 arguments, got %d", len(args))
+		c.ErrorAt(x, "%s takes 2 arguments, got %d", name, len(args))
+		return false
+	}
+	if args[0].IsUnknown() {
+		return false
+	}
+	switch args[0].Kind {
+	case KStr:
+		if !args[1].IsUnknown() && args[1].Kind != KStr {
+			c.ErrorAt(x.Args[1], "%s expects str for argument 2, got %s", name, args[1])
+		}
+	case KList:
+		if !args[1].IsUnknown() && !args[1].Equal(args[0].Elem) {
+			c.ErrorAt(x.Args[1], "%s expects %s for argument 2, got %s",
+				name, args[0].Elem, args[1])
+		}
+	case KMap:
+		c.ErrorAt(x.Args[0], "use has(map, key) to test a map")
+	default:
+		c.ErrorAt(x.Args[0], "%s expects a str or a list, got %s", name, args[0])
+	}
+	return true
+}
+
+func checkContains(c *Checker, x *Call, args []*Type) *Type {
+	seqArg(c, x, args, "contains")
+	return Bool
+}
+
+func checkIndexOf(c *Checker, x *Call, args []*Type) *Type {
+	seqArg(c, x, args, "indexOf")
+	return Int
+}
+
+// checkPush is variadic: push(xs, a, b, c) appends all three, which is
+// what the Go backend accepts.
+func checkPush(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) < 2 {
+		c.ErrorAt(x, "push takes at least 2 arguments, got %d", len(args))
 		return Unknown
+	}
+	if args[0].IsUnknown() {
+		return Void
 	}
 	if args[0].Kind != KList {
 		c.ErrorAt(x, "push needs a list, got %s", args[0])
 		return Unknown
 	}
-	if !args[1].Equal(args[0].Elem) {
-		c.ErrorAt(x, "cannot push %s into %s", args[1], args[0])
-		return Unknown
+	for i := 1; i < len(args); i++ {
+		if !args[i].IsUnknown() && !args[i].Equal(args[0].Elem) {
+			c.ErrorAt(x.Args[i], "cannot push %s into %s", args[i], args[0])
+			return Unknown
+		}
 	}
 	return Void
 }
