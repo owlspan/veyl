@@ -386,6 +386,14 @@ const (
 	// rather than a call because it does not return, so the emitter must
 	// not be free to schedule anything after it.
 	OpMustFail // A is the reason; does not return
+
+	// Dst = the address of global slot Imm. Globals live in static
+	// storage rather than in main's frame, because a function has to be
+	// able to reach one and a function does not have main's frame.
+	//
+	// Last in this block on purpose: opNames is positional, so a new op
+	// added in the middle renames every op after it.
+	OpGlobalAddr
 )
 
 var opNames = [...]string{
@@ -402,7 +410,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"mustfail",
+	"mustfail", "globaladdr",
 }
 
 func (o Op) String() string {
@@ -474,6 +482,7 @@ type Module struct {
 	Helpers map[string]bool // runtime helpers actually used
 	Externs map[string]bool // foreign symbols called directly, declared
 	// as .extern at the top of the .s file
+	NGlobals int // words of static storage the program needs
 }
 
 func (m *Module) needs(h string) { m.Helpers[h] = true }
@@ -543,6 +552,13 @@ type lowerer struct {
 	// sure of that is for there to be one of them.
 	buf int64
 
+	// globals maps a top-level const to its slot in static storage, and
+	// globalTy remembers what is in it. A top-level `let` is not here:
+	// it stays a local of the implicit main, which is what the language
+	// says.
+	globals  map[string]int64
+	globalTy map[int64]vty
+
 	// hint is the type the surrounding context expects. An empty list
 	// literal has no element to infer from, so `let xs: []int = []` can
 	// only work if the annotation reaches the literal.
@@ -559,10 +575,12 @@ type loopTarget struct {
 // mistake should not hide the next one.
 func Lower(p *Program, file string) (*Module, []string) {
 	l := &lowerer{
-		mod:  &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
-		file: file,
-		sigs: map[string]sig{},
-		buf:  -1,
+		mod:      &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
+		file:     file,
+		sigs:     map[string]sig{},
+		globals:  map[string]int64{},
+		globalTy: map[int64]vty{},
+		buf:      -1,
 	}
 
 	// Struct layouts before signatures, because a parameter or a return
@@ -603,6 +621,27 @@ func Lower(p *Program, file string) (*Module, []string) {
 		}
 	}
 
+	// Globals are declared before any function is lowered, so a function
+	// can name one. They are only *declared* here - the values are
+	// computed at the top of main, which is the first thing that runs.
+	for _, g := range p.Globals {
+		if _, dup := l.globals[g.Name]; dup {
+			continue // importing the same file twice is harmless
+		}
+		// The type comes from the checker, which has already been over
+		// this program. It has to be known now rather than when the
+		// value is computed, because a function lowered before main
+		// may read the global and needs to know what is in it.
+		t, ok := vtyOf(g.T)
+		if !ok {
+			l.errorAt(g, "a global of type %s is not on the assembly backend yet", g.T)
+			continue
+		}
+		slot := int64(len(l.globals))
+		l.globals[g.Name] = slot
+		l.globalTy[slot] = t
+	}
+
 	for _, fd := range p.Funcs {
 		l.function(fd)
 	}
@@ -611,12 +650,18 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// listing the way it does in the source.
 	l.fn = &Func{Name: "main", Ret: vVoid}
 	l.pushScope()
-	// Globals are lowered as the opening statements of main. That is
-	// enough while nothing outside main can see them; a function
-	// referring to one will need them in static storage instead.
+	// The globals' values are computed here, at the top of main, and
+	// written into static storage. Every user function is reached from
+	// main, so nothing can read one before this runs.
+	done := map[string]bool{}
 	for _, g := range p.Globals {
-		l.stmt(g)
+		if done[g.Name] {
+			continue
+		}
+		done[g.Name] = true
+		l.globalInit(g)
 	}
+	l.mod.NGlobals = len(l.globals)
 	for _, st := range p.Main {
 		l.stmt(st)
 	}
@@ -1824,6 +1869,13 @@ func (l *lowerer) expr(e Expr) Reg {
 	case *Ident:
 		slot, ok := l.lookup(x.Name)
 		if !ok {
+			if g, isGlobal := l.globals[x.Name]; isGlobal {
+				d := l.readGlobal(g)
+				if x.Narrowed && l.regTy[d].null {
+					return l.nullValue(d, l.regTy[d])
+				}
+				return d
+			}
 			// The float constants are not variables, so they are not in
 			// any scope; they lower straight to a pool entry.
 			if v, isConst := floatConsts[x.Name]; isConst {
@@ -2550,4 +2602,40 @@ func (l *lowerer) match(st *MatchStmt) {
 	}
 
 	l.mark(done)
+}
+
+// globalAddr is the address of a global's word in static storage.
+func (l *lowerer) globalAddr(slot int64) Reg {
+	d := l.newReg()
+	l.regTy[d] = vInt
+	l.emit(Instr{Op: OpGlobalAddr, Dst: d, A: NoReg, B: NoReg, Imm: slot})
+	return d
+}
+
+// globalInit computes one global's value and stores it.
+func (l *lowerer) globalInit(g *LetStmt) {
+	slot, ok := l.globals[g.Name]
+	if !ok {
+		return
+	}
+
+	want := l.globalTy[slot]
+	val := l.rvalueAs(g.Value, want)
+	fitted, good := l.coerce(val, want)
+	if !good {
+		l.errorAt(g, "%s was declared %s but the value is %s",
+			g.Name, want, l.regTy[val])
+		return
+	}
+
+	l.emit(Instr{Op: OpStoreMem, A: l.globalAddr(slot), B: fitted, Imm: 0,
+		Comment: "const " + g.Name})
+}
+
+// readGlobal loads a global's value.
+func (l *lowerer) readGlobal(slot int64) Reg {
+	d := l.newReg()
+	l.regTy[d] = l.globalTy[slot]
+	l.emit(Instr{Op: OpLoadMem, Dst: d, A: l.globalAddr(slot), B: NoReg, Imm: 0})
+	return d
 }

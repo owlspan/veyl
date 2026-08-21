@@ -145,6 +145,17 @@ func Emit(m *Module) string {
 		e.b.WriteString("    .asciz \"" + escapeAsm(s) + "\"\n")
 	}
 
+	// Top-level consts. Writable, so they cannot live in .rdata beside
+	// the string literals; zeroed, because main fills them in before
+	// anything else runs.
+	if m.NGlobals > 0 {
+		e.b.WriteString("\n    .section .bss\n")
+		e.b.WriteString("    .align 8\n")
+		e.label("__globals")
+		e.b.WriteString(fmt.Sprintf("    .space %d\n", m.NGlobals*wordSize))
+		e.b.WriteString("\n    .section .rdata\n")
+	}
+
 	if len(m.Floats) > 0 || e.mod.Helpers["floattostr"] {
 		e.label("__fmt_g")
 		e.b.WriteString("    .asciz \"%.*g\"\n")
@@ -354,6 +365,12 @@ func (e *Emitter) instr(in Instr) {
 
 	case OpStr:
 		e.line("lea rax, __str%d[rip]", in.Imm)
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpGlobalAddr:
+		// Static storage, so the address is a link-time constant and the
+		// slot's offset folds into the lea rather than needing an add.
+		e.line("lea rax, __globals[rip+%d]", in.Imm*wordSize)
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
 	case OpLoad:

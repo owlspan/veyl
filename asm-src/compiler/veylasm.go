@@ -130,6 +130,14 @@ func compile(source, path string) *Module {
 		report(errs)
 	}
 
+	// Imported files are folded in before anything is checked, so from
+	// here down there is one program and nothing else has to know that
+	// more than one file was involved.
+	stampImportedFile(prog, path)
+	if errs := loadImports(prog, path); len(errs) > 0 {
+		report(errs)
+	}
+
 	// The shared type checker, with this backend's own library. A
 	// builtin this backend does not have is now an ordinary type error
 	// with a position, reported alongside everything else, rather than
