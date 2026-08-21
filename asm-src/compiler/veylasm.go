@@ -12,11 +12,12 @@ package main
 // something wrong, reading the instruction stream is the only way to see
 // it. They exist from the first commit for that reason.
 //
-// Assembling and linking currently shell out to the MinGW toolchain,
-// exactly as the Go backend shells out to `go build`. That dependency is
-// temporary and is the thing this backend exists to remove: replacing
-// x64.go with a byte writer and a PE emitter drops it, and nothing above
-// x64.go has to change when that happens.
+// Nothing here shells out. The assembly text goes to the byte encoder
+// in encode.go, the linker in link.go lays it out, and pe.go writes a
+// Windows executable - so `veylasm build` needs no assembler, no linker
+// and no C runtime installed, which is the thing this backend exists
+// for. VEYL_LINK=mingw takes the old route through `as` and `gcc`, and
+// is kept as the reference the encoder is checked against.
 
 import (
 	"fmt"
@@ -44,6 +45,10 @@ This backend handles a subset of Veyl: integers, floats, bools, strings,
 lists, let, assignment, control flow, functions, and print. Everything
 else is a clear compile error rather than wrong output. The Go backend
 in ../src remains the complete one.
+
+It compiles, assembles and links by itself, with nothing installed. Set
+VEYL_LINK=mingw to go through as and gcc instead, which is only useful
+for comparing the two.
 `
 
 func main() {
@@ -164,8 +169,37 @@ func report(errs []string) {
 	os.Exit(1)
 }
 
-// buildExe writes the assembly, then assembles and links it.
+// buildExe turns a module into an executable.
+//
+// The default path is entirely inside this compiler: Emit writes the
+// assembly, assembleObject encodes it and lays it out, and writePE
+// writes a PE. Nothing is installed and nothing is shelled out to.
+//
+// VEYL_LINK=mingw takes the old path instead, through `as` and `gcc`.
+// It is kept because it is the reference the byte encoder is checked
+// against, and because a program that runs one way and not the other
+// localises a bug to the half that changed.
 func buildExe(mod *Module, out string) {
+	asmText := Emit(mod)
+
+	if os.Getenv("VEYL_LINK") != "mingw" {
+		obj, err := assembleObject(asmText)
+		if err != nil {
+			fail("the generated assembly could not be encoded. This is a "+
+				"compiler bug, not a mistake in your program.\n%v", err)
+		}
+		if err := writePE(obj, out); err != nil {
+			fail("the executable could not be written. This is a compiler "+
+				"bug, not a mistake in your program.\n%v", err)
+		}
+		return
+	}
+
+	buildExeWithMinGW(asmText, out)
+}
+
+// buildExeWithMinGW writes the assembly, then assembles and links it.
+func buildExeWithMinGW(asmText string, out string) {
 	tmp, err := os.MkdirTemp("", "veylasm-build-*")
 	if err != nil {
 		fail("%v", err)
@@ -175,7 +209,7 @@ func buildExe(mod *Module, out string) {
 	asmPath := filepath.Join(tmp, "prog.s")
 	objPath := filepath.Join(tmp, "prog.o")
 
-	if err := os.WriteFile(asmPath, []byte(Emit(mod)), 0o644); err != nil {
+	if err := os.WriteFile(asmPath, []byte(asmText), 0o644); err != nil {
 		fail("%v", err)
 	}
 

@@ -278,7 +278,15 @@ func (b *block) finish(offsets []int) {
 				// in another section, an imported symbol - keeps its
 				// relocation for whatever links this.
 				if idx, known := b.at[r.sym]; known && !r.isCall {
-					delta := offsets[idx] - (base + r.next)
+					// Whatever is in the field is the addend: sym[rip+8]
+					// parses as a reference to sym with an eight added,
+					// and overwriting rather than adding would silently
+					// point at sym itself.
+					addend := int32(uint32(bytes[r.at]) |
+						uint32(bytes[r.at+1])<<8 |
+						uint32(bytes[r.at+2])<<16 |
+						uint32(bytes[r.at+3])<<24)
+					delta := offsets[idx] - (base + r.next) + int(addend)
 					bytes[r.at] = byte(delta)
 					bytes[r.at+1] = byte(delta >> 8)
 					bytes[r.at+2] = byte(delta >> 16)
