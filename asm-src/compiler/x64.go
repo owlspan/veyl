@@ -367,6 +367,10 @@ func (e *Emitter) instr(in Instr) {
 		e.line("lea rax, __str%d[rip]", in.Imm)
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
+	case OpStackPtr:
+		e.line("mov rax, rsp")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
 	case OpGlobalAddr:
 		// Static storage, so the address is a link-time constant and the
 		// slot's offset folds into the lea rather than needing an add.
@@ -791,10 +795,53 @@ func (e *Emitter) call(in Instr) {
 // any other function: arguments in rcx and rdx, result in rax, 32 bytes
 // of shadow space reserved for whatever it calls.
 //
-// All of this leaks. __vy_concat allocates and nothing ever frees. That
-// is the honest state of a backend with no collector, and it is the
-// single largest thing between here and the Go backend.
+// The three that allocate go through __vy_talloc rather than malloc, so
+// that a string built here is on the same object list as everything the
+// lowerer allocates. An untracked allocation is not a crash - nothing
+// traces into a string - but it is invisible to the collector and to
+// mem.used(), which between them are most of what a program allocates.
 func (e *Emitter) helpers() {
+	// The tracked allocator. rcx is the payload size, rdx the header
+	// word; it returns the payload pointer, with the object threaded
+	// onto the list at __globals[0] and the counters after it bumped.
+	//
+	// Emitted whenever anything that allocates is, which is what the
+	// three conditions below add up to.
+	if e.mod.Helpers["concat"] || e.mod.Helpers["inttostr"] ||
+		e.mod.Helpers["floattostr"] {
+		e.b.WriteString(`
+__vy_talloc:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+    mov qword ptr [rbp-8], rcx
+    mov qword ptr [rbp-16], rdx
+    mov rcx, qword ptr [rbp-8]
+    add rcx, 16
+    call malloc
+    mov qword ptr [rbp-24], rax
+    mov rcx, qword ptr [rbp-16]
+    mov qword ptr [rax+0], rcx
+    lea rcx, __globals[rip]
+    mov rdx, qword ptr [rcx+0]
+    mov qword ptr [rax+8], rdx
+    mov qword ptr [rcx+0], rax
+    mov rdx, qword ptr [rcx+8]
+    add rdx, 1
+    mov qword ptr [rcx+8], rdx
+    mov rdx, qword ptr [rcx+16]
+    add rdx, qword ptr [rbp-8]
+    mov qword ptr [rcx+16], rdx
+    mov rdx, qword ptr [rcx+24]
+    add rdx, qword ptr [rbp-8]
+    mov qword ptr [rcx+24], rdx
+    add rax, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+`)
+	}
+
 	if e.mod.Helpers["concat"] {
 		e.b.WriteString(`
 __vy_concat:
@@ -811,7 +858,9 @@ __vy_concat:
     mov rcx, qword ptr [rbp-24]
     add rcx, rax
     add rcx, 1
-    call malloc
+    mov rdx, rcx
+    shl rdx, 8
+    call __vy_talloc
     mov qword ptr [rbp-32], rax
     mov rcx, rax
     mov rdx, qword ptr [rbp-8]
@@ -910,7 +959,8 @@ __vy_inttostr:
     sub rsp, 64
     mov qword ptr [rbp-8], rcx
     mov rcx, 24
-    call malloc
+    mov rdx, 6144
+    call __vy_talloc
     mov qword ptr [rbp-16], rax
     mov rcx, rax
     mov rdx, 24
@@ -1013,7 +1063,9 @@ __vy_floattostr:
     call strlen
     mov rcx, rax
     add rcx, 1
-    call malloc
+    mov rdx, rcx
+    shl rdx, 8
+    call __vy_talloc
     mov qword ptr [rbp-32], rax
     mov rcx, rax
     mov rdx, qword ptr [rbp-24]

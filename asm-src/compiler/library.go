@@ -101,14 +101,24 @@ var sigs = map[string]front.Signature{
 	"json.has":       {Params: []*Type{Str, Str}, Ret: Bool},
 	"json.keys":      {Params: []*Type{Str}, Ret: ListOf(Str)},
 	"json.valid":     {Params: []*Type{Str}, Ret: Bool},
-	"os.file.readOr": {Params: []*Type{Str, Str}, Ret: Str},
-	"os.path.base":   {Params: []*Type{Str}, Ret: Str},
-	"os.path.dir":    {Params: []*Type{Str}, Ret: Str},
-	"os.path.ext":    {Params: []*Type{Str}, Ret: Str},
-	"os.pid":         {Ret: Int},
-	"os.cpus":        {Ret: Int},
-	"os.hostname":    {Ret: Str},
-	"replace":        {Params: []*Type{Str, Str, Str}, Ret: Str},
+
+	// The memory library. There is a real collector behind collect();
+	// the counters come from the object list it walks.
+	"mem.used":        {Ret: Int},
+	"mem.total":       {Ret: Int},
+	"mem.system":      {Ret: Int},
+	"mem.objects":     {Ret: Int},
+	"mem.collections": {Ret: Int},
+	"mem.goroutines":  {Ret: Int},
+	"mem.collect":     {Ret: Void},
+	"os.file.readOr":  {Params: []*Type{Str, Str}, Ret: Str},
+	"os.path.base":    {Params: []*Type{Str}, Ret: Str},
+	"os.path.dir":     {Params: []*Type{Str}, Ret: Str},
+	"os.path.ext":     {Params: []*Type{Str}, Ret: Str},
+	"os.pid":          {Ret: Int},
+	"os.cpus":         {Ret: Int},
+	"os.hostname":     {Ret: Str},
+	"replace":         {Params: []*Type{Str, Str, Str}, Ret: Str},
 
 	// The older spellings the Go backend still accepts. Same functions,
 	// so they are the same names here rather than a second lowering.
