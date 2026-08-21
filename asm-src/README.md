@@ -48,24 +48,35 @@ anywhere in the pipeline:
 - structs: declarations, literals with zero values for omitted fields,
   nested structs, field read and write, compound assignment on a field,
   structs in lists and maps, value semantics, and printing
-- `str()` of a list, map or struct - the same renderer that prints one,
-  with its output pointed at a buffer, so the two cannot disagree
+- `impl` methods, with the receiver passed by reference so a method that
+  changes a field changes the value it was called on
+- nullable `?T`: `nil`, narrowing through `if x != nil`, in a struct
+  field, in a list, and `find(m, k)`
+- deep equality: `==` on a list, a map, a struct or a nullable compares
+  contents, generated from the static type
+- `str()` of any of those - the same renderer that prints one, with its
+  output pointed at a buffer, so the two cannot disagree
+- the list library: `first`, `last`, `pop`, `sum`, `reverse`, `sort`,
+  `slice`, `join`, `insert`, `removeAt`, `contains`, `indexOf`, and
+  `split`, `chars`, `lines` turning a string into a list
+- multi-file programs: `import "other.vl"`, with `pub`, and top-level
+  consts as real globals in static storage
 - the `os` library: `file.read`, `write`, `append`, `lines`, `exists`,
-  `size`, `delete`, `rename`; `dir.is`, `list`, `make`, `delete`;
-  `env.get`, `has`, `set`; and `time.now`
+  `size`, `delete`, `rename`, `readOr`; `dir.is`, `list`, `make`,
+  `delete`; `path.join`, `dir`, `base`, `ext`; `env.get`, `has`, `set`;
+  `run`, `pid`, `cpus`, `hostname`; and `time.now`
 
-Everything else is a compile error naming what is missing: `impl`
-methods, closures and higher-order functions, nullable `?T`, `bytes`,
-`import` across files, json, and the library functions that are not
-listed above.
+Everything else is a compile error naming what is missing: closures and
+higher-order functions, structured concurrency, `bytes`, json, `re`, and
+the library functions that are not listed above.
 
 Every heap allocation carries an object header - a size and a tag
 saying whether the block holds pointers - so that a collector is
 possible. There is still no collector, so nothing is ever freed, and
 a result costs an allocation per fallible call.
 
-It compiles 6 of the 24 programs in the Go backend's own test suite,
-and every one of the 21 programs in `examples/` produces byte-identical
+It compiles 14 of the 24 programs in the Go backend's own test suite,
+and every one of the 25 programs in `examples/` produces byte-identical
 output through both backends - error messages included, which is why
 the `os` library is written against Win32 rather than the C runtime.
 Go's message for a missing file is FormatMessage's sentence and
@@ -113,15 +124,13 @@ whole, and building a string by repeated appending is quadratic. Both
 are arguments for a `bytes` type and a growable buffer rather than
 things to work around.
 
-**Three deliberate float gaps**, each a compile error rather than a
+**Two deliberate float gaps**, each a compile error rather than a
 wrong answer:
 
 - `NAN` - the comparisons lower to `comisd`, which reports an unordered
   pair as both below and equal, so a NaN would compare wrong.
 - `INF` - this build links the legacy msvcrt, whose `printf` writes
   `1.#INF` where Go writes `+Inf`.
-- `min`/`max` on floats - the integer versions work; the float ones need
-  a float compare in the branch-select and were not worth it yet.
 
 ## Why assembly text and not machine code
 
@@ -288,21 +297,17 @@ done
 
 | blocker | n |
 |---|---:|
-| inference for an empty literal with no annotation | 5 |
-| unimplemented library functions | 4 |
-| `str()` of a list, map or struct | 3 |
-| higher-order: `map`, closures | 3 |
-| `impl` methods | 1 |
+| closures and first-class functions | 3 |
+| `re.*` | 2 |
+| unimplemented library functions | 2 |
+| `json.decode` | 1 |
 | `bytes` | 1 |
-| `push` arity and list slicing | 1 |
-| float `min`/`max` | 1 |
-| map value inference | 1 |
+| `url.*`, `bits.*`, `args.*` | 1 |
 
-The two worth doing next are at the top. Neither is a large feature:
-inference is carrying the hint into call arguments and map values,
-where today it only reaches a `let` annotation, and `str()` of a
-container is the printing code writing into a buffer rather than to
-stdout. Between them they account for eight of the twenty.
+Closures are the biggest single item left, and `tasks` needs structured
+concurrency behind them, so realistically they buy two of the three.
+Everything else on that list is one program each - which is what
+progress looks like from here.
 
 **4. The error type `T!`. Done.** A result is a two-word heap object:
 the failure reason, then the value. The layout does not depend on what
