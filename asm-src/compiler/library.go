@@ -91,6 +91,16 @@ var sigs = map[string]front.Signature{
 	"os.dir.delete":  {Params: []*Type{Str}, Ret: ResultOf(Void)},
 	"os.run":         {Params: []*Type{Str, ListOf(Str)}, Ret: ResultOf(Str)},
 	"url.build":      {Params: []*Type{Str, MapOf(Str, Str)}, Ret: Str},
+	"json.encode":    {Params: []*Type{Any}, Ret: Str},
+	"json.pretty":    {Params: []*Type{Any}, Ret: Str},
+	"json.get":       {Params: []*Type{Str, Str}, Ret: Str},
+	"json.int":       {Params: []*Type{Str, Str}, Ret: Int},
+	"json.num":       {Params: []*Type{Str, Str}, Ret: Float},
+	"json.bool":      {Params: []*Type{Str, Str}, Ret: Bool},
+	"json.count":     {Params: []*Type{Str, Str}, Ret: Int},
+	"json.has":       {Params: []*Type{Str, Str}, Ret: Bool},
+	"json.keys":      {Params: []*Type{Str}, Ret: ListOf(Str)},
+	"json.valid":     {Params: []*Type{Str}, Ret: Bool},
 	"os.file.readOr": {Params: []*Type{Str, Str}, Ret: Str},
 	"os.path.base":   {Params: []*Type{Str}, Ret: Str},
 	"os.path.dir":    {Params: []*Type{Str}, Ret: Str},
@@ -129,6 +139,10 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkFind}, true
 	case "min", "max":
 		return front.Signature{Check: checkMinMax}, true
+	case "json.decode":
+		return front.Signature{Check: checkJSONDecode, WantsTarget: true}, true
+	case "json.decodeOr":
+		return front.Signature{Check: checkJSONDecodeOr}, true
 	case "os.path.join":
 		return front.Signature{Check: checkPathJoin}, true
 	case "toInt":
@@ -404,6 +418,42 @@ func checkPathJoin(c *Checker, x *Call, args []*Type) *Type {
 		}
 	}
 	return Str
+}
+
+// checkJSONDecode takes its result type from the binding it is assigned
+// to, exactly as the Go backend's declaration does. The annotation
+// carries the wrapper too, so `let p: Point! = json.decode(t)` names
+// Point as the shape to build and Point! as what the call produces.
+func checkJSONDecode(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 1 {
+		c.ErrorAt(x, "json.decode takes 1 argument, got %d", len(args))
+		return Unknown
+	}
+	if !args[0].IsUnknown() && args[0].Kind != KStr {
+		c.ErrorAt(x.Args[0], "json.decode expects str, got %s", args[0])
+	}
+	if x.Want == nil || x.Want.IsUnknown() || !x.Want.IsResult() {
+		c.ErrorAt(x, "json.decode needs to know what to decode into, and it can fail - "+
+			"annotate the variable, as in: let p: Point! = json.decode(text)")
+		return Unknown
+	}
+	return x.Want
+}
+
+// checkJSONDecodeOr takes its shape from the fallback, so it needs no
+// annotation at all.
+func checkJSONDecodeOr(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 2 {
+		c.ErrorAt(x, "json.decodeOr takes 2 arguments, got %d", len(args))
+		return Unknown
+	}
+	if !args[0].IsUnknown() && args[0].Kind != KStr {
+		c.ErrorAt(x.Args[0], "json.decodeOr expects str for argument 1, got %s", args[0])
+	}
+	if args[1].IsUnknown() {
+		return Unknown
+	}
+	return args[1]
 }
 
 func checkClear(c *Checker, x *Call, args []*Type) *Type {
