@@ -2,22 +2,25 @@ package main
 
 // x86-64 emission, GNU as with `.intel_syntax noprefix`.
 //
-// This file is the one that gets replaced when the compiler stops
-// shelling out to an assembler and writes machine code itself. Nothing
-// above it knows an x86 register exists, and nothing here decides
-// anything about the program: it turns IR into instructions and that is
-// all. Keeping that line clean is what makes the eventual swap a
-// substitution rather than a rewrite.
+// Nothing above this file knows an x86 register exists, and nothing here
+// decides anything about the program: it turns IR into instructions and
+// that is all.
 //
-// Two rules for anything added here, both aimed at that swap:
+// The text it writes is no longer sent to an assembler. encode.go reads
+// it back and produces the machine code, link.go lays it out and pe.go
+// writes the executable, so this output is now an intermediate form that
+// happens to also be readable - which is what `veylasm asm` is for.
+//
+// Two rules for anything added here, both of which the encoder relies on:
 //
 //   1. No assembler conveniences. No macros, no pseudo-instructions, no
-//      expressions the assembler has to evaluate. Every line must map to
-//      exactly one instruction whose bytes we could write ourselves.
+//      expressions anything has to evaluate. Every line must map to
+//      exactly one instruction, because encode.go turns exactly one line
+//      into one instruction and has nowhere to put a second.
 //
-//   2. One instruction per line, no folding. The assembler will happily
-//      pick a shorter encoding for us; we should not come to depend on
-//      it doing so, because the byte writer will not.
+//   2. One instruction per line, no folding. GNU as would happily pick a
+//      shorter encoding for us, and the encoder here is checked against
+//      what as produces, so depending on that would be circular.
 //
 // Register strategy is deliberately the dumbest correct one: every
 // virtual register lives in a stack slot, and operands are loaded into
@@ -179,6 +182,7 @@ func Emit(m *Module) string {
 
 	e.b.WriteString("\n    .text\n")
 
+	e.start()
 	e.helpers()
 
 	for _, f := range m.Funcs {
@@ -202,8 +206,37 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
+// start is the program's entry point: what Windows jumps to, as opposed
+// to what a C runtime would call.
+//
+// A linked program never needed one, because gcc supplied the CRT
+// startup that calls main. pe.go has no CRT to link, so this is it: line
+// the stack up, call main, and hand what it returned to exit.
+//
+// The alignment is done by masking rather than assumed. The convention
+// is that rsp is sixteen-byte aligned at a call site, and the loader
+// does arrive that way, but nothing here has to depend on it - one
+// instruction makes it true whatever the caller did, and an SSE store
+// against a misaligned stack is a fault a long way from its cause.
+//
+// It is written here, in the assembly, rather than as bytes in the
+// linker, so that `veylasm asm` shows the whole program and the byte
+// encoder's test covers these instructions like any others.
+func (e *Emitter) start() {
+	e.b.WriteString("\n")
+	e.label("__start")
+	e.comment("the entry point Windows calls")
+	e.line("and rsp, -16")
+	e.line("sub rsp, 32")
+	e.line("call main")
+	e.line("mov ecx, eax")
+	e.line("call exit")
+}
+
 func (e *Emitter) externs() []string {
-	out := []string{"printf"}
+	// exit is always here: the entry point above ends with it, whether
+	// or not the program itself can fail.
+	out := []string{"printf", "exit"}
 	for _, sym := range sortedKeys(e.mod.Externs) {
 		out = append(out, sym)
 	}
@@ -217,19 +250,19 @@ func (e *Emitter) externs() []string {
 		out = append(out, "strlen")
 	}
 	if e.mod.Helpers["inttostr"] {
-		out = append(out, "malloc", "snprintf")
+		out = append(out, "malloc", "_snprintf")
 	}
 	if e.mod.Helpers["alloc"] {
 		out = append(out, "malloc")
 	}
 	if e.mod.Helpers["bounds"] {
-		out = append(out, "snprintf", "_write", "exit", "fflush")
+		out = append(out, "_snprintf", "_write", "exit", "fflush")
 	}
 	if e.mod.Helpers["must"] {
-		out = append(out, "snprintf", "_write", "exit", "fflush")
+		out = append(out, "_snprintf", "_write", "exit", "fflush")
 	}
 	if e.mod.Helpers["floattostr"] {
-		out = append(out, "malloc", "strlen", "strcpy", "snprintf", "strtod")
+		out = append(out, "malloc", "strlen", "strcpy", "_snprintf", "strtod")
 	}
 	if e.mod.Helpers["fmod"] {
 		out = append(out, "fmod")
@@ -912,7 +945,7 @@ __vy_bounds:
     mov r9, qword ptr [rbp-208]
     mov rax, qword ptr [rbp-216]
     mov qword ptr [rsp+32], rax
-    call snprintf
+    call _snprintf
     mov r8d, eax
     mov ecx, 2
     lea rdx, [rbp-200]
@@ -925,8 +958,14 @@ __vy_bounds:
 	if e.mod.Helpers["must"] {
 		// The same descriptor-rather-than-FILE* reasoning as __vy_bounds
 		// above, and the same fixed buffer. A reason longer than the
-		// buffer is truncated rather than overrunning it, which is what
-		// snprintf is for.
+		// buffer is truncated rather than overrunning it.
+		//
+		// The length that goes to _write is clamped, and has to be.
+		// _snprintf returns -1 when the text did not fit, and C99's
+		// snprintf returns the length it would have needed - so one
+		// gives _write an enormous unsigned count and the other tells it
+		// to read past the end of the buffer. The unsigned comparison
+		// catches both, since -1 is above 180 read that way.
 		e.b.WriteString(`
 __vy_must:
     push rbp
@@ -939,8 +978,12 @@ __vy_must:
     mov rdx, 180
     lea r8, __fmt_must[rip]
     mov r9, qword ptr [rbp-208]
-    call snprintf
+    call _snprintf
     mov r8d, eax
+    cmp r8d, 180
+    jbe .Lmust_write
+    mov r8d, 180
+.Lmust_write:
     mov ecx, 2
     lea rdx, [rbp-200]
     call _write
@@ -966,7 +1009,7 @@ __vy_inttostr:
     mov rdx, 24
     lea r8, __fmt_int_raw[rip]
     mov r9, qword ptr [rbp-8]
-    call snprintf
+    call _snprintf
     mov rax, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
@@ -1012,7 +1055,7 @@ __vy_floattostr:
     mov r9d, dword ptr [rbp-16]
     movsd xmm0, qword ptr [rbp-8]
     movsd qword ptr [rsp+32], xmm0
-    call snprintf
+    call _snprintf
     # MSVCRT's %g always pads the exponent to three digits - "1e+008"
     # where Go and a POSIX libc both write "1e+08" - because this build
     # links the legacy msvcrt.dll rather than UCRT. Stripping one
