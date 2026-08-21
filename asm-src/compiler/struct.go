@@ -399,3 +399,140 @@ func (l *lowerer) writeStruct(n Node, v Reg, t vty) {
 	}
 	l.writeLit("}")
 }
+
+// methodCall reports whether a field access names a method, and if so
+// which struct it is on.
+//
+// It cannot simply lower the base and look at its type: for `os.file.read`
+// the base is not an expression at all, and lowering it would report an
+// undefined variable before the library ever got a chance. So the
+// question is asked of the *declared* methods first, and the base is only
+// lowered once the answer is yes.
+func (l *lowerer) methodCall(fld *Field) (recv string, isMethod bool) {
+	// A dotted library name has an identifier at its root that is not a
+	// variable. Anything that is not a known local cannot be a receiver.
+	root, plain := fld.X.(*Ident)
+	if plain {
+		slot, known := l.lookup(root.Name)
+		if !known {
+			return "", false
+		}
+		t := l.slotTy[slot]
+		if t.k != kStruct {
+			return "", false
+		}
+		if _, has := l.sigs[methodName(t.name, fld.Name)]; !has {
+			return "", false
+		}
+		return t.name, true
+	}
+
+	// A longer chain - `line.from.length()` - has a Field or an Index
+	// underneath. Those are always expressions, so the type is whatever
+	// the base resolves to.
+	switch fld.X.(type) {
+	case *Field, *Index, *Call, *StructLit:
+		t, ok := l.staticTypeOf(fld.X)
+		if !ok || t.k != kStruct {
+			return "", false
+		}
+		if _, has := l.sigs[methodName(t.name, fld.Name)]; !has {
+			return "", false
+		}
+		return t.name, true
+	}
+	return "", false
+}
+
+// staticTypeOf answers the type of an expression without emitting
+// anything for it, for the few places that have to decide what an
+// expression is before deciding whether to lower it at all.
+//
+// Only the shapes a method receiver can take are handled. Everything
+// else reports false, which the caller reads as "not a method".
+func (l *lowerer) staticTypeOf(e Expr) (vty, bool) {
+	switch x := e.(type) {
+	case *Ident:
+		slot, ok := l.lookup(x.Name)
+		if !ok {
+			return vVoid, false
+		}
+		return l.slotTy[slot], true
+	case *Field:
+		base, ok := l.staticTypeOf(x.X)
+		if !ok || base.k != kStruct {
+			return vVoid, false
+		}
+		lay, ok := l.structs[base.name]
+		if !ok {
+			return vVoid, false
+		}
+		for _, f := range lay.fields {
+			if f.name == x.Name {
+				return f.t, true
+			}
+		}
+		return vVoid, false
+	case *Index:
+		base, ok := l.staticTypeOf(x.X)
+		if !ok || (base.k != kList && base.k != kMap) {
+			return vVoid, false
+		}
+		return base.elemType(), true
+	case *Call:
+		name, ok := DottedName(x.Callee)
+		if !ok {
+			return vVoid, false
+		}
+		s, known := l.sigs[name]
+		if !known {
+			return vVoid, false
+		}
+		return s.ret, true
+	case *StructLit:
+		// A literal called on directly: `(Point{...}).length()`.
+		if _, ok := l.structs[x.Name]; !ok {
+			return vVoid, false
+		}
+		return vStructOf(x.Name), true
+	}
+	return vVoid, false
+}
+
+// callMethod lowers `recv.name(args)` as the plain call it is, with the
+// receiver passed as the first argument.
+func (l *lowerer) callMethod(c *Call, fld *Field, recv string) Reg {
+	name := methodName(recv, fld.Name)
+	s := l.sigs[name]
+
+	if len(c.Args)+1 != len(s.params) {
+		l.errorAt(c, "%s takes %d argument(s), got %d",
+			name, len(s.params)-1, len(c.Args))
+		return l.junk()
+	}
+
+	// The receiver is passed by reference, not copied. The Go backend
+	// declares every method on `(self *T)`, so `p.scale(0.5)` changes p
+	// itself; a struct is already a pointer here, so handing over the
+	// place rather than an rvalue is all that takes. Copying it - which
+	// is what every other struct argument gets - would make a mutating
+	// method silently work on a temporary.
+	args := make([]Reg, len(s.params))
+	args[0] = l.expr(fld.X)
+	for i, a := range c.Args {
+		v := l.rvalueAs(a, s.params[i+1])
+		if s.params[i+1].k == kFloat && l.regTy[v].k == kInt {
+			v = l.toFloat(v)
+		}
+		args[i+1] = v
+	}
+	if len(args) > l.fn.MaxCallArgs {
+		l.fn.MaxCallArgs = len(args)
+	}
+
+	d := l.newReg()
+	l.regTy[d] = s.ret
+	l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
+		ArgTypes: s.params, RetType: s.ret, Sym: name, Comment: name + "()"})
+	return d
+}

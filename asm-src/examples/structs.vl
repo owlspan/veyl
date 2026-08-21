@@ -91,3 +91,42 @@ print(must(topRight(path)))
 // there are none.
 let nowhere: []Point = []
 print(errorOf(topRight(nowhere)))
+
+// Methods. `self` is passed by reference, not copied, so one that
+// changes a field changes the value it was called on - the Go backend
+// declares every method on a pointer receiver and this has to match.
+impl Point {
+    fn length(self) -> float {
+        return abs(self.x) + abs(self.y)
+    }
+
+    fn shift(self, by: int) {
+        self.x += by
+        self.y += by
+    }
+
+    fn show(self) -> str {
+        return "(" + str(self.x) + ", " + str(self.y) + ")"
+    }
+}
+
+let m = Point{x: 3, y: 4}
+print(m.length())
+print(m.show())
+m.shift(10)
+print(m.show())
+
+// Through a list element, and through a field of another struct.
+let pts = [Point{x: 1, y: 1}, Point{x: 2, y: 2}]
+pts[0].shift(5)
+print(pts[0].show())
+print(str(pts))
+
+let seg = Segment{from: Point{x: 0, y: 0}, to: Point{x: 6, y: 8}}
+print(seg.to.length())
+seg.from.shift(2)
+print(seg.from.show())
+
+// A method on a literal, which needs the parentheses to keep the brace
+// out of the condition.
+print((Point{x: 3, y: 4}).length())

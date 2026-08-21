@@ -573,13 +573,16 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// The Go backend guarantees order-independent declaration and this
 	// has to match.
 	for _, fd := range p.Funcs {
-		if fd.Recv != "" {
-			l.errorAt(fd, "methods are not on the assembly backend yet")
-			continue
-		}
 		s := sig{}
 		ok := true
-		for _, pa := range fd.Params {
+		for i, pa := range fd.Params {
+			// `self` has no annotation - its type is the impl block it
+			// was written in, which is why the checker fills it in from
+			// the receiver rather than from the source text.
+			if i == 0 && fd.Recv != "" && pa.Name == "self" {
+				s.params = append(s.params, vStructOf(fd.Recv))
+				continue
+			}
 			t, good := typeOfName(pa.Type)
 			if !good || t.k == kVoid {
 				l.errorAt(fd, "parameter %q has type %q, which the assembly backend does not handle yet",
@@ -596,14 +599,11 @@ func Lower(p *Program, file string) (*Module, []string) {
 		}
 		s.ret = ret
 		if ok {
-			l.sigs[fd.Name] = s
+			l.sigs[methodName(fd.Recv, fd.Name)] = s
 		}
 	}
 
 	for _, fd := range p.Funcs {
-		if fd.Recv != "" {
-			continue
-		}
 		l.function(fd)
 	}
 
@@ -627,12 +627,13 @@ func Lower(p *Program, file string) (*Module, []string) {
 }
 
 func (l *lowerer) function(fd *FnDecl) {
-	s, known := l.sigs[fd.Name]
+	name := methodName(fd.Recv, fd.Name)
+	s, known := l.sigs[name]
 	if !known {
 		return // its signature was already rejected
 	}
 
-	l.fn = &Func{Name: fd.Name, NParams: len(fd.Params), ParamTypes: s.params, Ret: s.ret}
+	l.fn = &Func{Name: name, NParams: len(fd.Params), ParamTypes: s.params, Ret: s.ret}
 	l.slotTy = map[int64]vty{}
 	l.regTy = map[Reg]vty{}
 	l.pushScope()
@@ -778,6 +779,21 @@ func (l *lowerer) rvalueAs(e Expr, want vty) Reg {
 	v := l.rvalue(e)
 	l.hint = saved
 	return v
+}
+
+// methodName is how a method is stored and called.
+//
+// A method is an ordinary function with the receiver as its first
+// argument, named "Type.method" so that two structs can have a method of
+// the same name and neither can collide with a plain function - a
+// program is free to declare `fn area()` as well as
+// `impl Circle { fn area() }`. The dot is not a namespace here any more
+// than it is in os.file.read: it is one name with a dot in it.
+func methodName(recv, name string) string {
+	if recv == "" {
+		return name
+	}
+	return recv + "." + name
 }
 
 func (l *lowerer) mark(label int64) {
@@ -1238,6 +1254,17 @@ func (l *lowerer) call(c *Call) Reg {
 	// checker has already refused any dotted name the library does not
 	// declare, which is why nothing below needs to guess whether a
 	// namespace exists.
+	// A method call is a field access on something of struct type, and
+	// it has to be recognised before the callee is flattened: `p.sum`
+	// would otherwise be looked up as a library name, and the error
+	// would say that p.sum is not on this backend when the problem is
+	// that it is a method.
+	if fld, isField := c.Callee.(*Field); isField {
+		if recv, isMethod := l.methodCall(fld); isMethod {
+			return l.callMethod(c, fld, recv)
+		}
+	}
+
 	name, ok := DottedName(c.Callee)
 	if !ok {
 		l.errorAt(c, "the assembly backend cannot call this expression yet")
