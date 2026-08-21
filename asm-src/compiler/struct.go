@@ -181,6 +181,11 @@ func (l *lowerer) zeroOf(n Node, t vty, depth int) Reg {
 		l.errorAt(n, "a struct field of type %s is not on the assembly backend yet", t)
 		return l.junk()
 	}
+	if t.null {
+		// The zero of a ?T is nil, which is the zero word - so a struct
+		// field that is nullable needs no initialiser beyond it.
+		return l.nilValue(t)
+	}
 	switch t.k {
 	case kStr:
 		return l.emptyStr()

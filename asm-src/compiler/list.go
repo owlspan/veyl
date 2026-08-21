@@ -332,6 +332,10 @@ func (l *lowerer) printList(n Node, v Reg, t vty) {
 // It takes the whole vty rather than the kind, because a struct element
 // needs its name to render and a kind cannot carry one.
 func (l *lowerer) writeValue(n Node, v Reg, t vty) {
+	if t.null {
+		l.writeNull(n, v, t)
+		return
+	}
 	switch t.k {
 	case kStruct:
 		l.writeStruct(n, v, t)

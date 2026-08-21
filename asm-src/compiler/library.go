@@ -57,6 +57,8 @@ var sigs = map[string]front.Signature{
 	"split":      {Params: []*Type{Str, Str}, Ret: ListOf(Str)},
 	"chars":      {Params: []*Type{Str}, Ret: ListOf(Str)},
 	"lines":      {Params: []*Type{Str}, Ret: ListOf(Str)},
+	"trim":       {Params: []*Type{Str}, Ret: Str},
+	"isInt":      {Params: []*Type{Str}, Ret: Bool},
 
 	// The namespaced library. A dotted name is looked up here exactly
 	// like a plain one - the checker flattens `time.now` to that string
@@ -104,8 +106,12 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkIndexOf}, true
 	case "has":
 		return front.Signature{Check: checkHas}, true
+	case "find":
+		return front.Signature{Check: checkFind}, true
 	case "min", "max":
 		return front.Signature{Check: checkMinMax}, true
+	case "toInt":
+		return front.Signature{Check: checkToInt}, true
 	case "first", "last", "pop":
 		return front.Signature{Check: checkElemOf}, true
 	case "sum":
@@ -334,6 +340,35 @@ func wantInt(c *Checker, x *Call, args []*Type, i int, name string) {
 	if !args[i].IsUnknown() && args[i].Kind != KInt {
 		c.ErrorAt(x.Args[i], "%s expects int for argument %d, got %s", name, i+1, args[i])
 	}
+}
+
+// checkToInt takes an optional fallback, which is what the Go backend's
+// minArgs 1 / maxArgs 2 means.
+func checkToInt(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) < 1 || len(args) > 2 {
+		c.ErrorAt(x, "toInt takes 1 or 2 arguments, got %d", len(args))
+		return Int
+	}
+	if !args[0].IsUnknown() && args[0].Kind != KStr {
+		c.ErrorAt(x.Args[0], "toInt expects str for argument 1, got %s", args[0])
+	}
+	if len(args) == 2 && !args[1].IsUnknown() && args[1].Kind != KInt {
+		c.ErrorAt(x.Args[1], "toInt expects int for argument 2, got %s", args[1])
+	}
+	return Int
+}
+
+// checkFind is has() that hands back the value: a ?V, so that absent and
+// zero stay apart where a bare index cannot tell them apart.
+func checkFind(c *Checker, x *Call, args []*Type) *Type {
+	m, ok := mapArg(c, x, args, "find", 2)
+	if !ok {
+		return Unknown
+	}
+	if !args[1].IsUnknown() && !args[1].Equal(m.Key) {
+		c.ErrorAt(x.Args[1], "find expects %s for argument 2, got %s", m.Key, args[1])
+	}
+	return NullableOf(m.Elem)
 }
 
 func checkClear(c *Checker, x *Call, args []*Type) *Type {

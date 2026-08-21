@@ -129,7 +129,6 @@ func TestUnsupportedIsAnError(t *testing.T) {
 		"float key":       "let m = {1.5: 2}\nprint(len(m))\n",
 		"wrong key type":  "let m: {str: int} = {\"a\": 1}\nprint(m[1])\n",
 		"struct T! field": "struct P {\n x: int!\n}\nlet p = P{}\nprint(1)\n",
-		"nullable":        "let x: ?int = nil\nprint(x)\n",
 		"list of results": "fn f() -> int! {\n return 1\n}\nlet xs = [f()]\nprint(len(xs))\n",
 		"arity":           "fn f(a: int) -> int { return a }\nprint(f(1, 2))\n",
 		"bad annot":       "let x: int = \"hi\"\nprint(x)\n",

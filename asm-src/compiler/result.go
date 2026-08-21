@@ -322,15 +322,19 @@ func (l *lowerer) resultBuiltin(c *Call, name string) (Reg, bool) {
 // the first one anybody forgets produces a raw value where a pointer
 // was expected, which is a crash somewhere else entirely.
 func (l *lowerer) widen(x *Widen) Reg {
-	v := l.expr(x.X)
 	t, ok := vtyOf(x.T)
-	if !ok || !t.res {
-		// The only other thing a Widen boxes is a nullable, which is not
-		// on this backend. Saying so is better than boxing it as a
-		// result, which would type-check here and be wrong at runtime.
+	if !ok {
 		l.errorAt(x, "%s is not on the assembly backend yet", x.T)
 		return l.junk()
 	}
+	if t.null {
+		return l.widenNull(x, t)
+	}
+	if !t.res {
+		l.errorAt(x, "%s is not on the assembly backend yet", x.T)
+		return l.junk()
+	}
+	v := l.expr(x.X)
 	if t.inner().k == kFloat && l.regTy[v].k == kInt {
 		v = l.toFloat(v)
 	}

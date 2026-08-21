@@ -375,3 +375,177 @@ func (l *lowerer) repeatStr(s, n Reg) Reg {
 
 	return l.load(accSlot, vStr)
 }
+
+// isSpaceByte is the set strings.TrimSpace strips, for the bytes that
+// can appear in ASCII text. Go's version also strips the Unicode space
+// characters; this one is byte-wise like the rest of the string library
+// here, so it agrees on every input a program is likely to trim and
+// disagrees on U+00A0 and its relatives.
+func (l *lowerer) isSpaceByte(b Reg) Reg {
+	space := l.compare(OpEq, b, l.constant(32))
+	for _, c := range []int64{9, 10, 11, 12, 13} {
+		space = l.logicalOr(space, l.compare(OpEq, b, l.constant(c)))
+	}
+	return space
+}
+
+// trimStr is strings.TrimSpace: whitespace off both ends.
+func (l *lowerer) trimStr(s Reg) Reg {
+	n := l.strLen(s)
+
+	startSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: startSlot})
+	endSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: n, Dst: NoReg, Imm: endSlot})
+
+	// Forward past the leading space.
+	top := l.newLabel()
+	front := l.newLabel()
+	l.mark(top)
+	i := l.load(startSlot, vInt)
+	more := l.compare(OpLt, i, l.load(endSlot, vInt))
+	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: front})
+	l.emit(Instr{Op: OpJumpNot, A: l.isSpaceByte(l.loadByte(s, i)), Dst: NoReg, Imm: front})
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: startSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+	l.mark(front)
+
+	// Back over the trailing space.
+	top2 := l.newLabel()
+	back := l.newLabel()
+	l.mark(top2)
+	e := l.load(endSlot, vInt)
+	left := l.compare(OpGt, e, l.load(startSlot, vInt))
+	l.emit(Instr{Op: OpJumpNot, A: left, Dst: NoReg, Imm: back})
+	last := l.arith(OpSub, e, l.constant(1))
+	l.emit(Instr{Op: OpJumpNot, A: l.isSpaceByte(l.loadByte(s, last)), Dst: NoReg, Imm: back})
+	l.emit(Instr{Op: OpStore, A: last, Dst: NoReg, Imm: endSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top2})
+	l.mark(back)
+
+	return l.substring(s, l.load(startSlot, vInt), l.load(endSlot, vInt))
+}
+
+// parseInt is strconv.Atoi on a trimmed string. It writes the value into
+// one slot and whether it worked into another, because the two builtins
+// on top of it want different halves of that answer.
+//
+// No overflow check: a number too large for 64 bits wraps here where Go
+// reports a range error and toInt falls back. That is a real difference
+// and the wrong kind - silent - but it needs a division to detect and
+// nothing in the tests reaches it.
+func (l *lowerer) parseInt(s Reg) (valSlot, okSlot int64) {
+	t := l.trimStr(s)
+	n := l.strLen(t)
+
+	valSlot = l.temp(vInt)
+	okSlot = l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: valSlot})
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: okSlot})
+
+	iSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: iSlot})
+	negSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: negSlot})
+
+	done := l.newLabel()
+	noSign := l.newLabel()
+
+	// A leading sign, then at least one digit. Atoi accepts both + and -.
+	any := l.compare(OpGt, n, l.constant(0))
+	l.emit(Instr{Op: OpJumpNot, A: any, Dst: NoReg, Imm: done})
+	first := l.loadByte(t, l.constant(0))
+	isMinus := l.compare(OpEq, first, l.constant(45))
+	isPlus := l.compare(OpEq, first, l.constant(43))
+	signed := l.logicalOr(isMinus, isPlus)
+	l.emit(Instr{Op: OpJumpNot, A: signed, Dst: NoReg, Imm: noSign})
+	l.emit(Instr{Op: OpStore, A: l.constant(1), Dst: NoReg, Imm: iSlot})
+	negTo := l.newLabel()
+	l.emit(Instr{Op: OpJumpNot, A: isMinus, Dst: NoReg, Imm: negTo})
+	l.emit(Instr{Op: OpStore, A: l.constant(1), Dst: NoReg, Imm: negSlot})
+	l.mark(negTo)
+	l.mark(noSign)
+
+	// A sign on its own is not a number.
+	digits := l.compare(OpLt, l.load(iSlot, vInt), n)
+	l.emit(Instr{Op: OpJumpNot, A: digits, Dst: NoReg, Imm: done})
+
+	accSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: accSlot})
+
+	top := l.newLabel()
+	good := l.newLabel()
+	l.mark(top)
+	i := l.load(iSlot, vInt)
+	more := l.compare(OpLt, i, n)
+	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: good})
+
+	b := l.loadByte(t, i)
+	tooLow := l.compare(OpLt, b, l.constant(48))
+	tooHigh := l.compare(OpGt, b, l.constant(57))
+	l.emit(Instr{Op: OpJumpIf, A: l.logicalOr(tooLow, tooHigh), Dst: NoReg, Imm: done})
+
+	acc := l.arith(OpAdd,
+		l.arith(OpMul, l.load(accSlot, vInt), l.constant(10)),
+		l.arith(OpSub, b, l.constant(48)))
+	l.emit(Instr{Op: OpStore, A: acc, Dst: NoReg, Imm: accSlot})
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: iSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+
+	l.mark(good)
+	// Every byte was a digit and there was at least one, so this parsed.
+	l.emit(Instr{Op: OpStore, A: l.constant(1), Dst: NoReg, Imm: okSlot})
+	value := l.load(accSlot, vInt)
+	keep := l.newLabel()
+	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpNe, l.load(negSlot, vInt), l.constant(0)),
+		Dst: NoReg, Imm: keep})
+	negated := l.newReg()
+	l.regTy[negated] = vInt
+	l.emit(Instr{Op: OpNeg, Dst: negated, A: value, B: NoReg})
+	l.emit(Instr{Op: OpStore, A: negated, Dst: NoReg, Imm: valSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+	l.mark(keep)
+	l.emit(Instr{Op: OpStore, A: value, Dst: NoReg, Imm: valSlot})
+
+	l.mark(done)
+	return valSlot, okSlot
+}
+
+// numStrBuiltin lowers trim and the string-to-number family.
+func (l *lowerer) numStrBuiltin(c *Call, name string) (Reg, bool) {
+	switch name {
+	case "trim":
+		if len(c.Args) != 1 {
+			l.errorAt(c, "trim takes 1 argument, got %d", len(c.Args))
+			return l.junk(), true
+		}
+		return l.trimStr(l.expr(c.Args[0])), true
+
+	case "isInt":
+		if len(c.Args) != 1 {
+			l.errorAt(c, "isInt takes 1 argument, got %d", len(c.Args))
+			return l.junk(), true
+		}
+		_, ok := l.parseIntOK(l.expr(c.Args[0]))
+		return ok, true
+
+	case "toInt":
+		if len(c.Args) < 1 || len(c.Args) > 2 {
+			l.errorAt(c, "toInt takes 1 or 2 arguments, got %d", len(c.Args))
+			return l.junk(), true
+		}
+		v, ok := l.parseIntOK(l.expr(c.Args[0]))
+		fallback := l.constant(0)
+		if len(c.Args) == 2 {
+			fallback = l.expr(c.Args[1])
+		}
+		return l.pick(ok, v, fallback, vInt), true
+	}
+	return NoReg, false
+}
+
+// parseIntOK is parseInt with both halves read back out.
+func (l *lowerer) parseIntOK(s Reg) (value, ok Reg) {
+	valSlot, okSlot := l.parseInt(s)
+	return l.load(valSlot, vInt), l.compare(OpNe, l.load(okSlot, vInt), l.constant(0))
+}

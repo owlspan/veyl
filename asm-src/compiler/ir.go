@@ -67,11 +67,16 @@ type vty struct {
 	el   *vty  // list: the element type. map: the value type.
 	key  vkind // map only: the key kind, still only int or str
 	res  bool  // T!: the value is boxed alongside a failure reason
+	null bool  // ?T: one word, zero for nil, else a pointer to the value
 	name string
 }
 
 var (
-	vVoid  = vty{k: kVoid}
+	vVoid = vty{k: kVoid}
+	// vNil is the type of the bare literal `nil`: no kind of its own,
+	// and a nullable wrapper with nothing inside. Only Widen ever sees
+	// it, which turns it into the zero word of whatever ?T was wanted.
+	vNil   = vty{k: kVoid, null: true}
 	vInt   = vty{k: kInt}
 	vFloat = vty{k: kFloat}
 	vBool  = vty{k: kBool}
@@ -90,6 +95,19 @@ func vResultOf(t vty) vty { t.res = true; return t }
 
 // inner is the T inside a T!.
 func (t vty) inner() vty { t.res = false; return t }
+
+// vNullOf is ?T. Like a result, the wrapper is a flag rather than a kind
+// because the layout does not depend on what is inside: one word, zero
+// for nil and otherwise a pointer to a box holding the value.
+//
+// Boxing even a str or a list, which are already pointers, costs an
+// allocation that a null-pointer representation would not - but a ?int
+// has no spare value to mean nil, and one representation for every ?T
+// is what keeps the lowering to a single case.
+func vNullOf(t vty) vty { t.null = true; return t }
+
+// notNull is the T inside a ?T.
+func (t vty) notNull() vty { t.null = false; return t }
 
 // elemType is the type of what comes out of indexing this list or map.
 //
@@ -112,7 +130,7 @@ func (t vty) elemKind() vkind { return t.elemType().k }
 // []int values would come out unequal. Every place that means "the
 // same type" must go through here.
 func (t vty) eq(o vty) bool {
-	if t.k != o.k || t.key != o.key || t.res != o.res || t.name != o.name {
+	if t.k != o.k || t.key != o.key || t.res != o.res || t.null != o.null || t.name != o.name {
 		return false
 	}
 	if (t.el == nil) != (o.el == nil) {
@@ -131,7 +149,7 @@ func (t vty) keyType() vty { return vty{k: t.key} }
 // the heap, which is what a collector needs to know about any word it
 // finds. A result is a pointer to its box whatever it carries.
 func (t vty) holdsPointer() bool {
-	if t.res {
+	if t.res || t.null {
 		return true
 	}
 	switch t.k {
@@ -144,6 +162,9 @@ func (t vty) holdsPointer() bool {
 func (t vty) String() string {
 	if t.res {
 		return t.inner().String() + "!"
+	}
+	if t.null {
+		return "?" + t.notNull().String()
 	}
 	switch t.k {
 	case kInt:
@@ -212,6 +233,16 @@ func vtyOf(t *Type) (vty, bool) {
 			return vVoid, false
 		}
 		return vResultOf(inner), true
+
+	case KNullable:
+		inner, ok := vtyOf(t.Elem)
+		// ?T! and ?? are refused rather than flattened: the checker has
+		// already ruled them out, so one here would be a lowering bug
+		// worth seeing rather than something to paper over.
+		if !ok || inner.res || inner.null || inner.k == kVoid {
+			return vVoid, false
+		}
+		return vNullOf(inner), true
 
 	case KList:
 		e, ok := vtyOf(t.Elem)
@@ -707,6 +738,29 @@ func (l *lowerer) newLabel() int64 {
 	return n
 }
 
+// coerce fits a value into the type a position wants, for the two
+// conversions the checker does not represent as a node: a bare `nil`
+// taking the shape of the ?T it is being stored into, and an untyped
+// int literal widening into a float slot. It reports false when the two
+// types are simply different, which is the caller's cue to complain.
+func (l *lowerer) coerce(v Reg, want vty) (Reg, bool) {
+	have := l.regTy[v]
+	switch {
+	case have.eq(want):
+		return v, true
+	case want.null && have.eq(vNil):
+		return l.nilValue(want), true
+	case want.null && have.eq(want.notNull()):
+		// The checker normally marks this with a Widen; a position it
+		// does not reach gets the same boxing here rather than a
+		// mismatch the user cannot act on.
+		return l.nullBox(v, want), true
+	case want.k == kFloat && !want.null && have.k == kInt && !have.null:
+		return l.toFloat(v), true
+	}
+	return v, false
+}
+
 // rvalueAs lowers an expression in a context that already knows what
 // type it wants.
 //
@@ -754,14 +808,13 @@ func (l *lowerer) stmt(s Stmt) {
 			// The checker already accepted an untyped int literal going
 			// into a float slot - Go's own untyped-constant rule, which
 			// Veyl copies - so that combination is promoted rather than
-			// rejected here.
-			if !declared.eq(t) {
-				if declared.k == kFloat && t.k == kInt {
-					v = l.toFloat(v)
-				} else {
-					l.errorAt(st, "%s was declared %s but the value is %s",
-						st.Name, declared, t)
-				}
+			// rejected here, along with a bare nil taking the shape of
+			// the ?T it is going into.
+			if fitted, ok := l.coerce(v, declared); ok {
+				v = fitted
+			} else {
+				l.errorAt(st, "%s was declared %s but the value is %s",
+					st.Name, declared, t)
 			}
 			t = declared
 		}
@@ -1370,6 +1423,12 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		}
 		return l.push(c)
 
+	case "find":
+		if !arity(2) {
+			return l.junk()
+		}
+		return l.findExpr(c)
+
 	case "has":
 		if !arity(2) {
 			return l.junk()
@@ -1476,6 +1535,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.strListBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.numStrBuiltin(c, name); handled {
 		return r
 	}
 
@@ -1609,6 +1672,9 @@ func (l *lowerer) pick(cond, whenTrue, whenFalse Reg, t vty) Reg {
 
 // toStr converts any tracked type to a string.
 func (l *lowerer) toStr(v Reg, at Node) Reg {
+	if l.regTy[v].null {
+		return l.strOfNull(at, v, l.regTy[v])
+	}
 	switch l.regTy[v].k {
 	case kStr:
 		return v
@@ -1747,6 +1813,11 @@ func (l *lowerer) expr(e Expr) Reg {
 		l.regTy[d] = l.slotTy[slot]
 		l.emit(Instr{Op: OpLoad, Dst: d, A: NoReg, B: NoReg, Imm: slot,
 			Comment: x.Name})
+		// The checker marks a use it has proved non-nil, and only those,
+		// so unboxing here needs no check of its own.
+		if x.Narrowed && l.regTy[d].null {
+			return l.nullValue(d, l.regTy[d])
+		}
 		return d
 
 	case *Call:
@@ -1781,6 +1852,11 @@ func (l *lowerer) expr(e Expr) Reg {
 	case *Try:
 		return l.tryExpr(x)
 
+	case *NilLit:
+		d := l.constant(0)
+		l.regTy[d] = vNil
+		return d
+
 	case *Widen:
 		return l.widen(x)
 
@@ -1807,6 +1883,71 @@ func (l *lowerer) binary(x *Binary) Reg {
 	a := l.expr(x.L)
 	b := l.expr(x.R)
 	at, bt := l.regTy[a], l.regTy[b]
+
+	// A nullable compares against nil and against nothing else, which is
+	// the only thing the checker lets through without narrowing first.
+	// It is one word, so the test is against zero.
+	if at.null || bt.null {
+		if x.Op != EQ && x.Op != NEQ {
+			l.errorAt(x, "a %s can only be compared with nil until it is narrowed", at)
+			return l.junk()
+		}
+
+		var same Reg
+		switch {
+		case at.eq(vNil) || bt.eq(vNil):
+			// One side is the literal nil, so this is the presence test
+			// and there is nothing to look inside.
+			v := a
+			if at.eq(vNil) {
+				v = b
+			}
+			same = l.isNil(v)
+		default:
+			// Two nullables compare as nil-ness first and contents
+			// after, which is what == on the values inside them means.
+			eq, ok := l.deepEqual(x, a, b, at)
+			if !ok {
+				return l.junk()
+			}
+			same = eq
+		}
+
+		if x.Op == NEQ {
+			d := l.newReg()
+			l.regTy[d] = vBool
+			l.emit(Instr{Op: OpNot, Dst: d, A: same, B: NoReg})
+			return d
+		}
+		return same
+	}
+
+	// A container or a struct compares by contents, which is what == on
+	// one means everywhere else in the language and what its printed
+	// form suggests. The comparison is generated from the type, so a
+	// nested one recurses in the lowerer and the depth is whatever the
+	// type says - there is no runtime walk and no type tag to read.
+	if at.k == kList || at.k == kMap || at.k == kStruct {
+		if x.Op != EQ && x.Op != NEQ {
+			l.errorAt(x, "%s is not defined on %s", x.Op, at)
+			return l.junk()
+		}
+		if !at.eq(bt) {
+			l.errorAt(x, "cannot compare %s with %s", at, bt)
+			return l.junk()
+		}
+		same, ok := l.deepEqual(x, a, b, at)
+		if !ok {
+			return l.junk()
+		}
+		if x.Op == NEQ {
+			d := l.newReg()
+			l.regTy[d] = vBool
+			l.emit(Instr{Op: OpNot, Dst: d, A: same, B: NoReg})
+			return d
+		}
+		return same
+	}
 
 	// Strings overload + and the equality tests, and nothing else.
 	if at.k == kStr || bt.k == kStr {
@@ -2172,6 +2313,35 @@ func (l *lowerer) listLit(x *ListLit) Reg {
 		}
 		list := l.newList(l.hint, 0)
 		l.regTy[list] = l.hint
+		return list
+	}
+
+	// An annotation names the element type outright, which is the only
+	// way `[1, nil, 3]` can be a []?int - nil has no type of its own and
+	// the first element is a plain int.
+	//
+	// The hint is narrowed to the element before the elements are
+	// lowered, or a nested literal in a [][]int would be handed the
+	// outer type and try to build a list of lists inside each element.
+	if l.hint.k == kList {
+		elem := l.hint.elemType()
+		vals := make([]Reg, len(x.Elems))
+		for i, e := range x.Elems {
+			v := l.rvalueAs(e, elem)
+			fitted, ok := l.coerce(v, elem)
+			if !ok {
+				l.errorAt(x.Elems[i], "this list holds %s, but element %d is %s",
+					elem, i, l.regTy[v])
+				return l.junk()
+			}
+			vals[i] = fitted
+		}
+		t := vListOf(elem)
+		list := l.newList(t, int64(len(vals)))
+		for _, v := range vals {
+			l.listPush(list, v)
+		}
+		l.regTy[list] = t
 		return list
 	}
 
