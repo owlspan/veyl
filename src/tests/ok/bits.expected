@@ -1,0 +1,19 @@
+and 8 or 14 xor 6
+shl 48 shr 3
+not -13
+masked true
+set 5
+cleared 4
+toggled 8
+shifted 64
+back 16
+mod-assign 2
+perms 9 bit0 true bit1 false bit3 true
+popcount 255 8 1024 1 0 0
+12 in binary 00001100
+170 in binary 10101010
+ok redirect gone unknown
+one 2 fizz one 5 
+stopping
+not ready
+fell through cleanly

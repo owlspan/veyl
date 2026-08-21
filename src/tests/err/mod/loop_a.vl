@@ -1,0 +1,5 @@
+import "loop_b.vl"
+
+pub fn a() -> int {
+    return 1
+}

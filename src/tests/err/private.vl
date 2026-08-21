@@ -1,0 +1,10 @@
+import "mod/geometry.vl"
+
+// geometry.vl declares these without pub, so they are private to it.
+print(secret())
+print(fudge)
+
+// A private struct cannot be named either.
+import "mod/hidden.vl"
+let h = Hidden{n: 1}
+print(usesHidden())

@@ -1,0 +1,10 @@
+same answer true
+ordered [1, 4, 9, 16, 25, 36, 49, 64]
+still in order [40, 20, 5, 1]
+limited [1, 4, 9, 16, 25, 36, 49, 64]
+both did 8 and 8 items
+concurrent was faster true
+and by a lot true
+each finished true
+waited for the slowest true not the sum true
+lengths [5, 2, 6] total 13
