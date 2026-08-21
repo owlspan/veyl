@@ -192,19 +192,19 @@ func (l *lowerer) closeHandle(h Reg) {
 // not handle, so the caller can go on looking.
 func (l *lowerer) osBuiltin(c *Call, name string) (Reg, bool) {
 	switch name {
-	case "os.file.read":
+	case "os.file.read", "os.read.file":
 		return l.readFile(c), true
 	case "os.file.lines":
 		return l.readLines(c), true
-	case "os.file.write":
+	case "os.file.write", "os.write.file":
 		return l.writeFile(c, createAlways), true
-	case "os.file.append":
+	case "os.file.append", "os.append.file":
 		return l.writeFile(c, openAlways), true
 	case "os.file.exists":
 		return l.fileExists(c), true
 	case "os.file.size":
 		return l.fileSize(c), true
-	case "os.file.delete":
+	case "os.file.delete", "os.delete.file":
 		return l.deleteFile(c), true
 	case "os.file.rename":
 		return l.renameFile(c), true
