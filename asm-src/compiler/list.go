@@ -369,6 +369,8 @@ func (l *lowerer) writeValue(n Node, v Reg, t vty) {
 		l.writeList(n, v, t)
 	case kMap:
 		l.writeMap(n, v, t)
+	case kBytes:
+		l.renderBytes(v)
 	case kStr:
 		l.writeLit("\"")
 		l.emitStr(v)

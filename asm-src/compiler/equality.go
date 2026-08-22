@@ -29,6 +29,8 @@ func (l *lowerer) deepEqual(n Node, a, b Reg, t vty) (Reg, bool) {
 		return l.compare(OpFEq, a, b), true
 	case kStr:
 		return l.strEq(a, b), true
+	case kBytes:
+		return l.bytesEqual(a, b), true
 	case kList:
 		return l.listEqual(n, a, b, t)
 	case kMap:

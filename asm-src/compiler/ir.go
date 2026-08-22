@@ -48,6 +48,10 @@ const (
 	// A function value: one word, a pointer to a closure object. See
 	// closure.go for what is behind it.
 	kFunc
+
+	// Raw binary. A pointer to a tagBytes block, with the length in the
+	// object header, so a zero byte inside it is just a byte.
+	kBytes
 )
 
 // A vty is a kind plus, for a list, the type of its elements, and for a
@@ -103,6 +107,7 @@ var (
 	vFloat = vty{k: kFloat}
 	vBool  = vty{k: kBool}
 	vStr   = vty{k: kStr}
+	vBytes = vty{k: kBytes}
 )
 
 func vListOf(e vty) vty          { return vty{k: kList, el: &e} }
@@ -188,7 +193,7 @@ func (t vty) holdsPointer() bool {
 		return true
 	}
 	switch t.k {
-	case kStr, kList, kMap, kStruct, kFunc:
+	case kStr, kList, kMap, kStruct, kFunc, kBytes:
 		return true
 	}
 	return false
@@ -210,6 +215,8 @@ func (t vty) String() string {
 		return "bool"
 	case kStr:
 		return "str"
+	case kBytes:
+		return "bytes"
 	case kStruct:
 		return t.name
 	case kList:
@@ -276,6 +283,9 @@ func vtyOf(t *Type) (vty, bool) {
 		return vStr, true
 	case KStruct:
 		return vStructOf(t.Name), true
+
+	case KBytes:
+		return vBytes, true
 
 	case KFunc:
 		params := make([]vty, 0, len(t.Params))
@@ -1687,6 +1697,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			l.emit(Instr{Op: OpPrintBool, A: a, Dst: NoReg, Comment: "print"})
 		case kStr:
 			l.emit(Instr{Op: OpPrintStr, A: a, Dst: NoReg, Comment: "print"})
+		case kBytes:
+			l.mod.needs("write")
+			l.renderBytes(a)
+			l.writeLit("\n")
 		default:
 			l.emit(Instr{Op: OpPrintInt, A: a, Dst: NoReg, Comment: "print"})
 		}
@@ -1709,6 +1723,8 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			l.regTy[d] = vStr
 			l.emit(Instr{Op: OpBoolToStr, Dst: d, A: a, B: NoReg})
 			l.emit(Instr{Op: OpWriteStr, A: d, Dst: NoReg})
+		case kBytes:
+			l.renderBytes(a)
 		default:
 			l.emit(Instr{Op: OpWriteInt, A: a, Dst: NoReg, Comment: "write"})
 		}
@@ -1724,6 +1740,8 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			return l.field(a, listLenOff, vInt)
 		case kMap:
 			return l.field(a, mapLenOff, vInt)
+		case kBytes:
+			return l.bytesLen(a)
 		case kStr:
 			l.mod.needs("strlen")
 			d := l.newReg()
@@ -1854,6 +1872,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.hofBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.bytesBuiltin(c, name); handled {
 		return r
 	}
 
@@ -2049,7 +2071,7 @@ func (l *lowerer) toStr(v Reg, at Node) Reg {
 		l.regTy[d] = vStr
 		l.emit(Instr{Op: OpFloatToStr, Dst: d, A: v, B: NoReg})
 		return d
-	case kList, kMap, kStruct:
+	case kList, kMap, kStruct, kBytes:
 		return l.strOf(at, v, l.regTy[v])
 	}
 	l.errorAt(at, "cannot convert %s to a string on the assembly backend yet", l.regTy[v])
@@ -2136,6 +2158,15 @@ func (l *lowerer) expr(e Expr) Reg {
 		switch t.k {
 		case kList:
 			return l.listGet(coll, l.expr(x.Idx), t.elemType())
+		case kBytes:
+			// Bounds-checked like a list, since reading past the end
+			// would be reading somebody else's heap.
+			idx := l.expr(x.Idx)
+			l.checkBounds(idx, l.bytesLen(coll))
+			d := l.newReg()
+			l.regTy[d] = vInt
+			l.emit(Instr{Op: OpLoadByte, Dst: d, A: coll, B: idx})
+			return d
 		case kMap:
 			key := l.expr(x.Idx)
 			if l.regTy[key].k != t.key {
@@ -2299,7 +2330,7 @@ func (l *lowerer) binary(x *Binary) Reg {
 	// form suggests. The comparison is generated from the type, so a
 	// nested one recurses in the lowerer and the depth is whatever the
 	// type says - there is no runtime walk and no type tag to read.
-	if at.k == kList || at.k == kMap || at.k == kStruct {
+	if at.k == kList || at.k == kMap || at.k == kStruct || at.k == kBytes {
 		if x.Op != EQ && x.Op != NEQ {
 			l.errorAt(x, "%s is not defined on %s", x.Op, at)
 			return l.junk()
