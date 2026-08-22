@@ -264,6 +264,20 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkFind}, true
 	case "min", "max":
 		return front.Signature{Check: checkMinMax}, true
+	case "map":
+		return front.Signature{Check: checkMap}, true
+	case "filter":
+		return front.Signature{Check: checkFilter}, true
+	case "reduce":
+		return front.Signature{Check: checkReduce}, true
+	case "sortBy":
+		return front.Signature{Check: checkSortBy}, true
+	case "any":
+		return front.Signature{Check: checkAnyAll("any")}, true
+	case "all":
+		return front.Signature{Check: checkAnyAll("all")}, true
+	case "each":
+		return front.Signature{Check: checkEach}, true
 	case "stats.mean", "stats.median", "stats.var", "stats.stdev":
 		return front.Signature{Check: checkNumberList}, true
 	case "stats.percentile":
@@ -820,4 +834,118 @@ func checkSample(c *Checker, x *Call, args []*Type) *Type {
 		c.ErrorAt(x.Args[1], "rand.sample expects a count, got %s", args[1])
 	}
 	return args[0]
+}
+
+// ---- higher-order ----
+//
+// These mirror the Go backend's declarations, including their wording.
+// A program that type-checks on one backend and not on the other would
+// be a language with two definitions, and the messages are the part a
+// user actually reads.
+
+func hofList(c *Checker, x *Call, i int, args []*Type, fn string) *Type {
+	if i >= len(args) {
+		return Unknown
+	}
+	t := args[i]
+	if t.IsUnknown() {
+		return Unknown
+	}
+	if t.Kind != KList {
+		c.ErrorAt(x.Args[i], "%s expects a list, got %s", fn, t)
+		return Unknown
+	}
+	return t.Elem
+}
+
+func hofCallback(c *Checker, x *Call, i int, args []*Type, fn string, params []*Type) *Type {
+	if i >= len(args) || args[i].IsUnknown() {
+		return Unknown
+	}
+	got := args[i]
+	if !got.IsFunc() {
+		c.ErrorAt(x.Args[i], "%s expects a function here, got %s", fn, got)
+		return Unknown
+	}
+	if len(got.Params) != len(params) {
+		c.ErrorAt(x.Args[i], "%s expects a function taking %d argument(s), got one taking %d",
+			fn, len(params), len(got.Params))
+		return Unknown
+	}
+	for j, want := range params {
+		if want.IsUnknown() || want.Accepts(got.Params[j]) {
+			continue
+		}
+		c.ErrorAt(x.Args[i], "%s passes %s to its function, but it takes %s",
+			fn, want, got.Params[j])
+		return Unknown
+	}
+	return got.Elem
+}
+
+func hofPredicate(c *Checker, x *Call, i int, args []*Type, fn string, params []*Type) {
+	ret := hofCallback(c, x, i, args, fn, params)
+	if !ret.IsUnknown() && ret.Kind != KBool {
+		c.ErrorAt(x.Args[i], "%s needs a function returning bool, got one returning %s", fn, ret)
+	}
+}
+
+func checkMap(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "map")
+	ret := hofCallback(c, x, 1, args, "map", []*Type{elem})
+	if elem.IsUnknown() || ret.IsUnknown() {
+		return Unknown
+	}
+	if ret.Kind == KVoid {
+		c.ErrorAt(x.Args[1], "map needs a function that returns something - use each(...) to just do work")
+		return Unknown
+	}
+	return ListOf(ret)
+}
+
+func checkFilter(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "filter")
+	hofPredicate(c, x, 1, args, "filter", []*Type{elem})
+	if elem.IsUnknown() {
+		return Unknown
+	}
+	return ListOf(elem)
+}
+
+func checkReduce(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "reduce")
+	if len(args) < 3 || elem.IsUnknown() {
+		return Unknown
+	}
+	acc := args[1]
+	ret := hofCallback(c, x, 2, args, "reduce", []*Type{acc, elem})
+	if !ret.IsUnknown() && !acc.Equal(ret) {
+		c.ErrorAt(x.Args[2], "reduce starts with %s, so its function must return %s, not %s",
+			acc, acc, ret)
+		return Unknown
+	}
+	return acc
+}
+
+func checkSortBy(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "sortBy")
+	hofPredicate(c, x, 1, args, "sortBy", []*Type{elem, elem})
+	if elem.IsUnknown() {
+		return Unknown
+	}
+	return ListOf(elem)
+}
+
+func checkAnyAll(name string) func(*Checker, *Call, []*Type) *Type {
+	return func(c *Checker, x *Call, args []*Type) *Type {
+		elem := hofList(c, x, 0, args, name)
+		hofPredicate(c, x, 1, args, name, []*Type{elem})
+		return Bool
+	}
+}
+
+func checkEach(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "each")
+	hofCallback(c, x, 1, args, "each", []*Type{elem})
+	return Void
 }
