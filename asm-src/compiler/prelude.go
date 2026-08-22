@@ -69,10 +69,53 @@ var preludeOf = map[string]string{
 	"time.day":     "__vy_timeDay",
 	"time.weekday": "__vy_timeWeekday",
 	"time.since":   "__vy_timeSince",
-	"floor":        "__vy_floor",
-	"ceil":         "__vy_ceil",
-	"round":        "__vy_round",
-	"trunc":        "__vy_trunc",
+
+	"bits.count":    "__vy_bitsCount",
+	"bits.length":   "__vy_bitsLength",
+	"bits.leading":  "__vy_bitsLeading",
+	"bits.trailing": "__vy_bitsTrailing",
+	"bits.reverse":  "__vy_bitsReverse",
+	"bits.rotate":   "__vy_bitsRotate",
+	"bits.toBase":   "__vy_toBase",
+	"bits.fromBase": "__vy_fromBase",
+
+	"args.flag":  "__vy_argsFlag",
+	"args.value": "__vy_argsValue",
+	"args.rest":  "__vy_argsRest",
+	"os.args":    "__vy_osArgs",
+
+	"url.scheme":   "__vy_urlScheme",
+	"url.host":     "__vy_urlHost",
+	"url.port":     "__vy_urlPort",
+	"url.path":     "__vy_urlPath",
+	"url.fragment": "__vy_urlFragment",
+	"url.query":    "__vy_urlQuery",
+	"url.join":     "__vy_urlJoin",
+
+	"stats.mean":       "__vy_mean",
+	"stats.median":     "__vy_median",
+	"stats.var":        "__vy_variance",
+	"stats.stdev":      "__vy_stdev",
+	"stats.percentile": "__vy_percentile",
+
+	"term.red":       "__vy_termRed",
+	"term.green":     "__vy_termGreen",
+	"term.yellow":    "__vy_termYellow",
+	"term.blue":      "__vy_termBlue",
+	"term.magenta":   "__vy_termMagenta",
+	"term.cyan":      "__vy_termCyan",
+	"term.grey":      "__vy_termGrey",
+	"term.bold":      "__vy_termBold",
+	"term.dim":       "__vy_termDim",
+	"term.underline": "__vy_termUnderline",
+	"term.invert":    "__vy_termInvert",
+	"term.clear":     "__vy_termClear",
+	"term.colour":    "__vy_termColour",
+	"term.bar":       "__vy_termBar",
+	"floor":          "__vy_floor",
+	"ceil":           "__vy_ceil",
+	"round":          "__vy_round",
+	"trunc":          "__vy_trunc",
 }
 
 var (
@@ -146,6 +189,15 @@ func addPrelude(prog *Program, sources []string) []string {
 		for other := range chunks {
 			if other != name && mentions(body, other) {
 				pull(other)
+			}
+		}
+		// A prelude function may call a builtin that is itself a prelude
+		// function - percentile calls floor - and it calls it by the
+		// name a user would write, not by the internal one. Without
+		// this, the call compiles and the callee is never folded in.
+		for builtin, fn := range preludeOf {
+			if fn != name && mentions(body, builtin) {
+				pull(fn)
 			}
 		}
 	}
@@ -245,4 +297,9 @@ var preludeSource = strings.Join([]string{
 	preludeRound,
 	preludeTime,
 	preludeTimeHelpers,
+	preludeBits2,
+	preludeArgs,
+	preludeURL,
+	preludeStats,
+	preludeTerm,
 }, "\n")

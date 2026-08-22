@@ -131,6 +131,50 @@ var sigs = map[string]front.Signature{
 	"__tmField": {Params: []*Type{Int, Int}, Ret: Int},
 	"__mktime":  {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Int},
 	"__millis":  {Ret: Int},
+	"__chr":     {Params: []*Type{Int}, Ret: Str},
+	"__cmdline": {Ret: Str},
+	"__isatty":  {Ret: Bool},
+
+	// term. Colour is a str to a str; the bar and the colour question
+	// are their own shapes.
+	"term.red":       {Params: []*Type{Str}, Ret: Str},
+	"term.green":     {Params: []*Type{Str}, Ret: Str},
+	"term.yellow":    {Params: []*Type{Str}, Ret: Str},
+	"term.blue":      {Params: []*Type{Str}, Ret: Str},
+	"term.magenta":   {Params: []*Type{Str}, Ret: Str},
+	"term.cyan":      {Params: []*Type{Str}, Ret: Str},
+	"term.grey":      {Params: []*Type{Str}, Ret: Str},
+	"term.bold":      {Params: []*Type{Str}, Ret: Str},
+	"term.dim":       {Params: []*Type{Str}, Ret: Str},
+	"term.underline": {Params: []*Type{Str}, Ret: Str},
+	"term.invert":    {Params: []*Type{Str}, Ret: Str},
+	"term.clear":     {Ret: Void},
+	"term.colour":    {Ret: Bool},
+	"term.bar":       {Params: []*Type{Int, Int, Int}, Ret: Str},
+
+	// bits, args and url. All of these are prelude functions; see
+	// prelude_more.go.
+	"bits.count":    {Params: []*Type{Int}, Ret: Int},
+	"bits.length":   {Params: []*Type{Int}, Ret: Int},
+	"bits.leading":  {Params: []*Type{Int}, Ret: Int},
+	"bits.trailing": {Params: []*Type{Int}, Ret: Int},
+	"bits.reverse":  {Params: []*Type{Int}, Ret: Int},
+	"bits.rotate":   {Params: []*Type{Int, Int}, Ret: Int},
+	"bits.toBase":   {Params: []*Type{Int, Int}, Ret: Str},
+	"bits.fromBase": {Params: []*Type{Str, Int}, Ret: ResultOf(Int)},
+
+	"args.flag":  {Params: []*Type{Str}, Ret: Bool},
+	"args.value": {Params: []*Type{Str, Str}, Ret: Str},
+	"args.rest":  {Ret: ListOf(Str)},
+	"os.args":    {Ret: ListOf(Str)},
+
+	"url.scheme":   {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"url.host":     {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"url.port":     {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"url.path":     {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"url.fragment": {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"url.query":    {Params: []*Type{Str}, Ret: ResultOf(MapOf(Str, Str))},
+	"url.join":     {Params: []*Type{Str, Str}, Ret: ResultOf(Str)},
 
 	"os.env.get": {Params: []*Type{Str}, Ret: Str},
 	"os.env.has": {Params: []*Type{Str}, Ret: Bool},
@@ -211,6 +255,10 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkFind}, true
 	case "min", "max":
 		return front.Signature{Check: checkMinMax}, true
+	case "stats.mean", "stats.median", "stats.var", "stats.stdev":
+		return front.Signature{Check: checkNumberList}, true
+	case "stats.percentile":
+		return front.Signature{Check: checkPercentile}, true
 	case "json.decode":
 		return front.Signature{Check: checkJSONDecode, WantsTarget: true}, true
 	case "json.decodeOr":
@@ -709,4 +757,33 @@ func hintValueOr(x *Call, known []*Type, i int) *Type {
 		return known[0].Elem
 	}
 	return nil
+}
+
+// checkNumberList is the shape every stats function but percentile has:
+// one list of numbers in, one float out. A list of ints is accepted and
+// widened, the same way the Go backend widens before calling.
+func checkNumberList(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 1 {
+		c.ErrorAt(x, "this takes 1 argument, got %d", len(args))
+		return Float
+	}
+	if args[0].IsUnknown() {
+		return Float
+	}
+	if args[0].Kind != KList || (args[0].Elem.Kind != KInt && args[0].Elem.Kind != KFloat) {
+		c.ErrorAt(x.Args[0], "expected a list of numbers, got %s", args[0])
+	}
+	return Float
+}
+
+func checkPercentile(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 2 {
+		c.ErrorAt(x, "stats.percentile takes 2 arguments, got %d", len(args))
+		return Float
+	}
+	checkNumberList(c, x, args[:1])
+	if !args[1].IsUnknown() && args[1].Kind != KInt && args[1].Kind != KFloat {
+		c.ErrorAt(x.Args[1], "stats.percentile expects a number, got %s", args[1])
+	}
+	return Float
 }

@@ -48,7 +48,12 @@ func (l *lowerer) moreBuiltin(c *Call, name string) (Reg, bool) {
 // the same map every time is what makes it cacheable and testable.
 func (l *lowerer) urlBuild(c *Call) Reg {
 	base := l.expr(c.Args[0])
-	params := l.expr(c.Args[1])
+	// Lowered with the wanted type carried in, because `{}` has no
+	// element to infer from and this is the only context it has. The
+	// checker already worked this out; the lowerer has to be told, since
+	// it reads the literal itself rather than the type on it.
+	strMap := vty{k: kMap, key: kStr, el: &vty{k: kStr}}
+	params := l.rvalueAs(c.Args[1], strMap)
 	t := l.regTy[params]
 	if t.k != kMap || t.key != kStr || t.elemType().k != kStr {
 		l.errorAt(c, "url.build needs a {str: str} of parameters, got %s", t)
