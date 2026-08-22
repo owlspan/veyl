@@ -161,6 +161,36 @@ var sigs = map[string]front.Signature{
 	"random":     {Ret: Float},
 	"randomInt":  {Params: []*Type{Int, Int}, Ret: Int},
 
+	// bytes. The primitives are in bytes.go; everything else is in the
+	// prelude on top of them.
+	"__bytesMake": {Params: []*Type{Int}, Ret: Bytes},
+	"__byteAt":    {Params: []*Type{Bytes, Int}, Ret: Int},
+	"__bytePut":   {Params: []*Type{Bytes, Int, Int}, Ret: Void},
+
+	"bytes.of":         {Params: []*Type{Str}, Ret: Bytes},
+	"bytes.str":        {Params: []*Type{Bytes}, Ret: Str},
+	"bytes.hex":        {Params: []*Type{Bytes}, Ret: Str},
+	"bytes.base64":     {Params: []*Type{Bytes}, Ret: Str},
+	"bytes.fromHex":    {Params: []*Type{Str}, Ret: ResultOf(Bytes)},
+	"bytes.fromBase64": {Params: []*Type{Str}, Ret: ResultOf(Bytes)},
+	"bytes.slice":      {Params: []*Type{Bytes, Int, Int}, Ret: Bytes},
+	"bytes.find":       {Params: []*Type{Bytes, Bytes}, Ret: Int},
+	"bytes.list":       {Params: []*Type{Bytes}, Ret: ListOf(Int)},
+	"bytes.ofList":     {Params: []*Type{ListOf(Int)}, Ret: ResultOf(Bytes)},
+	"bytes.fill":       {Params: []*Type{Int, Int}, Ret: ResultOf(Bytes)},
+	"bytes.hash":       {Params: []*Type{Bytes, Str}, Ret: ResultOf(Str)},
+	"bytes.concat":     {Params: []*Type{Bytes}, Rest: Bytes, Ret: Bytes},
+	"bytes.read":       {Params: []*Type{Str}, Ret: ResultOf(Bytes)},
+	"bytes.write":      {Params: []*Type{Str, Bytes}, Ret: ResultOf(Void)},
+	"bytes.getInt":     {Params: []*Type{Bytes, Int, Int}, Ret: ResultOf(Int)},
+	"bytes.getIntBE":   {Params: []*Type{Bytes, Int, Int}, Ret: ResultOf(Int)},
+	"bytes.putInt":     {Params: []*Type{Int, Int}, Ret: ResultOf(Bytes)},
+	"bytes.putIntBE":   {Params: []*Type{Int, Int}, Ret: ResultOf(Bytes)},
+
+	"hash.sha256": {Params: []*Type{Str}, Ret: Str},
+	"hash.sha1":   {Params: []*Type{Str}, Ret: Str},
+	"hash.md5":    {Params: []*Type{Str}, Ret: Str},
+
 	// bits, args and url. All of these are prelude functions; see
 	// prelude_more.go.
 	"bits.count":    {Params: []*Type{Int}, Ret: Int},
@@ -368,7 +398,7 @@ func checkLen(c *Checker, x *Call, args []*Type) *Type {
 		return Unknown
 	}
 	switch args[0].Kind {
-	case KStr, KList, KMap:
+	case KStr, KList, KMap, KBytes:
 		return Int
 	}
 	c.ErrorAt(x, "len needs a str, a list or a map, got %s", args[0])
