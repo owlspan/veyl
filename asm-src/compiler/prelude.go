@@ -112,10 +112,30 @@ var preludeOf = map[string]string{
 	"term.clear":     "__vy_termClear",
 	"term.colour":    "__vy_termColour",
 	"term.bar":       "__vy_termBar",
-	"floor":          "__vy_floor",
-	"ceil":           "__vy_ceil",
-	"round":          "__vy_round",
-	"trunc":          "__vy_trunc",
+
+	"rand.seed":  "__vy_randSeed",
+	"rand.int":   "__vy_randInt",
+	"rand.float": "__vy_randFloat",
+	"rand.bool":  "__vy_randBool",
+	"rand.hex":   "__vy_randHex",
+	"rand.uuid":  "__vy_randUUID",
+	"random":     "__vy_randFloat",
+	"randomInt":  "__vy_randomInt",
+	"floor":      "__vy_floor",
+	"ceil":       "__vy_ceil",
+	"round":      "__vy_round",
+	"trunc":      "__vy_trunc",
+}
+
+// preludeAlso is for a builtin the lowerer implements itself but which
+// still needs something from the prelude. shuffle, sample and pick are
+// lowered in randlib.go because they work on a list of anything, and
+// they draw from the prelude's generator - so naming one has to fold
+// that in, even though the call never goes through the prelude path.
+var preludeAlso = map[string][]string{
+	"rand.shuffle": {randSource},
+	"rand.sample":  {randSource},
+	"rand.pick":    {randSource},
 }
 
 var (
@@ -168,6 +188,13 @@ func addPrelude(prog *Program, sources []string) []string {
 				wanted[fn] = true
 			}
 		}
+		for name, fns := range preludeAlso {
+			if mentions(src, name) {
+				for _, fn := range fns {
+					wanted[fn] = true
+				}
+			}
+		}
 	}
 	if len(wanted) == 0 {
 		return nil
@@ -212,6 +239,12 @@ func addPrelude(prog *Program, sources []string) []string {
 			prog.Funcs = append(prog.Funcs, f)
 		}
 	}
+
+	// A prelude const is state the functions share - the generator's
+	// vector is the only one - so it comes in whenever anything does.
+	// Unconditionally would cost a word of static storage in every
+	// program, which is why it is behind the same gate.
+	prog.Globals = append(prog.Globals, pre.Globals...)
 	return nil
 }
 
@@ -302,4 +335,6 @@ var preludeSource = strings.Join([]string{
 	preludeURL,
 	preludeStats,
 	preludeTerm,
+	preludeRand,
+	preludeRandTable,
 }, "\n")
