@@ -152,6 +152,15 @@ var sigs = map[string]front.Signature{
 	"term.colour":    {Ret: Bool},
 	"term.bar":       {Params: []*Type{Int, Int, Int}, Ret: Str},
 
+	"rand.seed":  {Params: []*Type{Int}, Ret: Void},
+	"rand.int":   {Params: []*Type{Int, Int}, Ret: Int},
+	"rand.float": {Ret: Float},
+	"rand.bool":  {Ret: Bool},
+	"rand.hex":   {Params: []*Type{Int}, Ret: Str},
+	"rand.uuid":  {Ret: Str},
+	"random":     {Ret: Float},
+	"randomInt":  {Params: []*Type{Int, Int}, Ret: Int},
+
 	// bits, args and url. All of these are prelude functions; see
 	// prelude_more.go.
 	"bits.count":    {Params: []*Type{Int}, Ret: Int},
@@ -271,8 +280,12 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkElemOf}, true
 	case "sum":
 		return front.Signature{Check: checkSum}, true
-	case "reverse", "sort":
+	case "reverse", "sort", "rand.shuffle":
 		return front.Signature{Check: checkSameList}, true
+	case "rand.sample":
+		return front.Signature{Check: checkSample}, true
+	case "rand.pick":
+		return front.Signature{Check: checkElemOf}, true
 	case "slice":
 		return front.Signature{Check: checkSlice}, true
 	case "join":
@@ -786,4 +799,25 @@ func checkPercentile(c *Checker, x *Call, args []*Type) *Type {
 		c.ErrorAt(x.Args[1], "stats.percentile expects a number, got %s", args[1])
 	}
 	return Float
+}
+
+// checkSample is rand.sample: a list and a count, the same list type
+// back. Declared like the Go backend declares it, so a program that
+// type-checks there type-checks here.
+func checkSample(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 2 {
+		c.ErrorAt(x, "rand.sample takes 2 arguments, got %d", len(args))
+		return Unknown
+	}
+	if args[0].IsUnknown() {
+		return args[0]
+	}
+	if args[0].Kind != KList {
+		c.ErrorAt(x.Args[0], "rand.sample expects a list, got %s", args[0])
+		return Unknown
+	}
+	if !args[1].IsUnknown() && args[1].Kind != KInt {
+		c.ErrorAt(x.Args[1], "rand.sample expects a count, got %s", args[1])
+	}
+	return args[0]
 }
