@@ -81,7 +81,8 @@ var sigs = map[string]front.Signature{
 	// Also private to the prelude: stop with a message. It is declared
 	// as returning a float only so that it can be the last statement of
 	// a float function - it does not return at all.
-	"__abort": {Params: []*Type{Str}, Ret: Float},
+	"__abort":    {Params: []*Type{Str}, Ret: Float},
+	"__abortStr": {Params: []*Type{Str}, Ret: Str},
 
 	// And these: one rendering of a float by the C library, at a
 	// precision the caller chooses. See strfmt.go.
@@ -134,6 +135,17 @@ var sigs = map[string]front.Signature{
 	"__chr":     {Params: []*Type{Int}, Ret: Str},
 	"__cmdline": {Ret: Str},
 	"__isatty":  {Ret: Bool},
+	"__strAt":   {Params: []*Type{Str, Int}, Ret: Int},
+
+	"re.matches": {Params: []*Type{Str, Str}, Ret: Bool},
+	"re.find":    {Params: []*Type{Str, Str}, Ret: Str},
+	"re.findAll": {Params: []*Type{Str, Str}, Ret: ListOf(Str)},
+	"re.groups":  {Params: []*Type{Str, Str}, Ret: ListOf(Str)},
+	"re.split":   {Params: []*Type{Str, Str}, Ret: ListOf(Str)},
+	"re.count":   {Params: []*Type{Str, Str}, Ret: Int},
+	"re.replace": {Params: []*Type{Str, Str, Str}, Ret: Str},
+	"re.valid":   {Params: []*Type{Str}, Ret: Bool},
+	"re.escape":  {Params: []*Type{Str}, Ret: Str},
 
 	// term. Colour is a str to a str; the bar and the colour question
 	// are their own shapes.

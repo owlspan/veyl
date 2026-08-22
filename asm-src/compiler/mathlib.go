@@ -66,7 +66,7 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 	}
 
 	switch name {
-	case "__abort":
+	case "__abort", "__abortStr":
 		if !arity(1) {
 			return l.junk(), true
 		}
@@ -80,6 +80,9 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 			Comment: "__abort()"})
 		// Nothing runs after it, but the lowerer still needs a register
 		// to hand back to whatever asked for the value.
+		if name == "__abortStr" {
+			return l.emptyStr(), true
+		}
 		return l.floatConst(0), true
 
 	case "__bits", "__frombits":
