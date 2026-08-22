@@ -143,6 +143,13 @@ func Emit(m *Module) string {
 	e.label("__str_false")
 	e.b.WriteString("    .asciz \"false\"\n")
 
+	if e.mod.Helpers["floatfmt"] {
+		e.label("__fmt_star_e")
+		e.b.WriteString("    .asciz \"%.*e\"\n")
+		e.label("__fmt_star_f")
+		e.b.WriteString("    .asciz \"%.*f\"\n")
+	}
+
 	for i, s := range m.Strings {
 		e.label(fmt.Sprintf("__str%d", i))
 		e.b.WriteString("    .asciz \"" + escapeAsm(s) + "\"\n")
@@ -166,6 +173,8 @@ func Emit(m *Module) string {
 		// sign bit with a bitwise xor, because that would need a second
 		// SSE instruction family (xorpd) and a 16-byte-aligned mask
 		// constant for no real saving over one more .rdata entry.
+		e.label("__fmt_e")
+		e.b.WriteString("    .asciz \"%.*e\"\n")
 		e.label("__neg_one")
 		e.b.WriteString(fmt.Sprintf("    .quad %#x\n", math.Float64bits(-1)))
 	}
@@ -402,6 +411,14 @@ func (e *Emitter) instr(in Instr) {
 
 	case OpStackPtr:
 		e.line("mov rax, rsp")
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpSymAddr:
+		e.line("lea rax, %s[rip]", in.Sym)
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+
+	case OpSlotAddr:
+		e.line("lea rax, %s", strings.TrimPrefix(e.slotAddr(in.Imm), "qword ptr "))
 		e.line("mov %s, rax", e.regAddr(in.Dst))
 
 	case OpGlobalAddr:
@@ -1048,7 +1065,7 @@ __vy_floattostr:
     lea rax, [rbp-104]
     mov qword ptr [rbp-24], rax
     mov dword ptr [rbp-16], 1
-.Lfloattostr_loop:
+.Lftoa_loop:
     mov rcx, qword ptr [rbp-24]
     mov edx, 64
     lea r8, __fmt_g[rip]
@@ -1056,52 +1073,157 @@ __vy_floattostr:
     movsd xmm0, qword ptr [rbp-8]
     movsd qword ptr [rsp+32], xmm0
     call _snprintf
-    # MSVCRT's %g always pads the exponent to three digits - "1e+008"
-    # where Go and a POSIX libc both write "1e+08" - because this build
-    # links the legacy msvcrt.dll rather than UCRT. Stripping one
-    # redundant leading zero fixes it and does not change the value:
-    # "1e+008" and "1e+08" parse to the same double either way, so
-    # normalizing before the round-trip check below is safe.
+    # MSVCRT pads the exponent to three digits - "1e+008" where Go and a
+    # POSIX libc both write "1e+08" - because this links the legacy
+    # msvcrt.dll rather than UCRT. Stripping one redundant leading zero
+    # fixes it and does not change the value, so normalizing before the
+    # round-trip check below is safe.
     mov rax, qword ptr [rbp-24]
-.Lfloattostr_scan:
+.Lftoa_scan:
     movzx ecx, byte ptr [rax]
     test ecx, ecx
-    je .Lfloattostr_noexp
+    je .Lftoa_stripped
     cmp ecx, 101
-    je .Lfloattostr_foundexp
+    je .Lftoa_strip
     add rax, 1
-    jmp .Lfloattostr_scan
-.Lfloattostr_foundexp:
+    jmp .Lftoa_scan
+.Lftoa_strip:
     movzx ecx, byte ptr [rax+2]
     cmp ecx, 48
-    jne .Lfloattostr_noexp
+    jne .Lftoa_stripped
     movzx ecx, byte ptr [rax+3]
     cmp ecx, 48
-    jl .Lfloattostr_noexp
+    jl .Lftoa_stripped
     cmp ecx, 57
-    jg .Lfloattostr_noexp
+    jg .Lftoa_stripped
     lea rdx, [rax+2]
     lea r8, [rax+3]
-.Lfloattostr_shift:
+.Lftoa_shift:
     movzx ecx, byte ptr [r8]
     mov byte ptr [rdx], cl
     add rdx, 1
     add r8, 1
     test ecx, ecx
-    jne .Lfloattostr_shift
-.Lfloattostr_noexp:
+    jne .Lftoa_shift
+.Lftoa_stripped:
     mov rcx, qword ptr [rbp-24]
     xor edx, edx
     call strtod
     movsd xmm1, qword ptr [rbp-8]
     ucomisd xmm0, xmm1
-    je .Lfloattostr_done
+    je .Lftoa_found
     mov eax, dword ptr [rbp-16]
     add eax, 1
     mov dword ptr [rbp-16], eax
     cmp eax, 18
-    jl .Lfloattostr_loop
-.Lfloattostr_done:
+    jl .Lftoa_loop
+.Lftoa_found:
+    # [rbp-16] now holds the fewest significant digits that read back as
+    # the same double, which is what Go means by the shortest form. It is
+    # not what decides fixed against exponential, though.
+    #
+    # C's %g goes exponential when the decimal exponent is below -4 or at
+    # least the precision, so the threshold moves with the digit count.
+    # Go's rule fixes that threshold at 6 whatever the digit count, which
+    # is why 490 prints as 490 there and came out as 4.9e+02 here: two
+    # digits, exponent two, and C called that exponential.
+    #
+    # So the exponent is read off an %e rendering and the choice is made
+    # here rather than left to the C library.
+    mov rcx, qword ptr [rbp-24]
+    mov edx, 64
+    lea r8, __fmt_e[rip]
+    mov r9d, dword ptr [rbp-16]
+    sub r9d, 1
+    movsd xmm0, qword ptr [rbp-8]
+    movsd qword ptr [rsp+32], xmm0
+    call _snprintf
+    xor r9d, r9d
+    mov rdx, qword ptr [rbp-24]
+.Lftoa_seek:
+    movzx ecx, byte ptr [rdx]
+    test ecx, ecx
+    je .Lftoa_fixed
+    cmp ecx, 101
+    je .Lftoa_at_e
+    add rdx, 1
+    jmp .Lftoa_seek
+.Lftoa_at_e:
+    mov r8d, 1
+    movzx ecx, byte ptr [rdx+1]
+    cmp ecx, 45
+    jne .Lftoa_expdigits
+    mov r8d, -1
+.Lftoa_expdigits:
+    add rdx, 2
+    mov r10d, 10
+.Lftoa_expdigit:
+    movzx ecx, byte ptr [rdx]
+    cmp ecx, 48
+    jl .Lftoa_expdone
+    cmp ecx, 57
+    jg .Lftoa_expdone
+    imul r9d, r10d
+    sub ecx, 48
+    add r9d, ecx
+    add rdx, 1
+    jmp .Lftoa_expdigit
+.Lftoa_expdone:
+    imul r9d, r8d
+    cmp r9d, -4
+    jl .Lftoa_exponential
+    cmp r9d, 6
+    jge .Lftoa_exponential
+.Lftoa_fixed:
+    # Asking for max(digits, exponent+1) digits of precision is what
+    # forces C to choose fixed notation, and %g drops the trailing zeros
+    # the wider precision would otherwise add - so the digits printed are
+    # still the shortest ones.
+    mov eax, r9d
+    add eax, 1
+    cmp eax, dword ptr [rbp-16]
+    jge .Lftoa_haveprec
+    mov eax, dword ptr [rbp-16]
+.Lftoa_haveprec:
+    mov rcx, qword ptr [rbp-24]
+    mov edx, 64
+    lea r8, __fmt_g[rip]
+    mov r9d, eax
+    movsd xmm0, qword ptr [rbp-8]
+    movsd qword ptr [rsp+32], xmm0
+    call _snprintf
+    jmp .Lftoa_copy
+.Lftoa_exponential:
+    # The buffer already holds the %e rendering; only msvcrt's three-digit
+    # exponent needs the same normalising as above.
+    mov rax, qword ptr [rbp-24]
+.Lftoa_escan:
+    movzx ecx, byte ptr [rax]
+    test ecx, ecx
+    je .Lftoa_copy
+    cmp ecx, 101
+    je .Lftoa_estrip
+    add rax, 1
+    jmp .Lftoa_escan
+.Lftoa_estrip:
+    movzx ecx, byte ptr [rax+2]
+    cmp ecx, 48
+    jne .Lftoa_copy
+    movzx ecx, byte ptr [rax+3]
+    cmp ecx, 48
+    jl .Lftoa_copy
+    cmp ecx, 57
+    jg .Lftoa_copy
+    lea rdx, [rax+2]
+    lea r8, [rax+3]
+.Lftoa_eshift:
+    movzx ecx, byte ptr [r8]
+    mov byte ptr [rdx], cl
+    add rdx, 1
+    add r8, 1
+    test ecx, ecx
+    jne .Lftoa_eshift
+.Lftoa_copy:
     mov rcx, qword ptr [rbp-24]
     call strlen
     mov rcx, rax

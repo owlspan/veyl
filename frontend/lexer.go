@@ -132,7 +132,34 @@ func (l *Lexer) number(line, col int) {
 			l.advance()
 		}
 	}
+	// A scientific exponent: 1e9, 2.5e-3, 6.02E+23. Taken only when a
+	// digit really follows, with an optional sign between, so that a
+	// bare `1e` is the malformed-literal error below rather than a
+	// number silently followed by an identifier.
+	if !l.atEnd() && (l.peek() == 'e' || l.peek() == 'E') && l.exponentFollows() {
+		l.advance()
+		if l.peek() == '+' || l.peek() == '-' {
+			l.advance()
+		}
+		for !l.atEnd() && (IsDigit(l.peek()) || l.peek() == '_') {
+			l.advance()
+		}
+	}
 	l.endNumber(start, line, col, "number")
+}
+
+// exponentFollows looks past the e and an optional sign for a digit.
+//
+// Two characters of lookahead, because `1e` and `1e+` are not numbers
+// and `1even` is a number beside an identifier in no language anyone
+// wants. Without the check, `let e = 2` and `1e` would lex differently
+// depending on what came next.
+func (l *Lexer) exponentFollows() bool {
+	i := l.Span + 1
+	if i < len(l.src) && (l.src[i] == '+' || l.src[i] == '-') {
+		i++
+	}
+	return i < len(l.src) && IsDigit(l.src[i])
 }
 
 // endNumber emits a numeric literal, refusing one that runs straight

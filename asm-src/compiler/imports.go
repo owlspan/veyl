@@ -28,18 +28,23 @@ type importLoader struct {
 	seen   map[string]bool // absolute paths already folded in
 	stack  []string        // in progress, for cycle detection
 	errors []string
+
+	// The text of every file folded in. The prelude decides what to
+	// pull in by looking for names in the source, and an imported file
+	// is as much of the program as the one that imported it.
+	sources []string
 }
 
 // loadImports pulls in every file this program imports, and every file
 // those import, depth first.
-func loadImports(prog *Program, from string) []string {
+func loadImports(prog *Program, from string) ([]string, []string) {
 	abs, err := filepath.Abs(from)
 	if err != nil {
 		abs = from
 	}
 	l := &importLoader{seen: map[string]bool{abs: true}}
 	l.resolve(prog, abs)
-	return l.errors
+	return l.errors, l.sources
 }
 
 func (l *importLoader) resolve(prog *Program, from string) {
@@ -101,6 +106,7 @@ func (l *importLoader) load(imp *ImportDecl, target string) (*Program, bool) {
 	}
 
 	name := filepath.Base(target)
+	l.sources = append(l.sources, string(srcBytes))
 	lx := NewLexer(name, string(srcBytes))
 	toks := lx.Scan()
 	l.errors = append(l.errors, lx.Errors...)

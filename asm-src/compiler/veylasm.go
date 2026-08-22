@@ -139,7 +139,15 @@ func compile(source, path string) *Module {
 	// here down there is one program and nothing else has to know that
 	// more than one file was involved.
 	stampImportedFile(prog, path)
-	if errs := loadImports(prog, path); len(errs) > 0 {
+	importErrs, imported := loadImports(prog, path)
+	if len(importErrs) > 0 {
+		report(importErrs)
+	}
+
+	// The prelude goes in before checking, so its functions are checked
+	// and lowered like any other code the program contains. Which ones
+	// it needs is read off the source, so the imported files count too.
+	if errs := addPrelude(prog, append([]string{source}, imported...)); len(errs) > 0 {
 		report(errs)
 	}
 

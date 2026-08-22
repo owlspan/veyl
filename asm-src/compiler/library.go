@@ -46,6 +46,48 @@ var sigs = map[string]front.Signature{
 	"trunc": {Params: []*Type{Numeric}, Ret: Float},
 	"mod":   {Params: []*Type{Numeric, Numeric}, Ret: Float},
 
+	// The rest of the math library. Most of these are one msvcrt call;
+	// see mathlib.go for the three that are not and why.
+	"sin":   {Params: []*Type{Numeric}, Ret: Float},
+	"cos":   {Params: []*Type{Numeric}, Ret: Float},
+	"tan":   {Params: []*Type{Numeric}, Ret: Float},
+	"asin":  {Params: []*Type{Numeric}, Ret: Float},
+	"acos":  {Params: []*Type{Numeric}, Ret: Float},
+	"atan":  {Params: []*Type{Numeric}, Ret: Float},
+	"exp":   {Params: []*Type{Numeric}, Ret: Float},
+	"log":   {Params: []*Type{Numeric}, Ret: Float},
+	"log2":  {Params: []*Type{Numeric}, Ret: Float},
+	"log10": {Params: []*Type{Numeric}, Ret: Float},
+	"cbrt":  {Params: []*Type{Numeric}, Ret: Float},
+	"atan2": {Params: []*Type{Numeric, Numeric}, Ret: Float},
+	"pow":   {Params: []*Type{Numeric, Numeric}, Ret: Float},
+	"hypot": {Params: []*Type{Numeric, Numeric}, Ret: Float},
+	"clamp": {Params: []*Type{Numeric, Numeric, Numeric}, Ret: Float},
+	"sign":  {Params: []*Type{Numeric}, Ret: Int},
+	"isNan": {Params: []*Type{Numeric}, Ret: Bool},
+	"exit":  {Params: []*Type{Int}, Ret: Void},
+	"sleep": {Params: []*Type{Numeric}, Ret: Void},
+
+	// Private to the prelude. These reinterpret a float as its IEEE 754
+	// bit pattern and back, which Frexp, Ldexp and the special-case
+	// tests are all written in terms of and which Veyl otherwise cannot
+	// say. They are in this table because the prelude is checked by this
+	// checker like any other code; nothing stops a user program calling
+	// one, and nothing needs to - the names are reserved by the same
+	// convention every compiler-generated name here follows.
+	"__bits":     {Params: []*Type{Float}, Ret: Int},
+	"__frombits": {Params: []*Type{Int}, Ret: Float},
+
+	// Also private to the prelude: stop with a message. It is declared
+	// as returning a float only so that it can be the last statement of
+	// a float function - it does not return at all.
+	"__abort": {Params: []*Type{Str}, Ret: Float},
+
+	// And these: one rendering of a float by the C library, at a
+	// precision the caller chooses. See strfmt.go.
+	"__fmtE": {Params: []*Type{Int, Numeric}, Ret: Str},
+	"__fmtF": {Params: []*Type{Int, Numeric}, Ret: Str},
+
 	// Strings.
 	"upper":      {Params: []*Type{Str}, Ret: Str},
 	"lower":      {Params: []*Type{Str}, Ret: Str},
