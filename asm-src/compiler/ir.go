@@ -44,6 +44,10 @@ const (
 	kList
 	kMap
 	kStruct
+
+	// A function value: one word, a pointer to a closure object. See
+	// closure.go for what is behind it.
+	kFunc
 )
 
 // A vty is a kind plus, for a list, the type of its elements, and for a
@@ -70,6 +74,23 @@ type vty struct {
 	res  bool  // T!: the value is boxed alongside a failure reason
 	null bool  // ?T: one word, zero for nil, else a pointer to the value
 	name string
+
+	// fn carries a function value's signature. A pointer for the same
+	// reason el is one: a type cannot contain itself by value, and
+	// fn(fn(int) -> int) -> int is a type somebody will write.
+	fn *vsig
+}
+
+// A vsig is what a function value can be called with and what comes
+// back. It is separate from `sig`, which is a declared function's
+// signature in the lowerer's table: this one is part of a type.
+type vsig struct {
+	params []vty
+	ret    vty
+}
+
+func vFuncOf(params []vty, ret vty) vty {
+	return vty{k: kFunc, fn: &vsig{params: params, ret: ret}}
 }
 
 var (
@@ -134,6 +155,19 @@ func (t vty) eq(o vty) bool {
 	if t.k != o.k || t.key != o.key || t.res != o.res || t.null != o.null || t.name != o.name {
 		return false
 	}
+	if (t.fn == nil) != (o.fn == nil) {
+		return false
+	}
+	if t.fn != nil {
+		if len(t.fn.params) != len(o.fn.params) || !t.fn.ret.eq(o.fn.ret) {
+			return false
+		}
+		for i := range t.fn.params {
+			if !t.fn.params[i].eq(o.fn.params[i]) {
+				return false
+			}
+		}
+	}
 	if (t.el == nil) != (o.el == nil) {
 		return false
 	}
@@ -154,7 +188,7 @@ func (t vty) holdsPointer() bool {
 		return true
 	}
 	switch t.k {
-	case kStr, kList, kMap, kStruct:
+	case kStr, kList, kMap, kStruct, kFunc:
 		return true
 	}
 	return false
@@ -182,6 +216,21 @@ func (t vty) String() string {
 		return "[]" + t.elemType().String()
 	case kMap:
 		return "{" + t.keyType().String() + ": " + t.elemType().String() + "}"
+	case kFunc:
+		out := "fn("
+		if t.fn != nil {
+			for i, p := range t.fn.params {
+				if i > 0 {
+					out += ", "
+				}
+				out += p.String()
+			}
+		}
+		out += ")"
+		if t.fn != nil && t.fn.ret.k != kVoid {
+			out += " -> " + t.fn.ret.String()
+		}
+		return out
 	}
 	return "void"
 }
@@ -227,6 +276,21 @@ func vtyOf(t *Type) (vty, bool) {
 		return vStr, true
 	case KStruct:
 		return vStructOf(t.Name), true
+
+	case KFunc:
+		params := make([]vty, 0, len(t.Params))
+		for _, p := range t.Params {
+			v, ok := vtyOf(p)
+			if !ok {
+				return vVoid, false
+			}
+			params = append(params, v)
+		}
+		ret, ok := vtyOf(t.Elem)
+		if !ok {
+			return vVoid, false
+		}
+		return vFuncOf(params, ret), true
 
 	case KResult:
 		inner, ok := vtyOf(t.Elem)
@@ -411,6 +475,12 @@ const (
 	//
 	// Appended, not inserted: opNames is positional.
 	OpSlotAddr
+
+	// Dst = A(Args...), where A is a function value. The code address
+	// and the environment both come out of the object A points at, so
+	// unlike OpCall there is no symbol: what runs is not known until the
+	// value is in hand.
+	OpCallClosure
 )
 
 var opNames = [...]string{
@@ -428,6 +498,7 @@ var opNames = [...]string{
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
 	"mustfail", "globaladdr", "stackptr", "symaddr", "slotaddr",
+	"callclosure",
 }
 
 func (o Op) String() string {
@@ -489,6 +560,13 @@ type Func struct {
 	// the prologue rather than pushed per call, which is what keeps rsp
 	// 16-byte aligned without any per-call arithmetic.
 	MaxCallArgs int
+
+	// Env marks a lifted function literal. Its environment arrives in a
+	// register rather than as an argument, and the prologue writes that
+	// register into slot zero before anything can clobber it. A plain
+	// declared function has this false and ignores the register, which
+	// is what lets one be used as a function value with no wrapper.
+	Env bool
 }
 
 // A Module is the whole program: its functions and its string pool.
@@ -552,8 +630,26 @@ type lowerer struct {
 	// Scopes, innermost last. A block introduces one, so an inner name
 	// can shadow an outer one and stops existing at the closing brace.
 	scopes []map[string]int64
-	slotTy map[int64]vty
-	regTy  map[Reg]vty
+
+	// boxed marks the slots that hold a one-word heap cell rather than
+	// the value itself, because some closure captures the variable. See
+	// closure.go.
+	boxed map[int64]bool
+
+	// captures maps a captured name to its index in the environment,
+	// while a lifted function literal is being lowered, and captureTy to
+	// what its cell holds.
+	captures  map[string]int
+	captureTy map[string]vty
+
+	nClosures int
+
+	// boxNames is the set of this function's own names that some literal
+	// inside it captures, worked out before the body is lowered because
+	// the decision has to be made where the name is declared.
+	boxNames map[string]bool
+	slotTy   map[int64]vty
+	regTy    map[Reg]vty
 
 	loops []loopTarget
 	sigs  map[string]sig
@@ -679,6 +775,12 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// main last, so it reads as the entry point at the bottom of the
 	// listing the way it does in the source.
 	l.fn = &Func{Name: "main", Ret: vVoid}
+	l.slotTy = map[int64]vty{}
+	l.regTy = map[Reg]vty{}
+	l.boxed = map[int64]bool{}
+	l.captures = nil
+	l.captureTy = nil
+	l.boxNames = capturedInStmts(p.Main)
 	l.pushScope()
 	// The globals' values are computed here, at the top of main, and
 	// written into static storage. Every user function is reached from
@@ -750,18 +852,27 @@ func (l *lowerer) function(fd *FnDecl) {
 	l.fn = &Func{Name: name, NParams: len(fd.Params), ParamTypes: s.params, Ret: s.ret}
 	l.slotTy = map[int64]vty{}
 	l.regTy = map[Reg]vty{}
+	l.boxed = map[int64]bool{}
+	l.captures = nil
+	l.boxNames = capturedIn(fd)
 	l.pushScope()
 
 	// Parameters arrive in registers and are immediately written to
 	// slots, like every other value. The allocator will hoist the ones
 	// worth keeping in registers; doing it here would be guessing.
 	for i, pa := range fd.Params {
-		slot := l.declare(pa.Name, s.params[i])
+		// The parameter is read into a slot before anything else,
+		// because boxing allocates and an allocation is a call - and a
+		// call clobbers the very registers the arguments arrived in.
+		// Getting this backwards does not fail: it reads whatever malloc
+		// left behind, so a captured parameter comes out as a plausible
+		// wrong number.
 		d := l.newReg()
 		l.regTy[d] = s.params[i]
 		l.emit(Instr{Op: OpParam, Dst: d, A: NoReg, B: NoReg, Imm: int64(i),
 			Comment: pa.Name})
-		l.emit(Instr{Op: OpStore, A: d, Dst: NoReg, Imm: slot})
+		slot := l.declareMaybeBoxed(pa.Name, s.params[i], l.boxNames[pa.Name])
+		l.storeLocal(slot, d)
 	}
 
 	for _, st := range fd.Body.Stmts {
@@ -769,16 +880,23 @@ func (l *lowerer) function(fd *FnDecl) {
 	}
 	l.popScope()
 
-	// A function that runs off the end returns zero. The Go backend's
-	// return-path checking would have rejected that already for a
-	// non-void function, and this backend does not have it yet, so the
-	// safe thing is a defined value rather than whatever happens to be
-	// in rax or xmm0. The zero has to be the right kind of zero: a float
-	// return reads xmm0, so an int OpConst left there would be garbage.
-	switch s.ret.k {
-	case kVoid:
+	l.endFunction(s.ret)
+	l.mod.Funcs = append(l.mod.Funcs, l.fn)
+}
+
+// endFunction closes a function off with the fallthrough return.
+//
+// A function that runs off the end returns zero. The Go backend's
+// return-path checking would have rejected that already for a non-void
+// function, and this backend does not have it yet, so the safe thing is
+// a defined value rather than whatever happens to be in rax or xmm0. The
+// zero has to be the right kind of zero: a float return reads xmm0, so
+// an int OpConst left there would be garbage.
+func (l *lowerer) endFunction(ret vty) {
+	switch {
+	case ret.k == kVoid && !ret.res && !ret.null:
 		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
-	case kFloat:
+	case ret.k == kFloat && !ret.res && !ret.null:
 		z := l.newReg()
 		l.regTy[z] = vFloat
 		l.emit(Instr{Op: OpFConst, Dst: z, A: NoReg, B: NoReg, Imm: l.mod.internFloat(0)})
@@ -789,8 +907,55 @@ func (l *lowerer) function(fd *FnDecl) {
 		l.emit(Instr{Op: OpConst, Dst: z, A: NoReg, B: NoReg, Imm: 0})
 		l.emit(Instr{Op: OpRet, A: z, Dst: NoReg})
 	}
+}
 
-	l.mod.Funcs = append(l.mod.Funcs, l.fn)
+// declareMaybeBoxed declares a local, in a heap cell when some closure
+// captures it. The slot then holds the cell rather than the value, and
+// every read and write of the name goes through loadLocal and
+// storeLocal, which know the difference.
+func (l *lowerer) declareMaybeBoxed(name string, t vty, box bool) int64 {
+	slot := l.declare(name, t)
+	if box {
+		if l.boxed == nil {
+			l.boxed = map[int64]bool{}
+		}
+		l.boxed[slot] = true
+		cell := l.newBox(t)
+		l.emit(Instr{Op: OpStore, A: cell, Dst: NoReg, Imm: slot,
+			Comment: "box " + name})
+	}
+	return slot
+}
+
+// storeLocal writes a value to a declared slot, through the box when
+// there is one.
+func (l *lowerer) storeLocal(slot int64, v Reg) {
+	if l.boxed[slot] {
+		cell := l.newReg()
+		l.regTy[cell] = vInt
+		l.emit(Instr{Op: OpLoad, Dst: cell, A: NoReg, B: NoReg, Imm: slot})
+		l.emit(Instr{Op: OpStoreMem, A: cell, B: v, Dst: NoReg, Imm: 0})
+		return
+	}
+	l.emit(Instr{Op: OpStore, A: v, Dst: NoReg, Imm: slot})
+}
+
+// loadLocal reads a declared slot, through the box when there is one.
+func (l *lowerer) loadLocal(slot int64) Reg {
+	t := l.slotTy[slot]
+	if l.boxed[slot] {
+		cell := l.newReg()
+		l.regTy[cell] = vInt
+		l.emit(Instr{Op: OpLoad, Dst: cell, A: NoReg, B: NoReg, Imm: slot})
+		d := l.newReg()
+		l.regTy[d] = t
+		l.emit(Instr{Op: OpLoadMem, Dst: d, A: cell, B: NoReg, Imm: 0})
+		return d
+	}
+	d := l.newReg()
+	l.regTy[d] = t
+	l.emit(Instr{Op: OpLoad, Dst: d, A: NoReg, B: NoReg, Imm: slot})
+	return d
 }
 
 // ---- scopes ----
@@ -955,9 +1120,8 @@ func (l *lowerer) stmt(s Stmt) {
 			}
 			t = declared
 		}
-		slot := l.declare(st.Name, t)
-		l.emit(Instr{Op: OpStore, A: v, Dst: NoReg, Imm: slot,
-			Comment: "let " + st.Name})
+		slot := l.declareMaybeBoxed(st.Name, t, l.boxNames[st.Name])
+		l.storeLocal(slot, v)
 
 	case *AssignStmt:
 		l.assign(st)
@@ -1136,6 +1300,9 @@ func (l *lowerer) assign(st *AssignStmt) {
 		l.errorAt(st, "the assembly backend can only assign to a plain name, a field or an index")
 		return
 	}
+	if l.assignCaptured(st, id) {
+		return
+	}
 	slot, known := l.lookup(id.Name)
 	if !known {
 		l.errorAt(st, "undefined variable %q", id.Name)
@@ -1155,19 +1322,14 @@ func (l *lowerer) assign(st *AssignStmt) {
 	// counted upwards run forever - a miscompile that produces no output
 	// rather than wrong output, so nothing catches it except a deadline.
 	if st.Op != ASSIGN {
-		cur := l.newReg()
-		l.regTy[cur] = target
-		l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: slot,
-			Comment: id.Name})
 		var applied bool
-		v, applied = l.compound(st, st.Op, target, cur, v)
+		v, applied = l.compound(st, st.Op, target, l.loadLocal(slot), v)
 		if !applied {
 			return
 		}
 	}
 
-	l.emit(Instr{Op: OpStore, A: v, Dst: NoReg, Imm: slot,
-		Comment: id.Name + " " + st.Op.String()})
+	l.storeLocal(slot, v)
 }
 
 // compound applies the operator behind a compound assignment, given the
@@ -1384,6 +1546,14 @@ func (l *lowerer) call(c *Call) Reg {
 		if recv, isMethod := l.methodCall(fld); isMethod {
 			return l.callMethod(c, fld, recv)
 		}
+	}
+
+	// A call through a function value. The checker marks these, which is
+	// what tells `f(3)` where f is a local apart from `double(3)` where
+	// double is declared - the two look identical here otherwise, and
+	// the second must stay a direct call.
+	if c.ViaValue {
+		return l.callValue(c)
 	}
 
 	name, ok := DottedName(c.Callee)
@@ -1683,6 +1853,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.hofBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.resultBuiltin(c, name); handled {
 		return r
 	}
@@ -1974,8 +2148,20 @@ func (l *lowerer) expr(e Expr) Reg {
 		return l.junk()
 
 	case *Ident:
+		// A captured name is not in any scope here: it lives in the
+		// environment this lifted function was called with.
+		if d, ok := l.capturedRead(x); ok {
+			return d
+		}
 		slot, ok := l.lookup(x.Name)
 		if !ok {
+			// A declared function used as a value. It becomes a closure
+			// with nothing captured, pointing at the function's own
+			// code, which is why a plain function needs no wrapper.
+			if d, t, isFn := l.namedFuncValue(x.Name); isFn {
+				l.regTy[d] = t
+				return d
+			}
 			if g, isGlobal := l.globals[x.Name]; isGlobal {
 				d := l.readGlobal(g)
 				if x.Narrowed && l.regTy[d].null {
@@ -1995,16 +2181,16 @@ func (l *lowerer) expr(e Expr) Reg {
 			l.errorAt(x, "undefined variable %q", x.Name)
 			return l.junk()
 		}
-		d := l.newReg()
-		l.regTy[d] = l.slotTy[slot]
-		l.emit(Instr{Op: OpLoad, Dst: d, A: NoReg, B: NoReg, Imm: slot,
-			Comment: x.Name})
+		d := l.loadLocal(slot)
 		// The checker marks a use it has proved non-nil, and only those,
 		// so unboxing here needs no check of its own.
 		if x.Narrowed && l.regTy[d].null {
 			return l.nullValue(d, l.regTy[d])
 		}
 		return d
+
+	case *FuncLit:
+		return l.funcLit(x)
 
 	case *Call:
 		return l.call(x)

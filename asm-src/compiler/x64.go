@@ -362,6 +362,14 @@ func (e *Emitter) function(f *Func) {
 	e.line("mov rbp, rsp")
 	e.reserve(e.frameSize())
 
+	if f.Env {
+		// The environment arrived in r10, which anything at all may
+		// clobber. Slot zero is reserved for it and nothing else, so
+		// this is the first instruction of the body.
+		e.comment("the captured environment")
+		e.line("mov %s, r10", e.slotAddr(0))
+	}
+
 	if f.Name == "main" {
 		// Put stdout in binary mode. The C runtime otherwise translates
 		// every \n into \r\n on the way out, so the same program printed
@@ -628,6 +636,9 @@ func (e *Emitter) instr(in Instr) {
 	case OpCall:
 		e.call(in)
 
+	case OpCallClosure:
+		e.callClosure(in)
+
 	case OpRet:
 		switch {
 		case in.A != NoReg && e.f.Ret.k == kFloat:
@@ -824,16 +835,53 @@ func (e *Emitter) call(in Instr) {
 	} else {
 		e.line("call __vy_%s", in.Sym)
 	}
-	if in.Dst != NoReg {
-		if in.Ret32 {
-			e.line("movsxd rax, eax")
-		}
-		if in.RetType.k == kFloat {
-			e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+	e.callResult(in)
+}
+
+func (e *Emitter) callResult(in Instr) {
+	if in.Dst == NoReg {
+		return
+	}
+	if in.Ret32 {
+		e.line("movsxd rax, eax")
+	}
+	if in.RetType.k == kFloat {
+		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+	} else {
+		e.line("mov %s, rax", e.regAddr(in.Dst))
+	}
+}
+
+// callClosure calls through a function value.
+//
+// The environment travels in r10 and the code address in r11. Both are
+// volatile and neither is an argument register, which is what lets them
+// be loaded before the arguments without the argument loads walking over
+// them - and the arguments have to be loaded last, because they are what
+// the callee actually reads.
+//
+// r10 is the whole reason a declared function can be a function value
+// with no wrapper: a lifted literal reads it in its prologue, and a
+// plain function ignores it.
+func (e *Emitter) callClosure(in Instr) {
+	e.comment("closure: environment then code, before the arguments")
+	e.line("mov rax, %s", e.regAddr(in.A))
+	e.line("mov r10, qword ptr [rax+%d]", cloEnvOff)
+	e.line("mov r11, qword ptr [rax+%d]", cloCodeOff)
+
+	for i := len(in.Args) - 1; i >= 4; i-- {
+		e.line("mov rax, %s", e.regAddr(in.Args[i]))
+		e.line("mov qword ptr [rsp+%d], rax", i*8)
+	}
+	for i := 0; i < len(in.Args) && i < 4; i++ {
+		if in.ArgTypes[i].k == kFloat {
+			e.line("movsd %s, %s", xmmArgs[i], e.regAddr(in.Args[i]))
 		} else {
-			e.line("mov %s, rax", e.regAddr(in.Dst))
+			e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
 		}
 	}
+	e.line("call r11")
+	e.callResult(in)
 }
 
 // helpers writes the small runtime this backend needs, in assembly, and
