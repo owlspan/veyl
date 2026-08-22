@@ -45,6 +45,14 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 			if sig.params[i].k == kFloat && l.regTy[v].k == kInt {
 				v = l.toFloat(v)
 			}
+			// A list of ints where a list of floats is wanted. stats is
+			// the only caller, and the Go backend widens the same way
+			// before it calls - so stats.mean of an int list is the mean
+			// of the floats, not integer arithmetic.
+			if sig.params[i].k == kList && sig.params[i].elemKind() == kFloat &&
+				l.regTy[v].k == kList && l.regTy[v].elemKind() == kInt {
+				v = l.widenIntList(v)
+			}
 			args[i] = v
 		}
 		if len(args) > l.fn.MaxCallArgs {
@@ -168,6 +176,36 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 	}
 
 	return NoReg, false
+}
+
+// widenIntList copies a list of ints into a fresh list of floats.
+//
+// A copy, not a reinterpretation: the two have the same shape in memory
+// and completely different contents, since an int slot holds the number
+// and a float slot holds its IEEE bits. Reading one as the other is the
+// kind of mistake that produces enormous nonsense rather than an error.
+func (l *lowerer) widenIntList(src Reg) Reg {
+	out := l.newList(vty{k: kList, el: &vty{k: kFloat}}, 0)
+	n := l.field(src, listLenOff, vInt)
+
+	i := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: i})
+
+	top := l.newLabel()
+	done := l.newLabel()
+	l.mark(top)
+
+	cur := l.newReg()
+	l.regTy[cur] = vInt
+	l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: i})
+	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpLt, cur, n), Dst: NoReg, Imm: done})
+
+	l.listPush(out, l.toFloat(l.listGet(src, cur, vInt)))
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, cur, l.constant(1)), Dst: NoReg, Imm: i})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+
+	l.mark(done)
+	return out
 }
 
 // intConst is an integer literal as a register.
