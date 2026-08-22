@@ -139,10 +139,20 @@ var preludeOf = map[string]string{
 	"hash.sha256":      "__vy_hashSha256",
 	"hash.sha1":        "__vy_hashSha1",
 	"hash.md5":         "__vy_hashMd5",
-	"floor":            "__vy_floor",
-	"ceil":             "__vy_ceil",
-	"round":            "__vy_round",
-	"trunc":            "__vy_trunc",
+
+	"re.matches": "__vy_reMatches",
+	"re.find":    "__vy_reFind",
+	"re.findAll": "__vy_reFindAll",
+	"re.groups":  "__vy_reGroups",
+	"re.split":   "__vy_reSplit",
+	"re.count":   "__vy_reCount",
+	"re.replace": "__vy_reReplace",
+	"re.valid":   "__vy_reValid",
+	"re.escape":  "__vy_reEscape",
+	"floor":      "__vy_floor",
+	"ceil":       "__vy_ceil",
+	"round":      "__vy_round",
+	"trunc":      "__vy_trunc",
 }
 
 // preludeAlso is for a builtin the lowerer implements itself but which
@@ -358,4 +368,5 @@ var preludeSource = strings.Join([]string{
 	preludeBytes,
 	preludeBytesWrap,
 	preludeHash,
+	preludeRe,
 }, "\n")

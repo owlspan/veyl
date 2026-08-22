@@ -30,6 +30,23 @@ func (l *lowerer) miscBuiltin(c *Call, name string) (Reg, bool) {
 		l.storeByte(buf, l.constant(1), l.constant(0))
 		return buf, true
 
+	case "__strAt":
+		if len(c.Args) != 2 {
+			l.errorAt(c, "__strAt takes 2 arguments, got %d", len(c.Args))
+			return l.junk(), true
+		}
+		// The byte at an index of a str, as a number. charAt gives a
+		// one-character string, which is no use for comparing codes.
+		sv := l.expr(c.Args[0])
+		if l.regTy[sv].k != kStr {
+			l.errorAt(c.Args[0], "__strAt expects a str")
+			return l.junk(), true
+		}
+		d := l.newReg()
+		l.regTy[d] = vInt
+		l.emit(Instr{Op: OpLoadByte, Dst: d, A: sv, B: l.expr(c.Args[1])})
+		return d, true
+
 	case "__isatty":
 		if len(c.Args) != 0 {
 			l.errorAt(c, "__isatty takes no arguments")
