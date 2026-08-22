@@ -58,10 +58,21 @@ var preludeOf = map[string]string{
 	"pow":   "__vy_pow",
 	"cbrt":  "__vy_cbrt",
 	"hypot": "__vy_hypot",
-	"floor": "__vy_floor",
-	"ceil":  "__vy_ceil",
-	"round": "__vy_round",
-	"trunc": "__vy_trunc",
+
+	"time.format":  "__vy_timeFormat",
+	"time.parse":   "__vy_timeParse",
+	"time.date":    "__vy_timeDate",
+	"time.clock":   "__vy_timeClock",
+	"time.stamp":   "__vy_timeStamp",
+	"time.year":    "__vy_timeYear",
+	"time.month":   "__vy_timeMonth",
+	"time.day":     "__vy_timeDay",
+	"time.weekday": "__vy_timeWeekday",
+	"time.since":   "__vy_timeSince",
+	"floor":        "__vy_floor",
+	"ceil":         "__vy_ceil",
+	"round":        "__vy_round",
+	"trunc":        "__vy_trunc",
 }
 
 var (
@@ -232,4 +243,6 @@ var preludeSource = strings.Join([]string{
 	preludePow,
 	preludeRoot,
 	preludeRound,
+	preludeTime,
+	preludeTimeHelpers,
 }, "\n")

@@ -111,7 +111,27 @@ var sigs = map[string]front.Signature{
 	// hash, csv, net, http and task is absent, and absent here means a
 	// type error naming the function rather than something the lowerer
 	// discovers later.
-	"time.now":   {Ret: Int},
+	"time.now":     {Ret: Int},
+	"time.millis":  {Ret: Int},
+	"time.nanos":   {Ret: Int},
+	"time.format":  {Params: []*Type{Int, Str}, Ret: Str},
+	"time.parse":   {Params: []*Type{Str, Str}, Ret: Int},
+	"time.date":    {Ret: Str},
+	"time.clock":   {Ret: Str},
+	"time.stamp":   {Ret: Str},
+	"time.year":    {Ret: Int},
+	"time.month":   {Ret: Int},
+	"time.day":     {Ret: Int},
+	"time.weekday": {Ret: Str},
+	"time.since":   {Params: []*Type{Int}, Ret: Int},
+	"time.sleep":   {Params: []*Type{Int}, Ret: Void},
+
+	// Private to the prelude: the three questions only the operating
+	// system answers. See timelib.go.
+	"__tmField": {Params: []*Type{Int, Int}, Ret: Int},
+	"__mktime":  {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Int},
+	"__millis":  {Ret: Int},
+
 	"os.env.get": {Params: []*Type{Str}, Ret: Str},
 	"os.env.has": {Params: []*Type{Str}, Ret: Bool},
 	"os.env.set": {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
