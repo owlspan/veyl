@@ -59,7 +59,13 @@ func asmBackend(t *testing.T) string {
 // failing, and a hang tells you nothing about which program broke.
 func runBounded(t *testing.T, backend, src string) ([]byte, error) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Generous, and it has to be. The deadline is here to turn a
+	// miscompiled loop into a failure rather than a hang, and thirty
+	// seconds looked like plenty until a machine where `go build` of
+	// hello-world takes twenty on its own - every one of these shells
+	// out to the Go toolchain, twenty-seven of them at once. Two minutes
+	// still catches a loop that never ends.
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, backend, "run", src).CombinedOutput()

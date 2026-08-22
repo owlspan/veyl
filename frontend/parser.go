@@ -791,13 +791,28 @@ func (p *Parser) parsePostfix() Expr {
 	}
 }
 
+// isFloatLexeme decides whether a NUMBER token is a float.
+//
+// A dot is the obvious mark. An exponent is the other one: 1e9 is a
+// float with no dot in it, and 6.02e23 has both. The check for e is
+// guarded by the base, because 0xE is a hex digit and 0b1 has no
+// exponent form at all - without that, every hex literal containing an
+// E would become a float.
+func isFloatLexeme(lex string) bool {
+	if strings.HasPrefix(lex, "0x") || strings.HasPrefix(lex, "0X") ||
+		strings.HasPrefix(lex, "0b") || strings.HasPrefix(lex, "0B") {
+		return false
+	}
+	return strings.ContainsAny(lex, ".eE")
+}
+
 func (p *Parser) parsePrimary() Expr {
 	t := p.cur()
 
 	switch t.Kind {
 	case NUMBER:
 		p.advance()
-		if strings.Contains(t.Lex, ".") {
+		if isFloatLexeme(t.Lex) {
 			return &FloatLit{Span: at(t), Val: t.Lex}
 		}
 		return &IntLit{Span: at(t), Val: t.Lex}

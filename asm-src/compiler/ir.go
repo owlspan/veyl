@@ -399,6 +399,18 @@ const (
 	// Dst = rsp. The collector needs somewhere to start reading the
 	// stack from, and the stack is where every live pointer is.
 	OpStackPtr
+
+	// Dst = the address of the .rdata label Sym. Only the format strings
+	// the float printer uses need this; everything else that names a
+	// static address is a string constant and goes through OpStr.
+	OpSymAddr
+
+	// Dst = the address of frame slot Imm. A C function with an
+	// out-parameter - frexp is the first - needs somewhere to be told to
+	// write, and a virtual register is not a place until it is a slot.
+	//
+	// Appended, not inserted: opNames is positional.
+	OpSlotAddr
 )
 
 var opNames = [...]string{
@@ -415,7 +427,7 @@ var opNames = [...]string{
 	"alloc", "indexaddr", "loadmem", "storemem",
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
-	"mustfail", "globaladdr", "stackptr",
+	"mustfail", "globaladdr", "stackptr", "symaddr", "slotaddr",
 }
 
 func (o Op) String() string {
@@ -1596,15 +1608,6 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	case "abs", "min", "max":
 		return l.numMath(c, name)
 
-	case "floor", "ceil", "round", "trunc":
-		// Straight to libm. C's round is half away from zero, which is
-		// what math.Round does, so the two backends agree on 2.5.
-		if !arity(1) {
-			return l.junk()
-		}
-		return l.ccall(name, []Reg{l.numeric(c.Args[0])}, []vty{vFloat},
-			vFloat, false, false)
-
 	case "int":
 		if !arity(1) {
 			return l.junk()
@@ -1658,6 +1661,14 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		l.regTy[d] = vFloat
 		l.emit(Instr{Op: OpFMod, Dst: d, A: a, B: b})
 		return d
+	}
+
+	if r, handled := l.mathBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.fmtBuiltin(c, name); handled {
+		return r
 	}
 
 	if r, handled := l.resultBuiltin(c, name); handled {
