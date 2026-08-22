@@ -33,9 +33,19 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(len(sig.params)) {
 			return l.junk(), true
 		}
+		// Lowered against the prelude function's own parameter types,
+		// the same way an ordinary user call is. Promoting everything to
+		// float is right for sin and wrong for time.format, and getting
+		// that wrong hands a string to a function expecting one and a
+		// float to a function expecting an int, which does not fail - it
+		// runs and reads the wrong memory.
 		args := make([]Reg, len(c.Args))
 		for i := range c.Args {
-			args[i] = l.numeric(c.Args[i])
+			v := l.rvalueAs(c.Args[i], sig.params[i])
+			if sig.params[i].k == kFloat && l.regTy[v].k == kInt {
+				v = l.toFloat(v)
+			}
+			args[i] = v
 		}
 		if len(args) > l.fn.MaxCallArgs {
 			l.fn.MaxCallArgs = len(args)

@@ -1671,6 +1671,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.timeBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.resultBuiltin(c, name); handled {
 		return r
 	}
