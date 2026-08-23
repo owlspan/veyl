@@ -41,7 +41,14 @@ import (
 const modulesDir = "veyl_modules"
 
 // officialBase is where a bare name comes from.
-const officialBase = "https://raw.githubusercontent.com/owlspan/veyl/veyl/packages/"
+//
+// Its own repository rather than a directory in the compiler's, so the
+// registry can be public while the compiler is not, and so a package
+// can be added without touching the compiler at all.
+//
+// HEAD rather than a branch name, so this keeps working whatever the
+// registry calls its default branch.
+const officialBase = "https://raw.githubusercontent.com/owlspan/veyl-packages/HEAD/"
 
 // manifestName lists the files a package is made of. A package without
 // one is a single .vl file named after the package.
