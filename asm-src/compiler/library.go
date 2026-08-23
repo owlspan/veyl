@@ -244,6 +244,9 @@ var sigs = map[string]front.Signature{
 	// here: the checker resolves the name against what was folded in and
 	// reports an undeclared struct if it was not.
 	"http.get":      {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"http.post":     {Params: []*Type{Str, Str}, Ret: ResultOf(Str)},
+	"http.download": {Params: []*Type{Str, Str}, Ret: ResultOf(Void)},
+	"__winhttp":     {Params: []*Type{Str, Int, Str, Bool, Str, Str}, Ret: ResultOf(Str)},
 	"http.ok":       {Params: []*Type{Str}, Ret: StructOf("Response")},
 	"http.text":     {Params: []*Type{Str}, Ret: StructOf("Response")},
 	"http.json":     {Params: []*Type{Str}, Ret: StructOf("Response")},

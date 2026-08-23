@@ -156,6 +156,16 @@ func (l *lowerer) netBuiltin(c *Call, name string) (Reg, bool) {
 			return l.junk(), true
 		}
 		return l.netConnect(l.expr(c.Args[0]), l.expr(c.Args[1])), true
+
+	case "__winhttp":
+		if !arity(6) {
+			return l.junk(), true
+		}
+		a := make([]Reg, 6)
+		for i := range a {
+			a[i] = l.expr(c.Args[i])
+		}
+		return l.winhttpFetch(a), true
 	}
 	return NoReg, false
 }
