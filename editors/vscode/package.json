@@ -1,0 +1,49 @@
+{
+  "name": "veyl-lang",
+  "displayName": "Veyl",
+  "description": "Syntax highlighting for the Veyl programming language",
+  "version": "0.18.0",
+  "publisher": "veyl",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.72.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "veyl",
+        "aliases": [
+          "Veyl",
+          "veyl"
+        ],
+        "extensions": [
+          ".vl"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/veyl.png",
+          "dark": "./icons/veyl.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "veyl",
+        "scopeName": "source.veyl",
+        "path": "./syntaxes/veyl.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[veyl]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true
+      }
+    }
+  },
+  "icon": "icons/veyl.png"
+}
