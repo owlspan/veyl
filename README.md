@@ -270,7 +270,8 @@ No imports, ever. The dots only group names.
 
 And under a namespace: `os` for files and processes, `http`, `net`,
 `json`, `time`, `re` for regular expressions, `hash`, `csv`, `bytes`,
-`rand`, `stats`, `term`, `bits`, `url`, `args`, `mem`, and `task`.
+`rand`, `stats`, `term`, `bits`, `url`, `args`, `mem`, `task`, and
+`win` for windows and drawing.
 
 ```veyl
 let rows = must(csv.read("sales.csv"))
@@ -311,10 +312,52 @@ keep-alive, no chunked transfer, no TLS, and `http.get` refuses an
 `https` URL rather than pretending. Concurrency would come from running
 the accept loop through `task`.
 
-Not here yet: `zip`, `win` for the Windows GUI, and a handful of small
-builtins the old backend has - `input`, `pause`, `padLeft`, `padRight`,
-`toFloat`, `isFloat` and `count`. They all exist on
-[`veylgo`](../../tree/veylgo) and are the next things to port.
+### Windows and games
+
+`win` opens a real window you can draw in, with a game loop rather than
+the old backend's blocking call that drew nothing:
+
+```veyl
+let w = must(win.open("pong", 800, 500))
+while win.poll(w) {
+    if win.pressed(w, "esc") { break }
+    if win.pressed(w, "up") { py = py - 7.0 }
+
+    win.clear(w, win.rgb(18, 20, 28))
+    win.rect(w, 18, int(py), 12, 90, win.rgb(120, 200, 140))
+    win.circle(w, int(bx), int(by), 8, win.rgb(235, 238, 245))
+    win.text(w, 20, 20, "score {score}", win.rgb(235, 238, 245))
+    win.present(w)
+    sleep(16)
+}
+```
+
+![pong](asm-src/examples/gui/pong.png)
+
+Drawing is `clear`, `rect`, `circle`, `line` and `text`, into a back
+buffer that `present` blits in one go, so nothing flickers. Input is
+`pressed(w, "space")` by key name, `mouseX`, `mouseY`, `mouseDown` and
+`clicked`, the last edge-triggered so a click fires once.
+
+On top of those, written in Veyl, is an immediate-mode widget set:
+`button`, `bar`, `frame` and `hover`. There is no widget tree and
+nothing to keep in sync - a button draws itself and returns whether it
+was clicked in the same call.
+
+![widgets](asm-src/examples/gui/widgets.png)
+
+Both examples are in
+[`asm-src/examples/gui/`](asm-src/examples/gui/pong.vl).
+
+There is no custom window procedure anywhere in this. The class uses
+`DefWindowProcA`, everything is read out of the message queue in
+`win.poll`, and a closed window is noticed with `IsWindow`. The old
+backend needed a `syscall.NewCallback` for that and had a fixed pool of
+them to run out of.
+
+Not here yet: `zip`, and a handful of small builtins the old backend
+has - `input`, `pause`, `padLeft`, `padRight`, `toFloat`, `isFloat` and
+`count`. They exist on [`veylgo`](../../tree/veylgo).
 
 Anything missing is a compile error naming it, never wrong output. That
 is the rule the whole subset rests on: `library.go` is the list, and a
@@ -484,7 +527,7 @@ cd ../veylgo/src && go build -o veyl.exe ./compiler
 | v0.17 | namespaced imports, `bytes`, an interactive console |
 | v0.17.02 | four editors, an Explorer menu, the Veyl rename |
 | **v0.18** | **the native compiler: no Go, no assembler, no linker** |
-| next | `zip`, `win`; a register allocator; keep-alive; generics |
+| next | `zip`; a register allocator; keep-alive; sound; generics |
 
 v0.18 is where the Go backend stopped being how Veyl compiles. It took
 an object header, maps, the error type, structs, a foreign-call op,
@@ -518,8 +561,8 @@ An honest list.
   collector; `mem.collect()` is the only thing that runs it. A program
   that allocates in an unbounded loop will exhaust memory. See
   `saferun.ps1` above.
-- **No `zip` or `win`.** They exist on
-  [`veylgo`](../../tree/veylgo) and have not been ported. Calling one
+- **No `zip`.** It exists on
+  [`veylgo`](../../tree/veylgo) and has not been ported. Calling it
   is a compile error naming it.
 - **The server handles one request at a time**, with `Connection:
   close`. No keep-alive, no chunked transfer, and no TLS anywhere, so

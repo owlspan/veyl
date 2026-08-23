@@ -60,6 +60,12 @@ var importOverride = func() map[string]string {
 	for _, s := range winsockSyms {
 		m[s] = "ws2_32.dll"
 	}
+	for _, s := range user32Syms {
+		m[s] = "user32.dll"
+	}
+	for _, s := range gdi32Syms {
+		m[s] = "gdi32.dll"
+	}
 	return m
 }()
 
