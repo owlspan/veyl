@@ -1,5 +1,0 @@
-warning: warnings.vl:6:5: this can never run - the 'return' above it always leaves
-warning: warnings.vl:12:9: this can never run - the 'break' above it always leaves
-warning: warnings.vl:17:1: "leftover" is declared but never used
-earlyOut 7
-still running

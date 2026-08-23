@@ -37,7 +37,7 @@ OutputBaseFilename=veylasm-{#AppVersion}-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=..\..\src\icons\veyl.ico
+SetupIconFile=..\..\icons\veyl.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 AppSupportURL=https://github.com/owlspan/veyl
 AppUpdatesURL=https://github.com/owlspan/veyl/releases
@@ -69,7 +69,7 @@ Name: "desktopicon"; Description: "Put that shortcut on the Desktop too"; \
 
 [Files]
 Source: "..\veylasm.exe";           DestDir: "{app}"; Components: core; Flags: ignoreversion
-Source: "..\..\src\icons\veyl.ico"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "..\..\icons\veyl.ico";     DestDir: "{app}"; Components: core; Flags: ignoreversion
 Source: "..\README.md";             DestDir: "{app}"; Components: core; Flags: ignoreversion
 
 Source: "..\..\docs\SYNTAX.md";   DestDir: "{app}"; Components: docs; Flags: ignoreversion

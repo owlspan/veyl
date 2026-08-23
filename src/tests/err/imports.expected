@@ -1,6 +1,0 @@
-error: loop_b.vl:1:1: import cycle: loop_a.vl imports itself, directly or indirectly
-error: imports.vl:2:1: cannot find "no_such_module.vl" next to imports.vl
-error: imports.vl:5:1: an import must name a .vl file, got "notes.txt"
-error: runs_things.vl:8:1: an imported file can only declare things - move this statement into the program that imports it
-error: runs_things.vl:9:1: an imported file can only declare things - move this statement into the program that imports it
-veyl: 5 error(s)

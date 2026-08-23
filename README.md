@@ -375,12 +375,15 @@ The three modules are separate, so there is no single command that
 covers everything.
 
 There are no expected-output files here. Every example is compiled by
-both this compiler and the reference one in `src/`, and the output is
-compared byte for byte. If they disagree, this one is wrong. A second
-test asserts that anything outside the supported set is a *compile
-error* rather than wrong output, because a compiler that quietly
-mis-compiles what it does not understand is worse than one that
-refuses.
+both this compiler and the reference one on
+[`veylgo`](../../tree/veylgo), and the output is compared byte for
+byte. If they disagree, this one is wrong. A second test asserts that
+anything outside the supported set is a *compile error* rather than
+wrong output, because a compiler that quietly mis-compiles what it does
+not understand is worse than one that refuses.
+
+The differential half skips unless the reference is built. It is looked
+for at `../veylgo/src/veyl.exe`, or wherever `VEYL_REFERENCE` points.
 
 `encode_test.go` checks every instruction byte against GNU `as`, and
 `pe_test.go` checks the shape of the executable that comes out. Both
@@ -399,25 +402,27 @@ veyl/
   frontend/    lexer, parser, type checker
   asm-src/     the compiler: lowerer, emitter, assembler, linker,
                PE writer, and the library written in Veyl itself
-  src/         the old Go backend, kept as the reference the tests
-               compare against
   docs/        SYNTAX, TUTORIAL, ARCHITECTURE
+  icons/       shared branding
 ```
 
-Three Go modules wired together with `replace`. Run `go` commands from
-inside each one; there is no single command that covers all three.
-
-`src/` is here on purpose. It is discontinued as a product and lives on
-the [`veylgo`](../../tree/veylgo) branch for anyone who wants it, but
-deleting it from this branch would delete the test suite with it: the
-correctness argument for this compiler is that it agrees with that one
-byte for byte, and there is nothing to agree with if it is gone.
+Two Go modules wired together with `replace`. Run `go` commands from
+inside each one; there is no single command that covers both.
 
 Most of the library is not in Go at all. `prelude_*.go` hold Veyl
 source that this compiler compiles: the math library, time, bits, url,
 stats, term, rand, the regex engine, the hashes and csv. Adding a
 library function is a signature in `library.go`, an entry in
 `preludeOf`, and the function itself in Veyl.
+
+The old Go backend is on [`veylgo`](../../tree/veylgo). It is not a
+dependency of anything here, but the differential test compares against
+it, so building it beside this checkout is worth the two commands:
+
+```
+git worktree add ../veylgo veylgo
+cd ../veylgo/src && go build -o veyl.exe ./compiler
+```
 
 ---
 

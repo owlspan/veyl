@@ -3,11 +3,19 @@ package main
 // Differential tests: every program in examples/ is compiled by both
 // backends and the output compared byte for byte.
 //
-// This is the safety net for the whole assembly backend. There is no
-// expected-output file to maintain, because the Go backend in ../../src
-// is the definition of what Veyl means - if the two disagree, the new
-// backend is wrong, and the test says so without anyone having to
-// predict the right answer in advance.
+// This is the safety net for the whole compiler. There is no
+// expected-output file to maintain, because the old Go backend is the
+// definition of what Veyl means - if the two disagree, this one is
+// wrong, and the test says so without anyone having to predict the
+// right answer in advance.
+//
+// That backend lives on the veylgo branch now, so running this needs it
+// checked out beside this one:
+//
+//	git worktree add ../veylgo veylgo
+//	cd ../veylgo/src && go build -o veyl.exe ./compiler
+//
+// Without it the differential half skips and everything else runs.
 //
 // It earned its place immediately. The first program ever compiled here
 // printed the correct numbers with the wrong line endings, because the C
@@ -28,16 +36,33 @@ import (
 	"time"
 )
 
+// goBackend finds the reference compiler. It is on the veylgo branch,
+// so the two places worth looking are a worktree beside this checkout
+// and the old in-tree location, which is where it sits for anyone who
+// has not split their clone yet. VEYL_REFERENCE overrides both.
 func goBackend(t *testing.T) string {
 	t.Helper()
-	p, err := filepath.Abs(filepath.Join("..", "..", "src", "veyl.exe"))
-	if err != nil {
-		t.Fatal(err)
+	if p := os.Getenv("VEYL_REFERENCE"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+		t.Fatalf("VEYL_REFERENCE is set to %s but there is nothing there", p)
 	}
-	if _, err := os.Stat(p); err != nil {
-		t.Skip("the Go backend is not built; run `go build -o veyl.exe ./compiler` in ../../src")
+	for _, rel := range [][]string{
+		{"..", "..", "..", "veylgo", "src", "veyl.exe"},
+		{"..", "..", "src", "veyl.exe"},
+	} {
+		p, err := filepath.Abs(filepath.Join(rel...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
-	return p
+	t.Skip("the reference backend is not built. `git worktree add ../veylgo veylgo` " +
+		"then `cd ../veylgo/src && go build -o veyl.exe ./compiler`")
+	return ""
 }
 
 func asmBackend(t *testing.T) string {

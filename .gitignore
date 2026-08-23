@@ -23,3 +23,9 @@ Working version/
 # --code-only`, and large. It has been swept into a commit by `git add
 # -A` once already.
 /graphify-out/
+
+# The Go backend lives on the veylgo branch. Switching from it leaves
+# its untracked build output behind - dist/ holds a 177 MB staged Go
+# toolchain - and without this a `git add -A` on this branch sweeps the
+# whole thing into a commit. It has done exactly that once.
+/src/
