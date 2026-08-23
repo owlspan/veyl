@@ -1,638 +1,479 @@
-# Veyl
+# veyl - the Veyl compiler
 
-Veyl is a programming language for people who want a real executable at
-the end and do not want to fight the language to get one. You write
-something that reads like Python. You get a single `.exe` with nothing
-to install alongside it.
+Veyl compiled to x86-64, with no Go anywhere.
 
-```veyl
-fn isPrime(n: int) -> bool {
-    if n < 2 { return false }
-    for d in 2..=int(sqrt(float(n))) {
-        if n % d == 0 { return false }
-    }
-    return true
-}
+It used to work the other way. The old compiler translated Veyl to Go
+source and handed that to the Go toolchain. It produced genuinely
+native executables and it was the only thing that did for a long time.
+What it cost was a runtime, a 2.4 MB floor on binary size, a 177 MB Go
+toolchain inside the installer, and any hope of pointers or manual
+memory.
 
-for n in 2..50 {
-    if isPrime(n) { write("{n} ") }
-}
-print("")
-```
+This is how those got bought back. The old one is on the
+[`veylgo`](../../../tree/veylgo) branch, discontinued, and is the
+reference this compiler is checked against.
 
 ```
-$ veyl run primes.vl
-2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
+hello.vl  ->  [veyl]  ->  hello.exe
 ```
 
-No semicolons. No header files. No boilerplate `main`. No manual memory.
-Math, strings, files, HTTP, JSON, regular expressions and time are all
-builtins, so most programs need no imports at all.
+Nothing in that arrow is another program. veyl encodes the
+instructions, links, and writes the PE itself, so a build needs nothing
+installed.
 
-**Version 0.18.0.** Veyl compiles straight to x86-64 and writes the
-executable itself. It encodes the instructions, resolves the symbols
-and lays out the PE, so there is no assembler, no linker, no C
-toolchain and no Go in the pipeline, and none of them in what comes
-out.
+## Status
+
+Every one of the 24 programs in the Go backend's own test suite
+compiles here, and every one prints the same bytes. So does every
+program in `examples/`. The Go backend stays the definition of what
+Veyl means; where the two disagree, this one is wrong.
+
+Compiled all the way to a running `.exe` with no Go anywhere in the
+pipeline:
+
+- `int`, `float`, `bool`, `str`, and lists of any of them
+- `let`, `const`, plain and compound assignment, block scoping with
+  shadowing
+- all arithmetic on ints and floats, comparisons, `&&`, `||`, `!`, and
+  the bitwise operators including signed shifts
+- `if` / `else`, `while`, `for` over a range with `step`, `for x in xs`,
+  `break`, `continue`, `match`, nested to any depth
+- functions with any number of arguments, recursion, order-independent
+  declaration, and the full Windows x64 calling convention including
+  mixed int/float argument lists
+- string concatenation, comparison, and full `"{interpolation}"`
+- lists: literals, indexing, index assignment, `push`, `len`,
+  iteration, and bounds checks printing the Go backend's exact sentence
+- `print`, `write`, `str`, `len`, `push`, `abs`, `min`, `max`, `int`,
+  `float`, `divf`, `sqrt`, `mod`, `upper`, `lower`, `substr`, `charAt`,
+  `indexOf`, `contains`, `startsWith`, `endsWith`, `repeat`
+- the constants `PI` and `E`
+- namespaced calls at any depth: a dotted name is looked up like any
+  other, so a namespace is a naming convention rather than a scope
+- maps `{K: V}` with int or str keys: literals, get, set, `len`,
+  growth, a missing key reading the zero value, `keys`, `values`,
+  `has`, `remove`, `clear`, and `for k, v in m`
+- containers inside containers, to any depth: `[][]int`,
+  `{str: []int}`, a list of maps, a struct holding a list
+- the error type `T!`: `fail`, `ok`, `isOk`, `failed`, `errorOf`,
+  `valueOr`, `must`, postfix `?` propagation, and `void!`
+- structs: declarations, literals with zero values for omitted fields,
+  nested structs, field read and write, compound assignment on a field,
+  structs in lists and maps, value semantics, and printing
+- `impl` methods, with the receiver passed by reference so a method that
+  changes a field changes the value it was called on
+- nullable `?T`: `nil`, narrowing through `if x != nil`, in a struct
+  field, in a list, and `find(m, k)`
+- deep equality: `==` on a list, a map, a struct or a nullable compares
+  contents, generated from the static type
+- `str()` of any of those - the same renderer that prints one, with its
+  output pointed at a buffer, so the two cannot disagree
+- the list library: `first`, `last`, `pop`, `sum`, `reverse`, `sort`,
+  `slice`, `join`, `insert`, `removeAt`, `contains`, `indexOf`, and
+  `split`, `chars`, `lines` turning a string into a list
+- multi-file programs: `import "other.vl"`, with `pub`, and top-level
+  consts as real globals in static storage
+- the `os` library: `file.read`, `write`, `append`, `lines`, `exists`,
+  `size`, `delete`, `rename`, `readOr`; `dir.is`, `list`, `make`,
+  `delete`; `path.join`, `dir`, `base`, `ext`; `env.get`, `has`, `set`;
+  `run`, `pid`, `cpus`, `hostname`; and `time.now`
+
+- closures and first-class functions, captured by reference, and the
+  higher-order builtins `map`, `filter`, `reduce`, `sortBy`, `any`,
+  `all`, `each`
+- structured concurrency: `task.map`, `task.mapLimit`, `task.each` and
+  `task.all`, on real Windows threads, results in list order
+- the `bytes` type, and `hash`: md5, sha1, sha256, sha512, crc32, hex
+  and base64 both ways, and `hash.file`
+- `re`: a backtracking engine written in Veyl, matching Go's
+  leftmost-first semantics
+- `json` encode and decode, and `csv` parse, write, read and save
+- the math, time, bits, args, url, stats, term and rand libraries, all
+  written in Veyl in the prelude
+- a mark-and-sweep collector, conservative over roots
+
+- `net` TCP sockets and an `http` server and client, through WinSock
+- `win`: a window with a game loop, drawing, keyboard and mouse, and
+  immediate-mode widgets
+
+Missing against the Go backend: `zip`, and a handful of small builtins
+(`input`, `pause`, `padLeft`, `padRight`, `toFloat`, `isFloat`,
+`count`). There is also no resolver on this side, so a name that is
+neither a local, a function nor a builtin is caught by the lowerer
+rather than the checker. Everything absent is a compile error naming
+it, never wrong output.
+
+Byte-identical means error messages too, which is why the `os` library
+is written against Win32 rather than the C runtime: Go's message for a
+missing file is FormatMessage's sentence, and strerror's is a
+different one.
 
 ```
-primes.vl  ->  [veyl]  ->  primes.exe
+$ veyl run examples/floats.vl
+5.5
+-2.5
+6
+0.375
 ```
 
-That is the whole build. The same `collatz.vl` that produced a 2.4 MB
-executable through the old Go backend produces one of **2,560 bytes**
-here, and the installer is 5 MB instead of 90, because there is no
-toolchain to bundle.
+`examples/collatz.vl` is the benchmark - nested loops, 10,000 iterations
+of real integer work - through both backends:
 
-The old backend is not gone. It is on the
-[`veylgo`](../../tree/veylgo) branch, discontinued but still building,
-and it is the reference this compiler is checked against: every program
-in its test suite compiles here and prints the same bytes, error
-messages included. Where the two disagree, this one is wrong.
+The two assembly columns are the same machine code. Only the linking
+differs: the middle one goes through gcc, the last is the PE this
+compiler writes itself.
 
----
+| | via Go | asm, via gcc | asm, self-linked |
+| --- | ---: | ---: | ---: |
+| runtime, best of 5 | 67 ms | 81 ms | 81 ms |
+| executable size | 2,524,160 | 123,102 | 2,560 |
 
-## Contents
+**About 20% slower and a thousand times smaller.** The 123 KB column is
+mostly MinGW's C runtime rather than anything this compiler produced,
+which is what the last column removes.
 
-- [Install](#install)
-- [Commands](#commands)
-- [Packages](#packages)
-- [A tour of the language](#a-tour-of-the-language)
-- [How it compiles](#how-it-compiles)
-- [Building from source](#building-from-source)
-- [Project layout](#project-layout)
-- [Roadmap](#roadmap)
-- [Known limitations](#known-limitations)
+Do not read that gap as a finish line. Every value still round-trips
+through a stack slot, and Go's optimiser is doing work nothing here
+does. It will widen on bigger programs before a register allocator
+closes it.
 
-New here? [Learn Veyl in 20 minutes](docs/TUTORIAL.md).
+## What it does not have
 
-Reference: [SYNTAX.md](docs/SYNTAX.md)
-Internals: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+**Nothing collects on its own.** There is a mark-and-sweep collector,
+but `mem.collect()` is the only thing that runs it. Automatic
+collection would have to be sure no allocation site is holding a live
+pointer in a register between the allocation and the store that parks
+it, which is true of every site written so far and is a property
+nobody is currently checking.
 
----
+The practical consequence is worth stating plainly: a loop that
+allocates and never terminates will consume all of memory rather than
+being collected out of trouble. `scripts/saferun.ps1` runs a program
+under a job object memory cap for exactly that case.
 
-## Install
+**No resolver.** A name that is neither a local, a function nor a
+builtin is caught by the lowerer rather than the checker, so it is
+missed when the checker has already failed on something else. Sharing
+`resolve.go` the way `check.go` is now shared is the obvious fix.
 
-On Windows, run the installer from the
-[releases page](https://github.com/owlspan/veyl/releases). It is about
-7.5 MB, adds the compiler to PATH if you let it, sets up editor
-highlighting, and puts Run and Compile on the right-click menu for
-`.vl` files.
+**A string is NUL-terminated bytes**, with no length beside it. So a
+file holding a zero byte reads back short where the Go backend reads it
+whole, which is what the `bytes` type is for, and building a string by
+repeated appending is quadratic, which wants a growable buffer and does
+not have one yet.
 
-There is nothing else to install. No Go, no assembler, no linker, no C
-runtime. That is the point of this version, and it is why there is no
-`doctor` command any more: there is no toolchain to go looking for.
+**Printing a float rounds through msvcrt**, which stops at seventeen
+significant digits, so a value needing sixteen can round the wrong way.
+The fix is Go's `strconv/decimal.go` in the prelude.
 
-To build the installer yourself, double-click
-`asm-src\scripts\make-installer.bat`.
+**Two deliberate float gaps**, each a compile error rather than a
+wrong answer:
 
----
+- `NAN` - the comparisons lower to `comisd`, which reports an unordered
+  pair as both below and equal, so a NaN would compare wrong.
+- `INF` - this build links the legacy msvcrt, whose `printf` writes
+  `1.#INF` where Go writes `+Inf`.
+
+## Why assembly text and not machine code
+
+Assembly and machine code are one to one. Every decision that is hard -
+instruction selection, register allocation, the calling convention,
+stack frame layout - is identical either way. Everything that assembly
+text defers is mechanical: byte encoding, jump offset backpatching,
+COFF object layout, relocations, PE headers, the import table.
+
+So this did the thinking first and the typing later. The encoder, the
+linker and the PE writer came afterwards and nothing above `x64.go`
+changed when they did. That is the point of the split, and it is why
+`x64.go` is forbidden from using assembler conveniences: no macros, no
+pseudo-instructions, nothing the assembler has to evaluate. Every line
+must be one instruction whose bytes we could write ourselves, and
+`encode_test.go` checks every one of them against GNU `as`.
+
+## Layout
+
+```
+asm-src/
+  go.mod            requires ../frontend
+  compiler/
+    frontend.go     type aliases onto the shared front end
+    ir.go           AST -> three-address IR over virtual registers
+    x64.go          IR  -> x86-64, GNU as with Intel syntax
+    library.go      asmLibrary - the builtin table, for the checker
+    list.go         lists, built in the IR
+    map.go          maps, sorted key and value blocks
+    os.go           files and the environment, on Win32
+    osdir.go        directory listing, making and removing
+    result.go       the error type T!, built in the IR
+    struct.go       struct layout, copying and printing
+    strings.go      the string library, built in the IR
+    veyl.go      the driver
+    diff_test.go
+  examples/
+```
+
+The lexer, parser, AST and types live in `../frontend` and are shared
+with the Go backend, so both compile the same language from one
+definition. `frontend.go` is nothing but Go type aliases, which is what
+lets the rest of this package write `Expr` and `PLUS` unqualified.
+
+`ir.go` is the boundary. Nothing in it knows an x86 register exists.
+
+**The type checker is shared too.** What
+unblocked it was the builtin table: the two backends do not have the
+same set of builtins, so the checker could not assume either one.
+`frontend/library.go` is the interface it asks instead, and
+`library.go` here implements it as `asmLibrary`. A builtin this backend
+lacks comes back as a clean "not on the assembly backend yet" error
+rather than a checker crash.
+
+So a wrong program is now caught here, with the same message the Go
+backend would give. The remaining gap is the **resolver**, described
+above - still `src`-only.
 
 ## Commands
 
-| Command | Effect |
-| --- | --- |
-| `veyl run f.vl` | compile and run |
-| `veyl build f.vl` | write an executable next to the source |
-| `veyl asm f.vl` | print the generated assembly |
-| `veyl ir f.vl` | print the intermediate representation |
-| `veyl version` | print the version |
-| `veyl f.vl` | same as `run` |
-
-Anything after the `.vl` file goes to your program, not to Veyl, so
-`veyl run app.vl --verbose` reaches `os.args()`.
-
-`asm` and `ir` are the debugging tools. When a program does something
-strange, read what it actually compiled to. `ir` is the readable one:
-three-address code over virtual registers, before anything knows an
-x86 register exists.
-
-### Explorer
-
-Right-clicking a `.vl` file gives **Run with Veyl** and **Compile to
-.exe**, with a **Veyl** submenu underneath holding the generated
-assembly, the IR, and a prompt in that folder. Right-clicking any
-folder gives **Open Veyl prompt here**. Double-clicking a `.vl` file
-runs it.
-
-All of them go through `cmd /K`, so the console stays up long enough to
-read what it said, whether that was a path or a list of errors.
-
-### Packages
-
-Libraries that are not built in are installed per project:
-
 ```
-veyl get totp                          the official registry
-veyl get github.com/you/thing          anyone's repository
-veyl get https://example.com/x.vl      a single file
-veyl list
-veyl remove totp
+veyl f.vl          compile and run
+veyl run   f.vl    the same thing, spelled out
+veyl build f.vl    write an executable next to the source
+veyl asm   f.vl    print the generated assembly
+veyl ir    f.vl    print the intermediate representation
 ```
 
-Or all of them:
+`asm` and `ir` matter more here than `veyl emit` does on the Go
+backend. When a register allocator produces something wrong, reading
+the instruction stream is the only way to see it.
+
+## Testing
 
 ```
-veyl get officials                     every official package
-veyl get officials --nodlls            the same, minus the ones
-                                       carrying a native library
-veyl get github.com/you/registry --all any registry
+go test ./...
 ```
 
-`--nodlls` is about size. Everything official is a few kilobytes except
-`sqlite`, which is three megabytes because it carries the real library.
-A registry says what it holds in a `veyl.index` file, so `--all` works
-on anyone's, not only this one.
-
-They land in `./veyl_modules` next to your program rather than
-machine-wide, so a project carries its own dependencies and deleting
-the directory uninstalls everything. Reach one with a bare import:
-
-```veyl
-import "totp"
-print(must(totpNow(secret)))
-```
-
-The registry is [owlspan/veyl-packages](https://github.com/owlspan/veyl-packages),
-and its README covers writing your own - you do not need to be in the
-registry to publish one.
-
-A package may ship a native `.dll`, which `veyl build` copies next to
-the executable. That is how something like SQLite can be available
-without every install carrying it.
-
-**One thing to know:** an import lands in a flat namespace. There is no
-`totp.` qualifier yet, so packages prefix their exported names by
-convention - `totpNow`, not `now`.
-
-### Editors
-
-The installer sets up syntax highlighting for VS Code, Notepad++,
-Sublime Text and Vim/Neovim; the files are in
-[`editors/`](editors/). VS Code goes straight into the extensions
-folder, so there is no marketplace step.
-
----
-
-## A tour of the language
-
-### Variables
-
-```veyl
-let count = 0            // mutable, type inferred
-const limit = 10         // cannot be reassigned
-let name: str = "Veyl"   // explicit type
-
-count += 1
-```
-
-Reading an undeclared variable is an error, not an implicit declaration.
-
-### Types
-
-`int`, `float`, `str`, `bool`, `bytes` for raw binary, `[]T` lists,
-`{K: V}` maps, `?T` for a value that might be missing, `T!` for one that
-might have failed. Nothing converts implicitly. Use `str()`, `int()`,
-`float()`.
-
-```veyl
-let nums = [3, 1, 2]
-let ages = {"ada": 36}
-let note: ?str = nil
-```
-
-### Structs
-
-```veyl
-struct Vec {
-    x: float
-    y: float
-}
-
-impl Vec {
-    fn length(self) -> float {
-        return sqrt(self.x * self.x + self.y * self.y)
-    }
-}
-
-print(Vec{x: 3.0, y: 4.0}.length())     // 5
-```
-
-### Failure
-
-Anything that can fail returns `T!`, or `void!` when there is no value
-to hand back. `?` either unwraps it or hands the failure up.
-
-```veyl
-fn wordCount(path: str) -> int! {
-    let text = os.file.read(path)?
-    return len(split(trim(text), " "))
-}
-```
-
-That is the whole error-handling story. No exceptions, no panics in
-normal code, and no way to ignore a failure by accident.
-
-### Functions
-
-```veyl
-fn add(a: int, b: int) -> int {
-    return a + b
-}
-```
-
-Parameter types are required. Declaration order does not matter, so a
-function can call one defined further down. A function with a return
-type must return on every path and the compiler checks it.
-
-Functions are values:
-
-```veyl
-let nums = [5, 3, 8, 1]
-print(map(nums, fn(n: int) -> int { return n * n }))
-print(filter(nums, fn(n: int) -> bool { return n > 4 }))
-print(reduce(nums, 0, fn(a: int, b: int) -> int { return a + b }))
-```
-
-Closures capture by reference, so a closure sees later writes to what it
-captured, and its own writes are visible outside.
-
-### Strings
-
-Any expression goes inside `{}`, including another string literal:
-
-```veyl
-let name = "world"
-print("hello, {name}")
-print("2 + 2 = {2 + 2}")
-print("shouting: {upper("hi")}")
-print("{{literal braces}}")
-```
-
-### Control flow
-
-```veyl
-if score >= 90 {
-    print("A")
-} else if score >= 80 {
-    print("B")
-}
-
-while running { tick() }
-
-for i in 0..5 { }            // 0 1 2 3 4
-for i in 1..=5 { }           // 1 2 3 4 5
-for i in 0..=100 step 25 { } // 0 25 50 75 100
-for i in 10..0 step -2 { }   // 10 8 6 4 2
-```
-
-No parentheses around conditions. Braces always required.
-
-### Multiple files
-
-```veyl
-import "geometry.vl"
-```
-
-`pub` decides what a file exports. A top-level `const` is a global; a
-top-level `let` belongs to the program body.
-
-### The library
-
-No imports, ever. The dots only group names.
-
-**Output** `print` `write`
-**Convert** `str` `int` `float` `toInt` `isInt` `divf`
-**Math** `sqrt` `cbrt` `pow` `exp` `hypot` `log` `log2` `log10` `abs`
-`mod` `floor` `ceil` `round` `trunc` `clamp` `sign` `isNan` `min` `max`
-`sin` `cos` `tan` `asin` `acos` `atan` `atan2`
-**Strings** `len` `upper` `lower` `trim` `contains` `startsWith`
-`endsWith` `indexOf` `replace` `repeat` `charAt` `substr` `split`
-`chars` `lines`
-**Lists** `push` `pop` `insert` `removeAt` `clear` `first` `last`
-`slice` `reverse` `sort` `sum` `join` `map` `filter` `reduce` `sortBy`
-`any` `all` `each`
-**Maps** `has` `find` `remove` `keys` `values`
-**Results** `must` `valueOr` `isOk` `failed` `errorOf` `fail`
-
-And under a namespace: `os` for files and processes, `http`, `net`,
-`json`, `time`, `re` for regular expressions, `hash`, `csv`, `bytes`,
-`rand`, `stats`, `term`, `bits`, `url`, `args`, `mem`, `task`, and
-`win` for windows and drawing.
-
-```veyl
-let rows = must(csv.read("sales.csv"))
-let names = task.map(rows, fn(r: []str) -> str { return upper(r[0]) })
-os.file.write("names.txt", join(names, "\n"))
-print("saved at {time.stamp()}")
-```
-
-### Servers
-
-`http` and `net` are here, so a web server is a few lines:
-
-```veyl
-must(http.serve(8080, fn(req: Request) -> Response {
-    if req.path == "/" {
-        return http.ok("<h1>hello from veyl</h1>")
-    }
-    if req.path == "/api" {
-        return http.json(json.encode({"ok": true}))
-    }
-    return http.notFound()
-}))
-```
-
-`Request` gives you `method`, `path`, `query`, `body` and `headers`,
-with `http.header(req, name)` for a case-insensitive lookup. Responses
-come from `http.ok`, `http.text`, `http.json`, `http.status` and
-`http.notFound`. `http.get(url)` fetches a page.
-
-Underneath is `net`: `listen`, `accept`, `recv`, `send`, `connect` and
-`close`, over WinSock. A socket is a plain int, which is why the whole
-HTTP layer above it is ordinary Veyl rather than compiler internals.
-There is a worked example in
-[`asm-src/examples/net/`](asm-src/examples/net/server.vl).
-
-It is HTTP/1.1 with `Connection: close`, one request at a time. No
-keep-alive, no chunked transfer, no TLS, and `http.get` refuses an
-`https` URL rather than pretending. Concurrency would come from running
-the accept loop through `task`.
-
-### Windows and games
-
-`win` opens a real window you can draw in, with a game loop rather than
-the old backend's blocking call that drew nothing:
-
-```veyl
-let w = must(win.open("pong", 800, 500))
-while win.poll(w) {
-    if win.pressed(w, "esc") { break }
-    if win.pressed(w, "up") { py = py - 7.0 }
-
-    win.clear(w, win.rgb(18, 20, 28))
-    win.rect(w, 18, int(py), 12, 90, win.rgb(120, 200, 140))
-    win.circle(w, int(bx), int(by), 8, win.rgb(235, 238, 245))
-    win.text(w, 20, 20, "score {score}", win.rgb(235, 238, 245))
-    win.present(w)
-    sleep(16)
-}
-```
-
-![pong](asm-src/examples/gui/pong.png)
-
-Drawing is `clear`, `rect`, `circle`, `line` and `text`, into a back
-buffer that `present` blits in one go, so nothing flickers. Input is
-`pressed(w, "space")` by key name, `mouseX`, `mouseY`, `mouseDown` and
-`clicked`, the last edge-triggered so a click fires once.
-
-On top of those, written in Veyl, is an immediate-mode widget set:
-`button`, `bar`, `frame` and `hover`. There is no widget tree and
-nothing to keep in sync - a button draws itself and returns whether it
-was clicked in the same call.
-
-![widgets](asm-src/examples/gui/widgets.png)
-
-Both examples are in
-[`asm-src/examples/gui/`](asm-src/examples/gui/pong.vl).
-
-There is no custom window procedure anywhere in this. The class uses
-`DefWindowProcA`, everything is read out of the message queue in
-`win.poll`, and a closed window is noticed with `IsWindow`. The old
-backend needed a `syscall.NewCallback` for that and had a fixed pool of
-them to run out of.
-
-Not here yet: `zip`, and a handful of small builtins the old backend
-has - `input`, `pause`, `padLeft`, `padRight`, `toFloat`, `isFloat` and
-`count`. They exist on [`veylgo`](../../tree/veylgo).
-
-Anything missing is a compile error naming it, never wrong output. That
-is the rule the whole subset rests on: `library.go` is the list, and a
-function absent from it is a type error with a file, line and column,
-not something the compiler discovers halfway through.
-
-[SYNTAX.md](docs/SYNTAX.md) has every signature.
-
----
-
-## How it compiles
-
-Five stages. The first three are shared with the old backend, which is
-what makes the comparison below meaningful: the two agree on what a
-program means and differ only in how they emit it.
-
-| Stage | In | Out |
-| --- | --- | --- |
-| Lex and parse | text | an AST |
-| Check | AST | typed AST |
-| Lower | typed AST | three-address IR over virtual registers |
-| Emit | IR | x86-64 |
-| Assemble, link, write | x86-64 | a `.exe` |
-
-`ir.go` is the backend boundary and nothing in it knows an x86 register
-exists, which is what would make a second target a swap rather than a
-rewrite.
-
-The last stage is the unusual one. Most compilers stop at assembly text
-and hand it to `as` and `ld`. This one encodes the instructions itself,
-checked byte for byte against GNU `as` across every example, resolves
-symbols through a six-byte thunk per import, and writes the PE headers
-directly.
-
-There is no base relocation table, because every reference the compiler
-emits is a direct call or rip-relative and nothing in the file holds an
-absolute address. That removes a section and a pass. It also means no
-ASLR, which is a real security property and the obvious thing to add
-back.
-
-`collatz.vl`, nested loops, 10,000 iterations. The two right-hand
-columns are the same machine code; only the linking differs.
-
-| | old Go backend | asm, linked by gcc | asm, self-linked |
-| --- | ---: | ---: | ---: |
-| runtime, best of 5 | 67 ms | 81 ms | 81 ms |
-| executable size | 2,524,160 | 123,102 | **2,560** |
-
-The size difference is the Go runtime, which is no longer there. The
-speed difference is that every value still round-trips through a stack
-slot, because there is no register allocator yet. That is the next
-performance work, not a finish line.
-
-[asm-src/README.md](asm-src/README.md) has the detail.
-
----
-
-## Building from source
-
-The compiler is written in Go, so building it needs Go 1.21 or newer.
-Running it, and running what it produces, needs nothing.
+There are no expected-output files. Every program in `examples/` is run
+through both backends and the output compared byte for byte, with the Go
+backend as the definition of what Veyl means. If they disagree, this one
+is wrong.
+
+It earned that on the first program ever compiled. The numbers were
+correct and the line endings were not: the C runtime translates `\n` to
+`\r\n` on stdout and Go does not. In a terminal the two were
+indistinguishable. In bytes they were not. `x64.go` now puts stdout in
+binary mode in the prologue.
+
+The second test checks that everything outside the subset is a compile
+error rather than wrong output. A backend that quietly mis-compiles what
+it does not understand is worse than one that refuses.
+
+## Requirements
+
+To build a program: nothing. veyl encodes, links and writes the PE
+itself.
+
+To run the tests: Go, for the differential comparison against the other
+backend, and MinGW's `as` and `gcc`. `encode_test.go` checks every byte
+this compiler emits against GNU `as`, and `VEYL_LINK=mingw` takes the
+old route through `gcc` so a program that runs one way and not the
+other localises the bug to the half that changed. Both are found on
+`PATH`, at the usual MSYS2 and MinGW locations, or via `VEYL_MINGW`.
+Without them those two checks skip and everything else runs.
+
+## Installing
 
 ```
-git clone https://github.com/owlspan/veyl
-cd veyl/asm-src
-go build -o veyl.exe ./compiler
+scripts\make-installer.bat
 ```
 
-Add that folder to your PATH to run it from anywhere. While working on
-the compiler itself, skip the rebuild:
+Double-click it. It builds `dist\veyl-<version>-setup.exe`, which is
+about 5 MB because there is no toolchain to bundle. The Go backend's
+installer is roughly 90, most of it a trimmed copy of Go.
 
-```
-go run ./compiler run examples/primes.vl
-```
+## What comes next
 
-The first `run` is Go's, the second is Veyl's.
+In dependency order, with the reasoning rather than just the list.
 
-**Never run a freshly built program from new library code uncapped.**
-Nothing collects on its own here, so a loop that allocates and never
-terminates will fill memory rather than being collected out of trouble.
-`asm-src\scripts\saferun.ps1` puts the program in a job object with a
-memory limit and a timeout:
+**1. The object header. Done.** Every heap allocation carries one word
+in front of it: `size << 8 | tag`, where the tag says whether the block
+is raw bytes, word slots holding no pointers, word slots that are all
+pointers, or a list header. `allocObj` in `list.go`.
 
-```
-.\scripts\saferun.ps1 -Exe .\prog.exe -MemoryMB 512 -TimeoutSec 30
-```
+It buys nothing today. A collector has to tell a pointer from an
+integer at runtime, and every value here is an anonymous eight bytes,
+so nothing in the heap could say. The tag says it for a whole block at
+once. Done before structs and closures multiplied the number of places
+that allocate, because retrofitting it across all of them costs far
+more than adding it to four sites.
 
-### Tests
+One thing it does not cover: **string literals are static rather than
+heap-allocated, so they have no header.** A collector will meet
+pointers that do not point into the heap at all. That is a constraint
+to design around, not an oversight.
 
-```
-cd src      && go test ./...
-cd frontend && go test ./...
-cd asm-src  && go test ./...
-```
+**2. Namespaced calls. Done.** The lowerer required a plain identifier
+as the callee, so nothing under `os.`, `time.`, `mem.` and the rest
+could be called at all. It now flattens the callee with `DottedName`
+and looks that string up like any other builtin, at any depth:
+`os.file.write` arrives as one name. A namespace is a naming
+convention, not a scope, exactly as on the Go backend.
 
-The three modules are separate, so there is no single command that
-covers everything.
+Implemented so far: `time.now`, `os.env.get`, `os.env.has`. `os.env.set`
+is not, because it returns `Void!`.
 
-There are no expected-output files here. Every example is compiled by
-both this compiler and the reference one on
-[`veylgo`](../../tree/veylgo), and the output is compared byte for
-byte. If they disagree, this one is wrong. A second test asserts that
-anything outside the supported set is a *compile error* rather than
-wrong output, because a compiler that quietly mis-compiles what it does
-not understand is worse than one that refuses.
+Adding another is two edits - a signature in `library.go` and a case in
+`builtin` in `ir.go` - but it is not the Go backend's one-liner. There
+`emit` returns a line of Go and the standard library does the work;
+here you write IR and usually a libc call. A function absent from
+`library.go` is a type error naming it, so the subset stays honest
+without anyone maintaining a list of what is missing.
 
-The differential half skips unless the reference is built. It is looked
-for at `../veylgo/src/veyl.exe`, or wherever `VEYL_REFERENCE` points.
+The one that had to come before writing many of them was the **error
+type `T!`**, which is now done - see below. Every library function in
+Veyl reports failure as `T!` rather than panicking, so without results
+here they could only have been ported in a lying form.
 
-`encode_test.go` checks every instruction byte against GNU `as`, and
-`pe_test.go` checks the shape of the executable that comes out. Both
-skip if MinGW is not installed; everything else still runs.
+**3. Maps. Done.** Sorted rather than hashed: the Go backend sorts keys
+when it prints or iterates, so keeping the array sorted at all times
+matches its output for free and moves the cost to insertion. O(n) per
+lookup; the six functions in `map.go` are the seam for swapping in a
+hash table later.
 
-`VEYL_GC_STRESS=1` collects before every statement, and the suite must
-stay byte-identical under it. That is the only way a collector bug
-shows up near its cause.
+It did not move parity, which is worth knowing: all seven programs that
+reported a map as their first error had something else behind it.
 
----
+Neither did `T!` or structs. Parity is still 4 of 24. What did change
+is what the other twenty are waiting on, and the list is worth
+regenerating rather than trusting:
 
-## Project layout
-
-```
-veyl/
-  frontend/    lexer, parser, type checker
-  asm-src/     the compiler: lowerer, emitter, assembler, linker,
-               PE writer, and the library written in Veyl itself
-  docs/        SYNTAX, TUTORIAL, ARCHITECTURE
-  icons/       shared branding
-```
-
-Two Go modules wired together with `replace`. Run `go` commands from
-inside each one; there is no single command that covers both.
-
-Most of the library is not in Go at all. `prelude_*.go` hold Veyl
-source that this compiler compiles: the math library, time, bits, url,
-stats, term, rand, the regex engine, the hashes and csv. Adding a
-library function is a signature in `library.go`, an entry in
-`preludeOf`, and the function itself in Veyl.
-
-The old Go backend is on [`veylgo`](../../tree/veylgo). It is not a
-dependency of anything here, but the differential test compares against
-it, so building it beside this checkout is worth the two commands:
-
-```
-git worktree add ../veylgo veylgo
-cd ../veylgo/src && go build -o veyl.exe ./compiler
+```bash
+cd asm-src
+for f in ../src/tests/ok/*.vl; do
+  ./veyl.exe asm "$f" >/dev/null 2>&1 || echo "$f"
+done
 ```
 
----
+| blocker | n |
+|---|---:|
+| closures and first-class functions | 3 |
+| `re.*` | 2 |
+| unimplemented library functions | 2 |
+| `json.decode` | 1 |
+| `bytes` | 1 |
+| `url.*`, `bits.*`, `args.*` | 1 |
 
-## Roadmap
+Closures are the biggest single item left, and `tasks` needs structured
+concurrency behind them, so realistically they buy two of the three.
+Everything else on that list is one program each - which is what
+progress looks like from here.
 
-| Version | Feature |
-| --- | --- |
-| v0.1 | expressions, variables, `if`, `while`, `print` |
-| v0.2 | functions, resolver, builtins, Windows GUI |
-| v0.3 | `for` loops, `break`/`continue`, math and strings |
-| v0.4 | type checker, test suite |
-| v0.5 | lists and maps |
-| v0.6 | structs and `impl` |
-| v0.7 | JSON, bitwise operators, `match` |
-| v0.8 | nullable types `?T` |
-| v0.9 | error type `T!` with `?` propagation |
-| v0.10 | modules, `pub`, global constants |
-| v0.15 | a Windows installer bundling its own Go toolchain |
-| v0.16 | a package manager, `rand`, `stats`, `term`, `log` |
-| v0.17 | namespaced imports, `bytes`, an interactive console |
-| v0.17.02 | four editors, an Explorer menu, the Veyl rename |
-| **v0.18** | **the native compiler: no Go, no assembler, no linker** |
-| next | `zip`; a register allocator; keep-alive; sound; generics |
+**4. The error type `T!`. Done.** A result is a two-word heap object:
+the failure reason, then the value. The layout does not depend on what
+it carries, which is what lets `?` propagate a failure out of a `str!`
+and into an `int!` by handing back the object it was given rather than
+unpacking and rebuilding one - a failure crosses any number of frames
+as a single pointer.
 
-v0.18 is where the Go backend stopped being how Veyl compiles. It took
-an object header, maps, the error type, structs, a foreign-call op,
-nullables, deep equality, `impl` methods, imports and real globals, a
-mark-and-sweep collector, closures, the library rewritten in Veyl, an
-instruction encoder, a linker, a PE writer, and finally threads. The
-last of those brought the test suite to 24 of 24.
+Boxing rather than returning a pair is what keeps the IR
+three-address and the calling convention unchanged. The Go backend
+returns a two-field struct by value; doing that here would have meant
+classifying an aggregate return, which is the corner of the Windows x64
+ABI with the most rules and the least payoff. The cost is an allocation
+per fallible call, unbounded while nothing is freed.
 
----
+Boxing a plain value into the `T!` a function promises is not decided
+by the lowerer. The checker already inserts a `Widen` node at every
+such site, the way it does for nullables, so there is one place that
+can forget rather than five.
 
-## Known limitations
+**5. Structs. Done.** Fixed field offsets, so every access is a load or
+a store at an offset known at compile time.
 
-An honest list.
+The header is where the interest is. A struct is the first thing here
+that is genuinely mixed - some words pointers, some not - so the
+block-at-a-time tags could not describe one. Fields are reordered to
+put every pointer first and the count goes in the eight spare bits the
+header already had, which keeps "is this word a pointer" a single
+number at no per-instance cost. The reordering is invisible: fields are
+reached by name through a compile-time offset.
 
-- **Integer division truncates.** `7 / 2` is `3`. Use `divf(7, 2)` for
-  `3.5`. This is a stated rule rather than a leaked backend detail, but
-  it still catches people.
-- **A missing map key is silent.** `m["absent"]` gives the zero value.
-  `has()` and `find()` tell the difference. Putting a check on every
-  read was not worth it.
-- **No generics.** `Set` and `Queue` cannot be written in Veyl itself
-  yet, which is why they are not in the library.
-- **No global variables.** A top-level `const` is global; a top-level
-  `let` belongs to the program body.
-- **No databases.** SQLite needs a Go dependency, which would break the
-  zero-dependency property.
-- **Nil narrowing is syntactic.** `if x != nil` narrows inside the
-  block, and `&&` chains work, but an early `return` does not narrow the
-  rest of the function.
-- **Garbage collected, but not automatically.** There is a mark-and-sweep
-  collector; `mem.collect()` is the only thing that runs it. A program
-  that allocates in an unbounded loop will exhaust memory. See
-  `saferun.ps1` above.
-- **No `zip`.** It exists on
-  [`veylgo`](../../tree/veylgo) and has not been ported. Calling it
-  is a compile error naming it.
-- **The server handles one request at a time**, with `Connection:
-  close`. No keep-alive, no chunked transfer, and no TLS anywhere, so
-  `http.get` refuses an `https` URL rather than pretending.
-- **`net.recv` returns a str**, which is NUL-terminated here, so a
-  response carrying a zero byte reads back short. Binary bodies want
-  `bytes` and it is not wired through yet.
-- **No resolver.** A name that is neither a local, a function nor a
-  builtin is caught by the lowerer rather than the checker, so it is
-  missed when the checker has already failed on something else.
-- **No register allocator.** Every value round-trips through a stack
-  slot, which is the whole of the 20% speed gap and most of the frame
-  size.
-- **No ASLR.** The image says RELOCS_STRIPPED, because nothing the
-  compiler emits holds an absolute address. Adding a relocation table
-  is the fix.
-- **`NAN` and `INF` are compile errors**, deliberately: comparisons
-  lower to `comisd`, which gets an unordered pair wrong, and msvcrt's
-  `printf` writes `1.#INF` where Go writes `+Inf`. A wrong answer would
-  be worse than a refusal.
-- **Printing a float can round the last digit wrong.** It goes through
-  msvcrt, which stops at seventeen significant digits.
-- **Windows x86-64 only.** The PE writer and the calling convention are
-  both specific to it.
-- **Return checking is conservative.** A function whose only `return` is
-  inside a loop is rejected, even when it is provably fine.
+Value semantics were the part needing care. A struct is a Go struct on
+the Go backend, so it copies on assignment, on being passed and on being
+returned; here it is a pointer, so the copy is written out. `rvalue`
+copies only when the source is a place - a literal or a call result is
+already a fresh object nobody else holds. Getting this wrong would not
+have crashed, it would have been `let b = a` quietly aliasing.
+
+Still missing on structs: `impl` methods, `str()` of one, and a `T!`
+field.
+
+**6. A foreign call op. Done.** `OpCall` emitted `call __vy_<Sym>` and
+so could only reach functions this compiler wrote. Anything wanting a
+libc or Win32 function had to become its own opcode with its own case
+in `x64.go` - which meant the cost of porting the library was one
+*opcode* per function, not one edit.
+
+`Instr` now carries `Extern`, `Ret32` and `Variadic`. `Ret32`
+sign-extends `eax`, which the many C functions returning an `int` need
+because the top half of `rax` is undefined on such a return.
+`Variadic` puts a float in both the xmm and the integer register, which
+the convention requires when the callee reads a `va_list` and has no
+prototype telling it which file to look in. Both are silent when wrong,
+which is why they are flags rather than something to remember at each
+call site. The three ops that existed only to reach C are gone.
+
+**7. Containers inside containers. Done.** A `vty` carried its element
+as a bare kind, so it could say "list of int" but not "list of list of
+int". It carries a whole type now. The catch: a vty holds a pointer, so
+`==` is no longer type equality, and every place meaning "the same
+type" has to go through `eq()`.
+
+**8. `str()` of a container. Done.** The printing code with its output
+redirected into a buffer, so `print(xs)` and `str(xs)` cannot disagree
+about a character - there is one renderer, not two kept in step. It
+allocates per piece appended, so a long list is quadratic and, with no
+collector, permanent. That is an argument for a growable buffer, not
+for a second renderer.
+
+**9. The os library. Done.** Files, directories and the environment, in
+`os.go` and `osdir.go`, entirely through the foreign call op - no new
+opcode. Written against Win32 rather than the C runtime because the
+failure text has to match Go's, and Go's comes from FormatMessage.
+
+`os.env.set` is the exception that goes through the CRT: a process has
+two environments, the block Win32 keeps and the copy the CRT made at
+startup, and `SetEnvironmentVariable` updates only the one `getenv`
+does not read.
+
+**10. A register allocator.** Where the 20% gap starts closing. Do it
+after functions exist - which they now do - because the whole
+difficulty is knowing which values are live across a call, and a
+version written before calls existed would be written twice.
+
+It also shrinks stack frames, which are large here because nothing is
+reused: a 60-line program can need 3,000 virtual registers. That is a
+size problem, not a correctness one - a frame bigger than a page has to
+touch every page on the way down, or Windows never moves the guard page
+and the first write below it faults. `reserve()` in `x64.go` does the
+probing, and has to keep doing it however small frames get.
+
+**11. The collector.** Needs step 1, which is done. Budget a whole
+session minimum; a collector that frees one live object produces a bug
+that surfaces somewhere else entirely, hours later.
+
+**12. The byte writer and PE emitter.** What finally removes the MinGW
+dependency. Mechanical by then: `x64.go` is replaced and nothing above
+it changes.
+
+The two papercuts that used to sit here are done: `veyl f.vl` is
+shorthand for `run`, and the linker's real output surfaces instead of
+being swallowed. The one still open is sharing `resolve.go` the way
+`check.go` is shared, so that an undefined name is caught here by a
+resolver rather than late, by the lowerer, and missed entirely when the
+checker has already failed on something else.
+
+A note on what this is not for. It will not be faster than the Go
+backend for a long time, and probably starts out several times slower.
+Go's optimiser is doing a great deal of work that nothing here does yet.
+The reasons to build this are binary size, compile speed, dropping the
+bundled toolchain, and unblocking pointers and manual memory. Speed
+comes last, if at all.
