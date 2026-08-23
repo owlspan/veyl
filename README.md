@@ -1,4 +1,27 @@
-# Veyl
+# Veyl (Go backend) - discontinued
+
+> **This branch is the old Veyl, and it is no longer developed.**
+>
+> Veyl used to compile by translating to Go source and handing that to
+> the Go toolchain. It worked, and for a long time it was the only
+> thing that did. It is kept here because it still runs, because it is
+> the reference the native compiler is checked against, and because
+> deleting working code to make a tidier repository is a bad trade.
+>
+> **Development continues on the [`veyl`](../../tree/veyl) branch**,
+> where the compiler emits x86-64 and writes the executable itself. No
+> Go anywhere: not to build it, not inside what it produces. Every
+> program in this backend's own test suite compiles there and prints
+> the same bytes, so moving over should cost you nothing.
+>
+> What that buys, on the same program: an executable of 2,560 bytes
+> instead of 2,524,160, and an installer of 5 MB instead of 90, because
+> there is no longer a Go toolchain to bundle.
+>
+> Nothing here will be removed, and bugs that matter for the reference
+> role will still be fixed. New language work happens on `veyl`.
+
+---
 
 Veyl is a programming language for people who want a real executable at
 the end and do not want to fight the language to get one. You write
