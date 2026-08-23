@@ -26,7 +26,7 @@ $ veylasm run primes.vl
 ```
 
 No semicolons. No header files. No boilerplate `main`. No manual memory.
-Math, strings, files, JSON, regular expressions and time are all
+Math, strings, files, HTTP, JSON, regular expressions and time are all
 builtins, so most programs need no imports at all.
 
 **Version 0.18.0.** Veyl compiles straight to x86-64 and writes the
@@ -268,9 +268,9 @@ No imports, ever. The dots only group names.
 **Maps** `has` `find` `remove` `keys` `values`
 **Results** `must` `valueOr` `isOk` `failed` `errorOf` `fail`
 
-And under a namespace: `os` for files and processes, `json`, `time`,
-`re` for regular expressions, `hash`, `csv`, `bytes`, `rand`, `stats`,
-`term`, `bits`, `url`, `args`, `mem`, and `task` for concurrency.
+And under a namespace: `os` for files and processes, `http`, `net`,
+`json`, `time`, `re` for regular expressions, `hash`, `csv`, `bytes`,
+`rand`, `stats`, `term`, `bits`, `url`, `args`, `mem`, and `task`.
 
 ```veyl
 let rows = must(csv.read("sales.csv"))
@@ -279,10 +279,42 @@ os.file.write("names.txt", join(names, "\n"))
 print("saved at {time.stamp()}")
 ```
 
-Not here yet: `http`, `net`, `zip`, `win` for the Windows GUI, and a
-handful of small builtins the old backend has - `input`, `pause`,
-`padLeft`, `padRight`, `toFloat`, `isFloat` and `count`. They all exist
-on [`veylgo`](../../tree/veylgo) and are the next things to port.
+### Servers
+
+`http` and `net` are here, so a web server is a few lines:
+
+```veyl
+must(http.serve(8080, fn(req: Request) -> Response {
+    if req.path == "/" {
+        return http.ok("<h1>hello from veyl</h1>")
+    }
+    if req.path == "/api" {
+        return http.json(json.encode({"ok": true}))
+    }
+    return http.notFound()
+}))
+```
+
+`Request` gives you `method`, `path`, `query`, `body` and `headers`,
+with `http.header(req, name)` for a case-insensitive lookup. Responses
+come from `http.ok`, `http.text`, `http.json`, `http.status` and
+`http.notFound`. `http.get(url)` fetches a page.
+
+Underneath is `net`: `listen`, `accept`, `recv`, `send`, `connect` and
+`close`, over WinSock. A socket is a plain int, which is why the whole
+HTTP layer above it is ordinary Veyl rather than compiler internals.
+There is a worked example in
+[`asm-src/examples/net/`](asm-src/examples/net/server.vl).
+
+It is HTTP/1.1 with `Connection: close`, one request at a time. No
+keep-alive, no chunked transfer, no TLS, and `http.get` refuses an
+`https` URL rather than pretending. Concurrency would come from running
+the accept loop through `task`.
+
+Not here yet: `zip`, `win` for the Windows GUI, and a handful of small
+builtins the old backend has - `input`, `pause`, `padLeft`, `padRight`,
+`toFloat`, `isFloat` and `count`. They all exist on
+[`veylgo`](../../tree/veylgo) and are the next things to port.
 
 Anything missing is a compile error naming it, never wrong output. That
 is the rule the whole subset rests on: `library.go` is the list, and a
@@ -452,7 +484,7 @@ cd ../veylgo/src && go build -o veyl.exe ./compiler
 | v0.17 | namespaced imports, `bytes`, an interactive console |
 | v0.17.02 | four editors, an Explorer menu, the Veyl rename |
 | **v0.18** | **the native compiler: no Go, no assembler, no linker** |
-| next | `http`, `net`, `zip`, `win`; a register allocator; generics |
+| next | `zip`, `win`; a register allocator; keep-alive; generics |
 
 v0.18 is where the Go backend stopped being how Veyl compiles. It took
 an object header, maps, the error type, structs, a foreign-call op,
@@ -486,9 +518,15 @@ An honest list.
   collector; `mem.collect()` is the only thing that runs it. A program
   that allocates in an unbounded loop will exhaust memory. See
   `saferun.ps1` above.
-- **No `http`, `net`, `zip` or `win`.** They exist on
+- **No `zip` or `win`.** They exist on
   [`veylgo`](../../tree/veylgo) and have not been ported. Calling one
   is a compile error naming it.
+- **The server handles one request at a time**, with `Connection:
+  close`. No keep-alive, no chunked transfer, and no TLS anywhere, so
+  `http.get` refuses an `https` URL rather than pretending.
+- **`net.recv` returns a str**, which is NUL-terminated here, so a
+  response carrying a zero byte reads back short. Binary bodies want
+  `bytes` and it is not wired through yet.
 - **No resolver.** A name that is neither a local, a function nor a
   builtin is caught by the lowerer rather than the checker, so it is
   missed when the checker has already failed on something else.

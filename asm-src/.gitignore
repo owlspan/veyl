@@ -10,6 +10,7 @@
 
 # programs built from examples
 examples/*.exe
+examples/**/*.exe
 examples/*.s
 examples/*.o
 

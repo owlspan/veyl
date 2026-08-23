@@ -52,8 +52,16 @@ func alignUp(n, to int) int {
 }
 
 // importOverride is for a foreign symbol the rule below gets wrong.
-// There are none yet.
-var importOverride = map[string]string{}
+// The sockets, which the naming rule cannot place: `socket` and `recv`
+// are lowercase and are not in msvcrt, `WSAStartup` is capitalised and
+// is not in kernel32.
+var importOverride = func() map[string]string {
+	m := map[string]string{}
+	for _, s := range winsockSyms {
+		m[s] = "ws2_32.dll"
+	}
+	return m
+}()
 
 // importDLL says which library a foreign symbol comes from.
 //

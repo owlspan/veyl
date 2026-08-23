@@ -210,6 +210,27 @@ var sigs = map[string]front.Signature{
 	"hash.base64":     {Params: []*Type{Str}, Ret: Str},
 	"hash.fromBase64": {Params: []*Type{Str}, Ret: ResultOf(Str)},
 
+	// http. Request and Response are structs declared in the prelude and
+	// folded into any program that names them, so StructOf is enough
+	// here: the checker resolves the name against what was folded in and
+	// reports an undeclared struct if it was not.
+	"http.get":      {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"http.ok":       {Params: []*Type{Str}, Ret: StructOf("Response")},
+	"http.text":     {Params: []*Type{Str}, Ret: StructOf("Response")},
+	"http.json":     {Params: []*Type{Str}, Ret: StructOf("Response")},
+	"http.status":   {Params: []*Type{Int, Str}, Ret: StructOf("Response")},
+	"http.notFound": {Ret: StructOf("Response")},
+	"http.header":   {Params: []*Type{StructOf("Request"), Str}, Ret: Str},
+
+	// Sockets. A socket is the int handle Windows hands back, which is
+	// what lets the http layer above be written in Veyl.
+	"net.listen":  {Params: []*Type{Int}, Ret: ResultOf(Int)},
+	"net.accept":  {Params: []*Type{Int}, Ret: ResultOf(Int)},
+	"net.recv":    {Params: []*Type{Int}, Ret: ResultOf(Str)},
+	"net.send":    {Params: []*Type{Int, Str}, Ret: ResultOf(Int)},
+	"net.close":   {Params: []*Type{Int}, Ret: Void},
+	"net.connect": {Params: []*Type{Str, Int}, Ret: ResultOf(Int)},
+
 	"csv.parse": {Params: []*Type{Str}, Ret: ResultOf(ListOf(ListOf(Str)))},
 	"csv.write": {Params: []*Type{ListOf(ListOf(Str))}, Ret: Str},
 	"csv.read":  {Params: []*Type{Str}, Ret: ResultOf(ListOf(ListOf(Str)))},
@@ -340,6 +361,8 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkTaskEach}, true
 	case "task.all":
 		return front.Signature{Check: checkTaskAll}, true
+	case "http.serve":
+		return front.Signature{Check: checkHTTPServe}, true
 	case "stats.mean", "stats.median", "stats.var", "stats.stdev":
 		return front.Signature{Check: checkNumberList}, true
 	case "stats.percentile":
@@ -1048,6 +1071,27 @@ func checkTaskEach(c *Checker, x *Call, args []*Type) *Type {
 	elem := hofList(c, x, 0, args, "task.each")
 	hofCallback(c, x, 1, args, "task.each", []*Type{elem})
 	return Void
+}
+
+// http.serve(port, fn(Request) -> Response). The callback is checked
+// the way the task family's is, so a handler with the wrong shape is an
+// error naming what it should have been rather than a lowering failure.
+func checkHTTPServe(c *Checker, x *Call, args []*Type) *Type {
+	if len(args) != 2 {
+		c.ErrorAt(x, "http.serve takes 2 arguments, got %d", len(args))
+		return ResultOf(Void)
+	}
+	if !args[0].IsUnknown() && args[0].Kind != KInt {
+		c.ErrorAt(x.Args[0], "http.serve needs an int port, got %s", args[0])
+	}
+	hofCallback(c, x, 1, args, "http.serve", []*Type{StructOf("Request")})
+	if got := args[1]; got.IsFunc() && !got.Elem.IsUnknown() {
+		if got.Elem.Kind != KStruct || got.Elem.Name != "Response" {
+			c.ErrorAt(x.Args[1],
+				"http.serve needs a handler returning Response, got one returning %s", got.Elem)
+		}
+	}
+	return ResultOf(Void)
 }
 
 func checkTaskAll(c *Checker, x *Call, args []*Type) *Type {
