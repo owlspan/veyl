@@ -21,18 +21,34 @@ print("")
 ```
 
 ```
-$ veyl run primes.vl
+$ veylasm run primes.vl
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
 No semicolons. No header files. No boilerplate `main`. No manual memory.
-Math, strings, files, HTTP, JSON, time and native Windows calls are all
+Math, strings, files, JSON, regular expressions and time are all
 builtins, so most programs need no imports at all.
 
-**Version 0.17.02.** The language is done enough for real work: a type
-checker, lists and maps, structs with methods, nullable types, an error
-type, modules, and a package manager. There is a formatter, a VS Code
-extension and a Windows installer.
+**Version 0.18.0.** Veyl compiles straight to x86-64 and writes the
+executable itself. It encodes the instructions, resolves the symbols
+and lays out the PE, so there is no assembler, no linker, no C
+toolchain and no Go in the pipeline, and none of them in what comes
+out.
+
+```
+primes.vl  ->  [veylasm]  ->  primes.exe
+```
+
+That is the whole build. The same `collatz.vl` that produced a 2.4 MB
+executable through the old Go backend produces one of **2,560 bytes**
+here, and the installer is 5 MB instead of 90, because there is no
+toolchain to bundle.
+
+The old backend is not gone. It is on the
+[`veylgo`](../../tree/veylgo) branch, discontinued but still building,
+and it is the reference this compiler is checked against: every program
+in its test suite compiles here and prints the same bytes, error
+messages included. Where the two disagree, this one is wrong.
 
 ---
 
@@ -41,8 +57,7 @@ extension and a Windows installer.
 - [Install](#install)
 - [Commands](#commands)
 - [A tour of the language](#a-tour-of-the-language)
-- [Windows GUI](#windows-gui)
-- [Two backends](#two-backends)
+- [How it compiles](#how-it-compiles)
 - [Building from source](#building-from-source)
 - [Project layout](#project-layout)
 - [Roadmap](#roadmap)
@@ -51,7 +66,6 @@ extension and a Windows installer.
 New here? [Learn Veyl in 20 minutes](docs/TUTORIAL.md).
 
 Reference: [SYNTAX.md](docs/SYNTAX.md)
-Packages: [PACKAGES.md](docs/PACKAGES.md)
 Internals: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---
@@ -59,19 +73,16 @@ Internals: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 ## Install
 
 On Windows, run the installer from the
-[releases page](https://github.com/owlspan/veyl/releases). It sets up
-the compiler, adds it to PATH if you let it, associates `.vl` files, and
-brings everything it needs with it. Then:
+[releases page](https://github.com/owlspan/veyl/releases). It is about
+5 MB, adds the compiler to PATH if you let it, and puts a couple of
+verbs on the right-click menu for `.vl` files.
 
-```
-veyl doctor
-```
+There is nothing else to install. No Go, no assembler, no linker, no C
+runtime. That is the point of this version, and it is why there is no
+`doctor` command any more: there is no toolchain to go looking for.
 
-That prints what it found and whether the install is sound.
-
-If you already have Go, the installer leaves it completely alone. Its
-own copy lives inside Veyl's folder and stays off PATH. Untick that
-component during setup and Veyl will use yours instead.
+To build the installer yourself, double-click
+`asm-src\scripts\make-installer.bat`.
 
 ---
 
@@ -79,24 +90,20 @@ component during setup and Veyl will use yours instead.
 
 | Command | Effect |
 | --- | --- |
-| `veyl run f.vl` | compile and run |
-| `veyl build f.vl` | write an executable next to the source |
-| `veyl fmt f.vl` | reformat in place |
-| `veyl emit f.vl` | print the generated Go |
-| `veyl console` | interactive console |
-| `veyl doctor` | check the install |
-| `veyl init [name]` | start a project here |
-| `veyl add <source>` | add a dependency and fetch it |
-| `veyl install` | fetch everything the manifest lists |
-| `veyl builtins` | list every builtin |
-| `veyl version` | print the version |
-| `veyl f.vl` | same as `run` |
+| `veylasm run f.vl` | compile and run |
+| `veylasm build f.vl` | write an executable next to the source |
+| `veylasm asm f.vl` | print the generated assembly |
+| `veylasm ir f.vl` | print the intermediate representation |
+| `veylasm version` | print the version |
+| `veylasm f.vl` | same as `run` |
 
 Anything after the `.vl` file goes to your program, not to Veyl, so
-`veyl run app.vl --verbose` reaches `os.args()`.
+`veylasm run app.vl --verbose` reaches `os.args()`.
 
-`emit` is the most useful debugging tool here. When a program does
-something strange, read what it actually compiled to.
+`asm` and `ir` are the debugging tools. When a program does something
+strange, read what it actually compiled to. `ir` is the readable one:
+three-address code over virtual registers, before anything knows an
+x86 register exists.
 
 ### Editors
 
@@ -259,102 +266,102 @@ No imports, ever. The dots only group names.
 **Maps** `has` `find` `remove` `keys` `values`
 **Results** `must` `valueOr` `isOk` `failed` `errorOf` `fail`
 
-And under a namespace: `os` for files and processes, `http`, `net`,
-`json`, `time`, `re` for regular expressions, `hash`, `csv`, `zip`,
-`bytes`, `rand`, `stats`, `term`, `bits`, `url`, `args`, `mem`, `task`,
-and `win` for the Windows-only parts.
+And under a namespace: `os` for files and processes, `json`, `time`,
+`re` for regular expressions, `hash`, `csv`, `bytes`, `rand`, `stats`,
+`term`, `bits`, `url`, `args`, `mem`, and `task` for concurrency.
 
 ```veyl
-let page = must(http.get("https://example.com"))
-os.file.write("page.html", page)
+let rows = must(csv.read("sales.csv"))
+let names = task.map(rows, fn(r: []str) -> str { return upper(r[0]) })
+os.file.write("names.txt", join(names, "\n"))
 print("saved at {time.stamp()}")
 ```
+
+Not here yet: `http`, `net`, `zip`, and `win` for the Windows GUI. They
+exist on [`veylgo`](../../tree/veylgo) and are the next things to
+port. Anything missing is a compile error naming it, never wrong
+output.
 
 [SYNTAX.md](docs/SYNTAX.md) has every signature.
 
 ---
 
-## Windows GUI
+## How it compiles
 
-Windows-only builtins. Calling one while building for another OS is a
-compile error, not a runtime crash.
+Five stages. The first three are shared with the old backend, which is
+what makes the comparison below meaningful: the two agree on what a
+program means and differ only in how they emit it.
 
-```veyl
-setTitle("My App")
-hideConsole()
-let rounded = openWindow("Hello from Veyl", 800, 500)
-messageBox("Done", "Window closed.")
-```
+| Stage | In | Out |
+| --- | --- | --- |
+| Lex and parse | text | an AST |
+| Check | AST | typed AST |
+| Lower | typed AST | three-address IR over virtual registers |
+| Emit | IR | x86-64 |
+| Assemble, link, write | x86-64 | a `.exe` |
 
-`openWindow` blocks until the user closes the window, because it runs
-the Win32 message loop internally. Rounded corners need Windows 11
-(build 22000 or later); on Windows 10 the OS refuses and the window
-stays square, and `openWindow` returns `false` so you can tell.
+`ir.go` is the backend boundary and nothing in it knows an x86 register
+exists, which is what would make a second target a swap rather than a
+rewrite.
 
-These compile to `syscall` calls that load DLLs at runtime. No cgo, no C
-compiler, no DLLs to ship.
+The last stage is the unusual one. Most compilers stop at assembly text
+and hand it to `as` and `ld`. This one encodes the instructions itself,
+checked byte for byte against GNU `as` across every example, resolves
+symbols through a six-byte thunk per import, and writes the PE headers
+directly.
 
----
+There is no base relocation table, because every reference the compiler
+emits is a direct call or rip-relative and nothing in the file holds an
+absolute address. That removes a section and a pass. It also means no
+ASLR, which is a real security property and the obvious thing to add
+back.
 
-## Two backends
+`collatz.vl`, nested loops, 10,000 iterations. The two right-hand
+columns are the same machine code; only the linking differs.
 
-Veyl has two ways of turning your source into an executable. They share
-the lexer, the parser and the type checker, and differ only in the last
-two stages.
-
-**The Go backend** is the default and the definition of what Veyl means.
-It emits Go source and hands it to the Go toolchain.
-
-**The assembly backend** emits x86-64 directly, then assembles and links
-it itself. No Go is involved in compiling with it and none is present in
-what it produces.
-
-```
-                        +-->  Go source  -->  go build  -->  .exe
-hello.vl  -->  frontend  |
-                        +-->  x86-64  -->  encoder, linker  -->  .exe
-```
-
-The two are checked against each other byte for byte on every example.
-The Go backend is the reference, so if they disagree, the assembly one
-is wrong. Anything the assembly backend does not cover yet is a compile
-error naming what is missing, never wrong output.
-
-`collatz.vl`, nested loops, 10,000 iterations:
-
-| | via Go | asm, linked by gcc | asm, self-linked |
+| | old Go backend | asm, linked by gcc | asm, self-linked |
 | --- | ---: | ---: | ---: |
 | runtime, best of 5 | 67 ms | 81 ms | 81 ms |
 | executable size | 2,524,160 | 123,102 | **2,560** |
 
 The size difference is the Go runtime, which is no longer there. The
 speed difference is that every value still round-trips through a stack
-slot, because there is no register allocator yet.
+slot, because there is no register allocator yet. That is the next
+performance work, not a finish line.
 
-[asm-src/README.md](asm-src/README.md) covers what it does and does not
-handle.
+[asm-src/README.md](asm-src/README.md) has the detail.
 
 ---
 
 ## Building from source
 
-You need Go 1.21 or newer for the Go backend. The assembly backend needs
-nothing installed once it is built.
+The compiler is written in Go, so building it needs Go 1.21 or newer.
+Running it, and running what it produces, needs nothing.
 
 ```
 git clone https://github.com/owlspan/veyl
-cd veyl/src
-go build -o veyl.exe ./compiler
+cd veyl/asm-src
+go build -o veylasm.exe ./compiler
 ```
 
 Add that folder to your PATH to run it from anywhere. While working on
 the compiler itself, skip the rebuild:
 
 ```
-go run ./compiler run examples/demo.vl
+go run ./compiler run examples/primes.vl
 ```
 
 The first `run` is Go's, the second is Veyl's.
+
+**Never run a freshly built program from new library code uncapped.**
+Nothing collects on its own here, so a loop that allocates and never
+terminates will fill memory rather than being collected out of trouble.
+`asm-src\scripts\saferun.ps1` puts the program in a job object with a
+memory limit and a timeout:
+
+```
+.\scripts\saferun.ps1 -Exe .\prog.exe -MemoryMB 512 -TimeoutSec 30
+```
 
 ### Tests
 
@@ -367,20 +374,21 @@ cd asm-src  && go test ./...
 The three modules are separate, so there is no single command that
 covers everything.
 
-Each Go-backend case is a `.vl` file next to a `.expected` file holding
-what the compiler should produce: program output for `tests/ok`, error
-messages for `tests/err`. Adding a test means adding two files, not
-editing any Go.
+There are no expected-output files here. Every example is compiled by
+both this compiler and the reference one in `src/`, and the output is
+compared byte for byte. If they disagree, this one is wrong. A second
+test asserts that anything outside the supported set is a *compile
+error* rather than wrong output, because a compiler that quietly
+mis-compiles what it does not understand is worse than one that
+refuses.
 
-After a deliberate change to output or wording, regenerate the
-expectations and read the diff before committing:
+`encode_test.go` checks every instruction byte against GNU `as`, and
+`pe_test.go` checks the shape of the executable that comes out. Both
+skip if MinGW is not installed; everything else still runs.
 
-```
-go test -run TestVeyl -update ./compiler
-```
-
-The assembly backend has no expected-output files. Every example is run
-through both backends and compared.
+`VEYL_GC_STRESS=1` collects before every statement, and the suite must
+stay byte-identical under it. That is the only way a collector bug
+shows up near its cause.
 
 ---
 
@@ -388,14 +396,28 @@ through both backends and compared.
 
 ```
 veyl/
-  frontend/    lexer, parser, type checker. Shared.
-  src/         the Go backend, the CLI, and all the tooling
-  asm-src/     the assembly backend, its assembler and linker
-  docs/        SYNTAX, TUTORIAL, ARCHITECTURE, PACKAGES
+  frontend/    lexer, parser, type checker
+  asm-src/     the compiler: lowerer, emitter, assembler, linker,
+               PE writer, and the library written in Veyl itself
+  src/         the old Go backend, kept as the reference the tests
+               compare against
+  docs/        SYNTAX, TUTORIAL, ARCHITECTURE
 ```
 
 Three Go modules wired together with `replace`. Run `go` commands from
-inside each one.
+inside each one; there is no single command that covers all three.
+
+`src/` is here on purpose. It is discontinued as a product and lives on
+the [`veylgo`](../../tree/veylgo) branch for anyone who wants it, but
+deleting it from this branch would delete the test suite with it: the
+correctness argument for this compiler is that it agrees with that one
+byte for byte, and there is nothing to agree with if it is gone.
+
+Most of the library is not in Go at all. `prelude_*.go` hold Veyl
+source that this compiler compiles: the math library, time, bits, url,
+stats, term, rand, the regex engine, the hashes and csv. Adding a
+library function is a signature in `library.go`, an entry in
+`preludeOf`, and the function itself in Veyl.
 
 ---
 
@@ -417,8 +439,15 @@ inside each one.
 | v0.16 | a package manager, `rand`, `stats`, `term`, `log` |
 | v0.17 | namespaced imports, `bytes`, an interactive console |
 | v0.17.02 | four editors, an Explorer menu, the Veyl rename |
-| unreleased | the assembly backend |
-| next | generics |
+| **v0.18** | **the native compiler: no Go, no assembler, no linker** |
+| next | `http`, `net`, `zip`, `win`; a register allocator; generics |
+
+v0.18 is where the Go backend stopped being how Veyl compiles. It took
+an object header, maps, the error type, structs, a foreign-call op,
+nullables, deep equality, `impl` methods, imports and real globals, a
+mark-and-sweep collector, closures, the library rewritten in Veyl, an
+instruction encoder, a linker, a PE writer, and finally threads. The
+last of those brought the test suite to 24 of 24.
 
 ---
 
@@ -441,12 +470,29 @@ An honest list.
 - **Nil narrowing is syntactic.** `if x != nil` narrows inside the
   block, and `&&` chains work, but an early `return` does not narrow the
   rest of the function.
-- **Garbage collected.** No manual memory, pointers or `unsafe`.
-- **The formatter does not reflow lines.** `veyl fmt` fixes indentation
-  and spacing. Where you break a line is your business.
-- **Windows only for the installer and the GUI.** Elsewhere you build
-  from source, and there is no windowing.
-- **Windows are blank.** `openWindow` opens and manages a real window,
-  but there is no drawing or event API yet.
+- **Garbage collected, but not automatically.** There is a mark-and-sweep
+  collector; `mem.collect()` is the only thing that runs it. A program
+  that allocates in an unbounded loop will exhaust memory. See
+  `saferun.ps1` above.
+- **No `http`, `net`, `zip` or `win`.** They exist on
+  [`veylgo`](../../tree/veylgo) and have not been ported. Calling one
+  is a compile error naming it.
+- **No resolver.** A name that is neither a local, a function nor a
+  builtin is caught by the lowerer rather than the checker, so it is
+  missed when the checker has already failed on something else.
+- **No register allocator.** Every value round-trips through a stack
+  slot, which is the whole of the 20% speed gap and most of the frame
+  size.
+- **No ASLR.** The image says RELOCS_STRIPPED, because nothing the
+  compiler emits holds an absolute address. Adding a relocation table
+  is the fix.
+- **`NAN` and `INF` are compile errors**, deliberately: comparisons
+  lower to `comisd`, which gets an unordered pair wrong, and msvcrt's
+  `printf` writes `1.#INF` where Go writes `+Inf`. A wrong answer would
+  be worse than a refusal.
+- **Printing a float can round the last digit wrong.** It goes through
+  msvcrt, which stops at seventeen significant digits.
+- **Windows x86-64 only.** The PE writer and the calling convention are
+  both specific to it.
 - **Return checking is conservative.** A function whose only `return` is
   inside a loop is rejected, even when it is provably fine.
