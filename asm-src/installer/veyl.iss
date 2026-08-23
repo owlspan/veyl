@@ -15,6 +15,9 @@
 #define AppVersion "0.18.0"
 #define AppPublisher "Veyl"
 #define AppExeName "veyl.exe"
+; Kept in step with editors/vscode/package.json by hand; the folder
+; name VS Code expects embeds it.
+#define ExtVersion "0.18.0"
 
 [Setup]
 AppId={{B7D42A19-3E6C-4F80-A5D3-91C7E20B4F68}
@@ -58,6 +61,15 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "core"; Description: "The Veyl compiler"; Types: full compact custom; Flags: fixed
 Name: "docs"; Description: "Examples and documentation"; Types: full custom
 
+; Editor syntax highlighting. Each writes into that editor's own config
+; folder, so ticking one for an editor you do not have is harmless: the
+; folder is created and simply never read.
+Name: "editors"; Description: "Editor syntax highlighting"; Types: full custom
+Name: "editors\vscode"; Description: "Visual Studio Code"; Types: full custom
+Name: "editors\npp"; Description: "Notepad++"; Types: full custom
+Name: "editors\sublime"; Description: "Sublime Text"; Types: custom
+Name: "editors\vim"; Description: "Vim and Neovim"; Types: custom
+
 [Tasks]
 Name: "addtopath"; Description: "Add Veyl to PATH so 'veyl' works in any terminal"; \
     GroupDescription: "Setup:"
@@ -78,6 +90,41 @@ Source: "..\..\docs\TUTORIAL.md"; DestDir: "{app}"; Components: docs; Flags: ign
 Source: "..\examples\*.vl";       DestDir: "{app}\examples"; Components: docs; Flags: ignoreversion
 Source: "..\examples\net\*.vl";   DestDir: "{app}\examples\net"; Components: docs; Flags: ignoreversion
 Source: "..\examples\gui\*.vl";   DestDir: "{app}\examples\gui"; Components: docs; Flags: ignoreversion
+
+; Dropped straight into the extensions folder. VS Code scans that
+; directory at startup, so there is no marketplace step and nothing to
+; sideload by hand.
+;
+; The folder name is not decoration. VS Code expects
+; publisher.name-version, the same shape it gives its own installs. A
+; plain "veyl-lang" is treated as something it did not put there, and
+; the id it derives can end up in the .obsolete file beside the
+; extensions folder - anything named there is ignored outright, with no
+; highlighting and no error to say why.
+Source: "..\..\editors\vscode\*"; \
+    DestDir: "{%USERPROFILE}\.vscode\extensions\veyl.veyl-lang-{#ExtVersion}"; \
+    Components: editors\vscode; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Notepad++ reads every XML in userDefineLangs at startup.
+Source: "..\..\editors\notepad++\veyl.xml"; \
+    DestDir: "{userappdata}\Notepad++\userDefineLangs"; \
+    Components: editors\npp; Flags: ignoreversion
+
+; Sublime scans Packages\User.
+Source: "..\..\editors\sublime\Veyl.sublime-syntax"; \
+    DestDir: "{userappdata}\Sublime Text\Packages\User"; \
+    Components: editors\sublime; Flags: ignoreversion
+
+; Vim and Neovim look in different places, so both get a copy rather
+; than the installer trying to guess which one is in use.
+Source: "..\..\editors\vim\syntax\veyl.vim"; DestDir: "{userdocs}\vimfiles\syntax"; \
+    Components: editors\vim; Flags: ignoreversion
+Source: "..\..\editors\vim\ftdetect\veyl.vim"; DestDir: "{userdocs}\vimfiles\ftdetect"; \
+    Components: editors\vim; Flags: ignoreversion
+Source: "..\..\editors\vim\syntax\veyl.vim"; DestDir: "{localappdata}\nvim\syntax"; \
+    Components: editors\vim; Flags: ignoreversion
+Source: "..\..\editors\vim\ftdetect\veyl.vim"; DestDir: "{localappdata}\nvim\ftdetect"; \
+    Components: editors\vim; Flags: ignoreversion
 
 [Icons]
 ; A terminal with Veyl on PATH whether or not the PATH task was
