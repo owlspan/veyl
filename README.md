@@ -56,6 +56,7 @@ messages included. Where the two disagree, this one is wrong.
 
 - [Install](#install)
 - [Commands](#commands)
+- [Packages](#packages)
 - [A tour of the language](#a-tour-of-the-language)
 - [How it compiles](#how-it-compiles)
 - [Building from source](#building-from-source)
@@ -74,8 +75,9 @@ Internals: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 On Windows, run the installer from the
 [releases page](https://github.com/owlspan/veyl/releases). It is about
-5 MB, adds the compiler to PATH if you let it, and puts a couple of
-verbs on the right-click menu for `.vl` files.
+7.5 MB, adds the compiler to PATH if you let it, sets up editor
+highlighting, and puts Run and Compile on the right-click menu for
+`.vl` files.
 
 There is nothing else to install. No Go, no assembler, no linker, no C
 runtime. That is the point of this version, and it is why there is no
@@ -116,13 +118,45 @@ runs it.
 All of them go through `cmd /K`, so the console stays up long enough to
 read what it said, whether that was a path or a list of errors.
 
+### Packages
+
+Libraries that are not built in are installed per project:
+
+```
+veyl get totp                          the official registry
+veyl get github.com/you/thing          anyone's repository
+veyl get https://example.com/x.vl      a single file
+veyl list
+veyl remove totp
+```
+
+They land in `./veyl_modules` next to your program rather than
+machine-wide, so a project carries its own dependencies and deleting
+the directory uninstalls everything. Reach one with a bare import:
+
+```veyl
+import "totp"
+print(must(totpNow(secret)))
+```
+
+The registry is [owlspan/veyl-packages](https://github.com/owlspan/veyl-packages),
+and its README covers writing your own - you do not need to be in the
+registry to publish one.
+
+A package may ship a native `.dll`, which `veyl build` copies next to
+the executable. That is how something like SQLite can be available
+without every install carrying it.
+
+**One thing to know:** an import lands in a flat namespace. There is no
+`totp.` qualifier yet, so packages prefix their exported names by
+convention - `totpNow`, not `now`.
+
 ### Editors
 
-The syntax files for VS Code, Notepad++, Sublime Text and Vim/Neovim
-are on [`veylgo`](../../tree/veylgo) under `src/editors/`, along with
-the `veyl editors` command that generates most of them from the
-compiler's keyword and builtin tables. They highlight the same
-language, so they work here; porting the generator is on the list.
+The installer sets up syntax highlighting for VS Code, Notepad++,
+Sublime Text and Vim/Neovim; the files are in
+[`editors/`](editors/). VS Code goes straight into the extensions
+folder, so there is no marketplace step.
 
 ---
 
