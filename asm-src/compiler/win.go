@@ -28,15 +28,21 @@ package main
 
 // Win32 constants.
 const (
+	// WS_OVERLAPPEDWINDOW, and the same without WS_THICKFRAME and
+	// WS_MAXIMIZEBOX, which are between them the whole of "resizable".
 	wsOverlappedWindow = 0x00CF0000
+	wsFixedWindow      = 0x00CA0000
 	wsVisible          = 0x10000000
-	cwUseDefault       = -2147483648 // 0x80000000 as a signed int
-	swShow             = 5
-	pmRemove           = 0x0001
-	srcCopy            = 0x00CC0020
-	transparentBk      = 1
-	idcArrow           = 32512
-	whiteBrush         = 0
+
+	gwlStyle       = -16
+	swpFrameChange = 0x0020 | 0x0002 | 0x0001 | 0x0004 // FRAMECHANGED|NOMOVE|NOSIZE|NOZORDER
+	cwUseDefault   = -2147483648                       // 0x80000000 as a signed int
+	swShow         = 5
+	pmRemove       = 0x0001
+	srcCopy        = 0x00CC0020
+	transparentBk  = 1
+	idcArrow       = 32512
+	whiteBrush     = 0
 
 	wmQuit        = 0x0012
 	wmMouseMove   = 0x0200
@@ -86,6 +92,7 @@ var user32Syms = []string{
 	"PeekMessageA", "TranslateMessage", "DispatchMessageA", "ShowWindow",
 	"UpdateWindow", "GetDC", "ReleaseDC", "IsWindow", "LoadCursorA",
 	"GetClientRect", "FillRect", "SetWindowTextA", "GetAsyncKeyState",
+	"AdjustWindowRect", "SetWindowLongPtrA", "GetWindowLongPtrA", "SetWindowPos",
 }
 
 var gdi32Syms = []string{
@@ -195,6 +202,14 @@ func (l *lowerer) winBuiltin(c *Call, name string) (Reg, bool) {
 		l.winEllipse(a[0], a[1], a[2], a[3], a[4])
 		return l.junk(), true
 
+	case "win.resizable":
+		if !arity(2) {
+			return l.junk(), true
+		}
+		a := args(2)
+		l.winResizable(a[0], a[1])
+		return l.junk(), true
+
 	case "win.title":
 		if !arity(2) {
 			return l.junk(), true
@@ -250,6 +265,29 @@ func (l *lowerer) winBuiltin(c *Call, name string) (Reg, bool) {
 	return NoReg, false
 }
 
+// winResizable adds or removes the drag border and the maximise box.
+//
+// A window is fixed when it is opened, because the back buffer is one
+// bitmap made once and a window whose drawing area can change out from
+// under it is the harder case. Turning this on makes win.poll notice
+// the new size and rebuild the buffer.
+//
+// SetWindowPos with FRAMECHANGED afterwards is not optional: a style
+// written with SetWindowLongPtr alone is stored and not drawn, so the
+// border keeps working until something else happens to recalculate it.
+func (l *lowerer) winResizable(w, on Reg) {
+	hwnd := l.field(w, winHwndAt, vInt)
+	style := l.pick(on, l.constant(wsOverlappedWindow|wsVisible),
+		l.constant(wsFixedWindow|wsVisible), vInt)
+
+	l.ccall("SetWindowLongPtrA", []Reg{hwnd, l.constant(gwlStyle), style},
+		[]vty{vInt, vInt, vInt}, vInt, false, false)
+	l.ccall("SetWindowPos",
+		[]Reg{hwnd, l.constant(0), l.constant(0), l.constant(0),
+			l.constant(0), l.constant(0), l.constant(swpFrameChange)},
+		[]vty{vInt, vInt, vInt, vInt, vInt, vInt, vInt}, vInt, true, false)
+}
+
 // asBool turns a nonzero int into a bool.
 func (l *lowerer) asBool(v Reg) Reg {
 	return l.compare(OpNe, v, l.constant(0))
@@ -289,12 +327,28 @@ func (l *lowerer) winOpen(title, width, height Reg) Reg {
 		l.emit(Instr{Op: OpStoreMem, A: wc, B: cls, Imm: wcClassNameAt})
 		l.ccall("RegisterClassA", []Reg{wc}, []vty{vInt}, vInt, true, false)
 
+		// The size asked for is the drawing area, not the window.
+		// CreateWindowEx measures the whole window including the title
+		// bar and the border, so passing the wanted size straight
+		// through makes the client area smaller than the back buffer
+		// and clips the bottom and right of everything drawn.
+		frame := l.allocObj(l.constant(16), tagBytes)
+		l.putInt32(frame, 0, l.constant(0))
+		l.putInt32(frame, 4, l.constant(0))
+		l.putInt32(frame, 8, a[1])
+		l.putInt32(frame, 12, a[2])
+		l.ccall("AdjustWindowRect",
+			[]Reg{frame, l.constant(wsFixedWindow), l.constant(0)},
+			[]vty{vInt, vInt, vInt}, vInt, true, false)
+		outerW := l.arith(OpSub, l.getInt32(frame, 8), l.getInt32(frame, 0))
+		outerH := l.arith(OpSub, l.getInt32(frame, 12), l.getInt32(frame, 4))
+
 		hwnd := l.ccall("CreateWindowExA",
 			[]Reg{
 				l.constant(0), cls, a[0],
-				l.constant(wsOverlappedWindow | wsVisible),
+				l.constant(wsFixedWindow | wsVisible),
 				l.constant(cwUseDefault), l.constant(cwUseDefault),
-				a[1], a[2],
+				outerW, outerH,
 				l.constant(0), l.constant(0), inst, l.constant(0),
 			},
 			[]vty{vInt, vStr, vStr, vInt, vInt, vInt, vInt, vInt, vInt, vInt, vInt, vInt},
@@ -432,6 +486,43 @@ func (l *lowerer) winPoll(w Reg) Reg {
 		alive := l.ccall("IsWindow", []Reg{l.field(win, winHwndAt, vInt)},
 			[]vty{vInt}, vInt, true, false)
 		l.emit(Instr{Op: OpJumpNot, A: l.asBool(alive), Dst: NoReg, Imm: quit})
+
+		// If the drawing area has changed, rebuild the back buffer to
+		// match. Without this a resizable window draws through a bitmap
+		// the wrong size and the picture is clipped or padded for the
+		// rest of the run.
+		rect := l.allocObj(l.constant(16), tagBytes)
+		l.ccall("GetClientRect", []Reg{l.field(win, winHwndAt, vInt), rect},
+			[]vty{vInt, vInt}, vInt, true, false)
+		cw := l.getInt32(rect, 8)
+		ch := l.getInt32(rect, 12)
+
+		same := l.newLabel()
+		changed := l.logicalOr(
+			l.compare(OpNe, cw, l.field(win, winWidthAt, vInt)),
+			l.compare(OpNe, ch, l.field(win, winHeightAt, vInt)))
+		l.emit(Instr{Op: OpJumpNot, A: changed, Dst: NoReg, Imm: same})
+		// A zero-sized client area is a minimised window. Rebuilding at
+		// that size would give a bitmap nothing can be drawn into and
+		// the picture would not come back when it is restored.
+		l.emit(Instr{Op: OpJumpNot, A: l.logicalAnd(
+			l.compare(OpGt, cw, l.constant(0)),
+			l.compare(OpGt, ch, l.constant(0))), Dst: NoReg, Imm: same})
+
+		l.ccall("DeleteObject", []Reg{l.field(win, winBitmapAt, vInt)},
+			[]vty{vInt}, vInt, true, false)
+		nb := l.ccall("CreateCompatibleBitmap",
+			[]Reg{l.field(win, winDCAt, vInt), cw, ch},
+			[]vty{vInt, vInt, vInt}, vInt, false, false)
+		l.emit(Instr{Op: OpStoreMem, A: win, B: nb, Imm: winBitmapAt})
+		l.ccall("SelectObject", []Reg{l.field(win, winMemDCAt, vInt), nb},
+			[]vty{vInt, vInt}, vInt, false, false)
+		l.ccall("SetBkMode", []Reg{l.field(win, winMemDCAt, vInt),
+			l.constant(transparentBk)}, []vty{vInt, vInt}, vInt, true, false)
+		l.emit(Instr{Op: OpStoreMem, A: win, B: cw, Imm: winWidthAt})
+		l.emit(Instr{Op: OpStoreMem, A: win, B: ch, Imm: winHeightAt})
+
+		l.mark(same)
 		l.emit(Instr{Op: OpRet, A: l.constant(1), Dst: NoReg})
 
 		l.mark(quit)
@@ -473,6 +564,20 @@ func (l *lowerer) winFillRect(w, x, y, width, height, color Reg) {
 	l.ccall("FillRect", []Reg{l.field(w, winMemDCAt, vInt), rect, brush},
 		[]vty{vInt, vInt, vInt}, vInt, true, false)
 	l.ccall("DeleteObject", []Reg{brush}, []vty{vInt}, vInt, true, false)
+}
+
+// getInt32 reads a signed four-byte value at an offset. AdjustWindowRect
+// puts negative numbers in left and top - the frame grows outwards from
+// the client area - so this has to sign-extend or the width comes back
+// four billion short.
+func (l *lowerer) getInt32(p Reg, off int64) Reg {
+	v := l.constant(0)
+	for k := int64(0); k < 4; k++ {
+		b := l.loadByte(p, l.constant(off+k))
+		v = l.arith(OpBOr, v, l.arith(OpShl, b, l.constant(8*k)))
+	}
+	big := l.compare(OpGt, v, l.constant(0x7fffffff))
+	return l.pick(big, l.arith(OpSub, v, l.constant(0x100000000)), v, vInt)
 }
 
 // putInt32 writes a four-byte little-endian value at an offset.

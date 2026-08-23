@@ -230,6 +230,7 @@ var sigs = map[string]front.Signature{
 	"win.mouseDown": {Params: []*Type{Int}, Ret: Bool},
 	"win.clicked":   {Params: []*Type{Int}, Ret: Bool},
 	"win.key":       {Params: []*Type{Int, Int}, Ret: Bool},
+	"win.resizable": {Params: []*Type{Int, Bool}, Ret: Void},
 
 	// The widgets, written in Veyl in the prelude on top of the above.
 	"win.pressed": {Params: []*Type{Int, Str}, Ret: Bool},
