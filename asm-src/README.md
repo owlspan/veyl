@@ -11,13 +11,22 @@ installer, and any hope of pointers or manual memory.
 This backend is how those get bought back.
 
 ```
-hello.vl  ->  [veylasm]  ->  hello.s  ->  [as, ld]  ->  hello.exe
+hello.vl  ->  [veylasm]  ->  hello.exe
 ```
+
+Nothing in that arrow is another program. veylasm encodes the
+instructions, links, and writes the PE itself, so a build needs nothing
+installed.
 
 ## Status
 
-A working subset, compiled all the way to a running `.exe` with no Go
-anywhere in the pipeline:
+Every one of the 24 programs in the Go backend's own test suite
+compiles here, and every one prints the same bytes. So does every
+program in `examples/`. The Go backend stays the definition of what
+Veyl means; where the two disagree, this one is wrong.
+
+Compiled all the way to a running `.exe` with no Go anywhere in the
+pipeline:
 
 - `int`, `float`, `bool`, `str`, and lists of any of them
 - `let`, `const`, plain and compound assignment, block scoping with
@@ -66,21 +75,30 @@ anywhere in the pipeline:
   `delete`; `path.join`, `dir`, `base`, `ext`; `env.get`, `has`, `set`;
   `run`, `pid`, `cpus`, `hostname`; and `time.now`
 
-Everything else is a compile error naming what is missing: closures and
-higher-order functions, structured concurrency, `bytes`, json, `re`, and
-the library functions that are not listed above.
+- closures and first-class functions, captured by reference, and the
+  higher-order builtins `map`, `filter`, `reduce`, `sortBy`, `any`,
+  `all`, `each`
+- structured concurrency: `task.map`, `task.mapLimit`, `task.each` and
+  `task.all`, on real Windows threads, results in list order
+- the `bytes` type, and `hash`: md5, sha1, sha256, sha512, crc32, hex
+  and base64 both ways, and `hash.file`
+- `re`: a backtracking engine written in Veyl, matching Go's
+  leftmost-first semantics
+- `json` encode and decode, and `csv` parse, write, read and save
+- the math, time, bits, args, url, stats, term and rand libraries, all
+  written in Veyl in the prelude
+- a mark-and-sweep collector, conservative over roots
 
-Every heap allocation carries an object header - a size and a tag
-saying whether the block holds pointers - so that a collector is
-possible. There is still no collector, so nothing is ever freed, and
-a result costs an allocation per fallible call.
+Missing against the Go backend: `http`, `net`, `zip` and `win`. There
+is also no resolver on this side, so a name that is neither a local, a
+function nor a builtin is caught by the lowerer rather than the
+checker. Everything absent is a compile error naming it, never wrong
+output.
 
-It compiles 14 of the 24 programs in the Go backend's own test suite,
-and every one of the 25 programs in `examples/` produces byte-identical
-output through both backends - error messages included, which is why
-the `os` library is written against Win32 rather than the C runtime.
-Go's message for a missing file is FormatMessage's sentence and
-strerror's is a different one.
+Byte-identical means error messages too, which is why the `os` library
+is written against Win32 rather than the C runtime: Go's message for a
+missing file is FormatMessage's sentence, and strerror's is a
+different one.
 
 ```
 $ veylasm run examples/floats.vl
@@ -93,13 +111,18 @@ $ veylasm run examples/floats.vl
 `examples/collatz.vl` is the benchmark - nested loops, 10,000 iterations
 of real integer work - through both backends:
 
-| | via Go | via assembly |
-| --- | ---: | ---: |
-| runtime, best of 5 | 67 ms | 81 ms |
-| executable size | 2,524,160 bytes | 123,027 bytes |
+The two assembly columns are the same machine code. Only the linking
+differs: the middle one goes through gcc, the last is the PE this
+compiler writes itself.
 
-**About 20% slower and 20x smaller**, and most of that 123 KB is
-MinGW's C runtime rather than anything this compiler produced.
+| | via Go | asm, via gcc | asm, self-linked |
+| --- | ---: | ---: | ---: |
+| runtime, best of 5 | 67 ms | 81 ms | 81 ms |
+| executable size | 2,524,160 | 123,102 | 2,560 |
+
+**About 20% slower and a thousand times smaller.** The 123 KB column is
+mostly MinGW's C runtime rather than anything this compiler produced,
+which is what the last column removes.
 
 Do not read that gap as a finish line. Every value still round-trips
 through a stack slot, and Go's optimiser is doing work nothing here
@@ -108,10 +131,17 @@ closes it.
 
 ## What it does not have
 
-**No collector.** Every string concatenation, every list and every
-float-to-string conversion allocates, and nothing is ever freed. This
-is the single largest thing between here and the Go backend, and it is
-what the memory model on the roadmap is blocked on.
+**Nothing collects on its own.** There is a mark-and-sweep collector,
+but `mem.collect()` is the only thing that runs it. Automatic
+collection would have to be sure no allocation site is holding a live
+pointer in a register between the allocation and the store that parks
+it, which is true of every site written so far and is a property
+nobody is currently checking.
+
+The practical consequence is worth stating plainly: a loop that
+allocates and never terminates will consume all of memory rather than
+being collected out of trouble. `scripts/saferun.ps1` runs a program
+under a job object memory cap for exactly that case.
 
 **No resolver.** A name that is neither a local, a function nor a
 builtin is caught by the lowerer rather than the checker, so it is
@@ -120,9 +150,13 @@ missed when the checker has already failed on something else. Sharing
 
 **A string is NUL-terminated bytes**, with no length beside it. So a
 file holding a zero byte reads back short where the Go backend reads it
-whole, and building a string by repeated appending is quadratic. Both
-are arguments for a `bytes` type and a growable buffer rather than
-things to work around.
+whole, which is what the `bytes` type is for, and building a string by
+repeated appending is quadratic, which wants a growable buffer and does
+not have one yet.
+
+**Printing a float rounds through msvcrt**, which stops at seventeen
+significant digits, so a value needing sixteen can round the wrong way.
+The fix is Go's `strconv/decimal.go` in the prelude.
 
 **Two deliberate float gaps**, each a compile error rather than a
 wrong answer:
@@ -140,12 +174,13 @@ stack frame layout - is identical either way. Everything that assembly
 text defers is mechanical: byte encoding, jump offset backpatching,
 COFF object layout, relocations, PE headers, the import table.
 
-So this does the thinking first and the typing later. When the encoder
-and PE writer are written, they replace `x64.go` and nothing above it
-changes. That is the point of the split, and it is why `x64.go` is
-forbidden from using assembler conveniences: no macros, no
+So this did the thinking first and the typing later. The encoder, the
+linker and the PE writer came afterwards and nothing above `x64.go`
+changed when they did. That is the point of the split, and it is why
+`x64.go` is forbidden from using assembler conveniences: no macros, no
 pseudo-instructions, nothing the assembler has to evaluate. Every line
-must be one instruction whose bytes we could write ourselves.
+must be one instruction whose bytes we could write ourselves, and
+`encode_test.go` checks every one of them against GNU `as`.
 
 ## Layout
 
@@ -225,12 +260,26 @@ it does not understand is worse than one that refuses.
 
 ## Requirements
 
-MinGW's `as` and `gcc`, for assembling and linking. Found on `PATH`, at
-the usual MSYS2 and MinGW install locations, or via `VEYL_MINGW`.
+To build a program: nothing. veylasm encodes, links and writes the PE
+itself.
 
-That dependency is exactly what this backend exists to remove. It is not
-worse than the Go backend's dependency on the Go toolchain, and it goes
-away when `x64.go` learns to write bytes.
+To run the tests: Go, for the differential comparison against the other
+backend, and MinGW's `as` and `gcc`. `encode_test.go` checks every byte
+this compiler emits against GNU `as`, and `VEYL_LINK=mingw` takes the
+old route through `gcc` so a program that runs one way and not the
+other localises the bug to the half that changed. Both are found on
+`PATH`, at the usual MSYS2 and MinGW locations, or via `VEYL_MINGW`.
+Without them those two checks skip and everything else runs.
+
+## Installing
+
+```
+scripts\make-installer.bat
+```
+
+Double-click it. It builds `dist\veylasm-<version>-setup.exe`, which is
+about 5 MB because there is no toolchain to bundle. The Go backend's
+installer is roughly 90, most of it a trimmed copy of Go.
 
 ## What comes next
 
