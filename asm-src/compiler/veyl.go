@@ -42,11 +42,15 @@ usage:
   veyl version            print the version
 
 packages:
-  veyl get <name>         install a package into ./veyl_modules
-  veyl get <user/repo>    install from a GitHub repository
-  veyl get <url>          install from a url
-  veyl list               what is installed here
-  veyl remove <name>      uninstall it
+  veyl get <name>            install a package into ./veyl_modules
+  veyl get <user/repo>       install from a GitHub repository
+  veyl get <url>             install from a url
+  veyl get officials         install every official package
+  veyl get officials --nodlls   the same, minus the ones carrying a
+                                native library, which are the large ones
+  veyl get <user/repo> --all every package a registry lists
+  veyl list                  what is installed here
+  veyl remove <name>         uninstall it
 
 A package installs next to the program that uses it rather than
 machine-wide, so a project carries its own dependencies and deleting
@@ -94,7 +98,43 @@ func main() {
 		if len(args) < 2 {
 			fail("get needs a package name or a url")
 		}
-		for _, spec := range args[1:] {
+		var specs []string
+		noDLLs, all := false, false
+		for _, a := range args[1:] {
+			switch a {
+			case "--nodlls", "--no-dlls":
+				noDLLs = true
+			case "--all":
+				all = true
+			default:
+				if strings.HasPrefix(a, "-") {
+					fail("unknown option %q - get takes --all and --nodlls", a)
+				}
+				specs = append(specs, a)
+			}
+		}
+		if len(specs) == 0 {
+			fail("get needs a package name or a url")
+		}
+		for _, spec := range specs {
+			// `officials` is the whole registry rather than a package
+			// in it, and is the one name `veyl get` reserves.
+			if spec == "officials" || spec == "official" {
+				if err := pkgGetAll(officialBase, noDLLs); err != nil {
+					fail("%v", err)
+				}
+				continue
+			}
+			if all {
+				base, _, err := resolveSpec(spec)
+				if err != nil {
+					fail("cannot get %s: %v", spec, err)
+				}
+				if err := pkgGetAll(base, noDLLs); err != nil {
+					fail("cannot get %s: %v", spec, err)
+				}
+				continue
+			}
 			if err := pkgGet(spec); err != nil {
 				fail("cannot get %s: %v", spec, err)
 			}

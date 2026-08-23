@@ -54,6 +54,13 @@ const officialBase = "https://raw.githubusercontent.com/owlspan/veyl-packages/HE
 // one is a single .vl file named after the package.
 const manifestName = "veyl.pkg"
 
+// indexName lists every package a registry holds, one name per line.
+//
+// A file rather than the GitHub API: the API needs a token past sixty
+// requests an hour and only knows about GitHub, where this works for
+// any registry reachable over HTTP.
+const indexName = "veyl.index"
+
 // pkgClient has a timeout, because a fetch that hangs forever looks
 // exactly like a compiler that has crashed.
 var pkgClient = &http.Client{Timeout: 30 * time.Second}
@@ -110,6 +117,89 @@ func fetch(url string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: server replied %d", url, resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+}
+
+// pkgGetAll installs every package a registry lists in its index.
+//
+// skipNative leaves out the ones carrying a .dll. Those are wrappers
+// around a native library and are the large ones - sqlite is three
+// megabytes against five kilobytes for everything else - so wanting the
+// libraries without them is the common case.
+//
+// Whether a package is native is read from its own manifest rather than
+// marked in the index. One small fetch per package, and a registry
+// cannot get it wrong by forgetting to update a marker.
+func pkgGetAll(base string, skipNative bool) error {
+	body, err := fetch(base + indexName)
+	if err != nil {
+		return fmt.Errorf("this does not look like a registry: %v", err)
+	}
+
+	var names []string
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.ContainsAny(line, `/\:.`) {
+			return fmt.Errorf("%s names something that is not a package: %q",
+				indexName, line)
+		}
+		names = append(names, line)
+	}
+	if len(names) == 0 {
+		return fmt.Errorf("%s lists no packages", base+indexName)
+	}
+
+	var installed, skipped, failed int
+	for _, name := range names {
+		if skipNative {
+			native, err := hasNativeFile(base + name + "/")
+			if err == nil && native {
+				fmt.Printf("skipping %s (carries a native library)\n", name)
+				skipped++
+				continue
+			}
+		}
+		fmt.Printf("%s:\n", name)
+		if err := pkgGet(base + name + "/"); err != nil {
+			// One package failing should not stop the rest. A registry
+			// with a broken entry is still worth the others.
+			fmt.Fprintf(os.Stderr, "  could not get %s: %v\n", name, err)
+			failed++
+			continue
+		}
+		installed++
+	}
+
+	fmt.Printf("\n%d installed", installed)
+	if skipped > 0 {
+		fmt.Printf(", %d skipped", skipped)
+	}
+	if failed > 0 {
+		fmt.Printf(", %d failed", failed)
+	}
+	fmt.Println()
+	if failed > 0 {
+		return fmt.Errorf("%d package(s) could not be installed", failed)
+	}
+	return nil
+}
+
+// hasNativeFile reports whether a package's manifest names a .dll.
+func hasNativeFile(base string) (bool, error) {
+	body, err := fetch(base + manifestName)
+	if err != nil {
+		// No manifest means a single .vl file, which is not native.
+		return false, nil
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.EqualFold(filepath.Ext(line), ".dll") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // pkgGet installs one package.
