@@ -2243,6 +2243,23 @@ A package may carry a native `.dll`, which `veyl build` copies next to
 the executable. That is how [`sqlite`](#db---sqlite) works without
 every install carrying three megabytes of database.
 
+#### What is in the official registry
+
+| Package | What it is |
+| --- | --- |
+| `dotenv` | `.env` files: quoting, `export` prefixes, typed reads |
+| `ini` | `[sections]`, `key = value`, comments, stable round trip |
+| `jwt` | JSON Web Tokens, HS256, signing and verifying |
+| `querybuilder` | Building SQL without pasting values into it |
+| `sqlite` | The `sqlite3.dll` that [`db`](#db---sqlite) needs |
+| `toml` | TOML, flattened to dotted keys, typed reads |
+| `totp` | TOTP and HOTP, the codes an authenticator app shows |
+| `validator` | Checking data, collecting every problem rather than the first |
+
+Each one documents itself at the top of its `.vl` file, including what
+it deliberately does not do. `toml`, for instance, refuses dates,
+inline tables and arrays of tables rather than guessing at them.
+
 The registry is
 [owlspan/veyl-packages](https://github.com/owlspan/veyl-packages), and
 its README covers writing your own. You do not have to be in the
