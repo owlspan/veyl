@@ -910,6 +910,32 @@ func (l *lowerer) endFunction(ret vty) {
 	switch {
 	case ret.k == kVoid && !ret.res && !ret.null:
 		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
+
+	// A T! is a pointer to a two-word object, so the zero here has to be
+	// a real one rather than the integer zero below. Falling off the end
+	// of a void! is the ordinary way to say it worked:
+	//
+	//     fn check(n: int) -> void! {
+	//         if n < 0 { return fail("negative") }
+	//     }
+	//
+	// That used to return 0, and the first isOk on it dereferenced a
+	// null pointer. For a non-void T! running off the end is a missing
+	// return that nothing here catches yet, so it gets a defined value
+	// rather than a crash.
+	case ret.res:
+		inner := ret.inner()
+		var zero Reg
+		switch {
+		case inner.k == kVoid || inner.null:
+			zero = l.constant(0)
+		case inner.k == kFloat:
+			zero = l.floatConst(0)
+		default:
+			zero = l.constant(0)
+		}
+		l.emit(Instr{Op: OpRet, A: l.resOk(zero, ret), Dst: NoReg})
+
 	case ret.k == kFloat && !ret.res && !ret.null:
 		z := l.newReg()
 		l.regTy[z] = vFloat
