@@ -145,6 +145,11 @@ func main() {
 		fmt.Print(Emit(mod))
 	case "build":
 		out := strings.TrimSuffix(path, filepath.Ext(path)) + ".exe"
+		if mod.usesSQLite {
+			if err := requireSQLite(filepath.Dir(path)); err != nil {
+				fail("%v", err)
+			}
+		}
 		buildExe(mod, out)
 		// A package may carry a native library. Put it beside the
 		// executable, or the program will not start on a machine that
@@ -158,6 +163,11 @@ func main() {
 		}
 		defer os.RemoveAll(tmp)
 		out := filepath.Join(tmp, "prog.exe")
+		if mod.usesSQLite {
+			if err := requireSQLite(filepath.Dir(path)); err != nil {
+				fail("%v", err)
+			}
+		}
 		buildExe(mod, out)
 		copyDLLsBeside(out, packageDLLs(filepath.Dir(path)))
 		run := exec.Command(out)

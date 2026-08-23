@@ -270,6 +270,24 @@ func packageDLLs(root string) []string {
 	return out
 }
 
+// requireSQLite checks that the sqlite package is installed before a
+// program that uses db.* is built.
+//
+// Without this the build succeeds and the executable refuses to start
+// with 0xC0000135 and no message, because Windows resolves imports
+// before main runs and says nothing useful about which one was
+// missing. Catching it here costs a directory listing and turns it into
+// a sentence naming the fix.
+func requireSQLite(root string) error {
+	for _, dll := range packageDLLs(root) {
+		if strings.EqualFold(filepath.Base(dll), "sqlite3.dll") {
+			return nil
+		}
+	}
+	return fmt.Errorf("this program uses db.*, which needs SQLite.\n" +
+		"        Install it next to the program with:  veyl get sqlite")
+}
+
 // copyDLLsBeside puts each one next to the executable, unless a file of
 // that name is already there and identical in size.
 func copyDLLsBeside(exePath string, dlls []string) {

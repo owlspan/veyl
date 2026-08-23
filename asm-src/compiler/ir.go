@@ -588,6 +588,10 @@ type Module struct {
 	Externs map[string]bool // foreign symbols called directly, declared
 	// as .extern at the top of the .s file
 	NGlobals int // words of static storage the program needs
+
+	// usesSQLite means the program calls db.*, so the build needs
+	// sqlite3.dll from the sqlite package beside the executable.
+	usesSQLite bool
 }
 
 func (m *Module) needs(h string) { m.Helpers[h] = true }
@@ -1880,6 +1884,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.netBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.dbBuiltin(c, name); handled {
 		return r
 	}
 

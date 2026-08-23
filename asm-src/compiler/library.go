@@ -233,6 +233,21 @@ var sigs = map[string]front.Signature{
 	"win.resizable": {Params: []*Type{Int, Bool}, Ret: Void},
 
 	// The widgets, written in Veyl in the prelude on top of the above.
+	// SQLite. A connection is an opaque int handle, and every value
+	// comes back as str because a column is dynamically typed and there
+	// is no way yet to say what a query returns.
+	//
+	// exec and query both take their arguments separately and bind
+	// them, so there is no path through this API that pastes a value
+	// into SQL.
+	"db.open":    {Params: []*Type{Str}, Ret: ResultOf(Int)},
+	"db.close":   {Params: []*Type{Int}, Ret: Void},
+	"db.exec":    {Params: []*Type{Int, Str, ListOf(Str)}, Ret: ResultOf(Void)},
+	"db.query":   {Params: []*Type{Int, Str, ListOf(Str)}, Ret: ResultOf(ListOf(ListOf(Str)))},
+	"db.changes": {Params: []*Type{Int}, Ret: Int},
+	"db.lastId":  {Params: []*Type{Int}, Ret: Int},
+	"db.version": {Ret: Str},
+
 	"win.pressed": {Params: []*Type{Int, Str}, Ret: Bool},
 	"win.hover":   {Params: []*Type{Int, Int, Int, Int, Int}, Ret: Bool},
 	"win.button":  {Params: []*Type{Int, Int, Int, Int, Int, Str}, Ret: Bool},
