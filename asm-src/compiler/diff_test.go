@@ -68,10 +68,10 @@ func goBackend(t *testing.T) string {
 func asmBackend(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	out := filepath.Join(dir, "veylasm.exe")
+	out := filepath.Join(dir, "veyl.exe")
 	build := exec.Command("go", "build", "-o", out, ".")
 	if outp, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building veylasm failed: %v\n%s", err, outp)
+		t.Fatalf("building veyl failed: %v\n%s", err, outp)
 	}
 	return out
 }
@@ -102,8 +102,8 @@ func runBounded(t *testing.T, backend, src string) ([]byte, error) {
 }
 
 func TestBackendsAgree(t *testing.T) {
-	veyl := goBackend(t)
-	veylasm := asmBackend(t)
+	reference := goBackend(t)
+	veyl := asmBackend(t)
 
 	programs, err := filepath.Glob(filepath.Join("..", "examples", "*.vl"))
 	if err != nil {
@@ -118,13 +118,13 @@ func TestBackendsAgree(t *testing.T) {
 		t.Run(filepath.Base(src), func(t *testing.T) {
 			t.Parallel()
 
-			wantOut, wantErr := runBounded(t, veyl, src)
+			wantOut, wantErr := runBounded(t, reference, src)
 			if wantErr != nil {
 				t.Fatalf("the Go backend could not run this program, so there is "+
 					"nothing to compare against: %v\n%s", wantErr, wantOut)
 			}
 
-			gotOut, gotErr := runBounded(t, veylasm, src)
+			gotOut, gotErr := runBounded(t, veyl, src)
 			if gotErr != nil {
 				t.Fatalf("the assembly backend failed: %v\n%s", gotErr, gotOut)
 			}
@@ -144,7 +144,7 @@ func TestBackendsAgree(t *testing.T) {
 // mis-compiles what it does not understand is worse than one that
 // refuses, and this is the whole reason the subset is safe to ship.
 func TestUnsupportedIsAnError(t *testing.T) {
-	veylasm := asmBackend(t)
+	veyl := asmBackend(t)
 	dir := t.TempDir()
 
 	// Keep this list honest as the subset grows. `while` and comparisons
@@ -178,7 +178,7 @@ func TestUnsupportedIsAnError(t *testing.T) {
 			if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			out, err := exec.Command(veylasm, "run", p).CombinedOutput()
+			out, err := exec.Command(veyl, "run", p).CombinedOutput()
 			if err == nil {
 				t.Fatalf("expected a compile error, but it compiled and printed:\n%s", out)
 			}

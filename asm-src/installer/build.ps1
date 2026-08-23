@@ -3,7 +3,7 @@
 #     powershell -ExecutionPolicy Bypass -File installer\build.ps1
 #
 # Two steps, which is the whole point of this backend: build
-# veylasm.exe, then compile the Inno Setup script. There is no toolchain
+# veyl.exe, then compile the Inno Setup script. There is no toolchain
 # to stage. The Go backend's installer ships 177 MB of trimmed Go
 # because that backend compiles by handing generated code to the Go
 # compiler; this one writes the executable itself, so the payload is one
@@ -16,36 +16,36 @@
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
-$dist = Join-Path $repo 'dist'   # matches OutputDir in veylasm.iss
+$dist = Join-Path $repo 'dist'   # matches OutputDir in veyl.iss
 
 Push-Location $repo
 try {
-    Write-Host '==> building veylasm.exe' -ForegroundColor Cyan
-    & go build -o veylasm.exe ./compiler
+    Write-Host '==> building veyl.exe' -ForegroundColor Cyan
+    & go build -o veyl.exe ./compiler
     if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
 
-    $exe = Join-Path $repo 'veylasm.exe'
+    $exe = Join-Path $repo 'veyl.exe'
     $version = (& $exe version)
-    if ($LASTEXITCODE -ne 0) { throw 'veylasm version failed' }
+    if ($LASTEXITCODE -ne 0) { throw 'veyl version failed' }
     Write-Host "    $version" -ForegroundColor Green
 
     # The version in the .iss has to match the one compiled into the
     # exe, or the installer names a release that does not exist. Read it
     # from the exe and check, rather than trusting two files to be
     # edited together.
-    $iss = Join-Path $PSScriptRoot 'veylasm.iss'
-    $want = ([regex]'veylasm (\S+)').Match($version).Groups[1].Value
+    $iss = Join-Path $PSScriptRoot 'veyl.iss'
+    $want = ([regex]'veyl (\S+)').Match($version).Groups[1].Value
     $have = ([regex]'#define AppVersion "([^"]+)"').Match((Get-Content $iss -Raw)).Groups[1].Value
     if ($want -ne $have) {
-        throw "version mismatch: veylasm.exe says $want, veylasm.iss says $have. " +
-              "Update AppVersion in installer\veylasm.iss."
+        throw "version mismatch: veyl.exe says $want, veyl.iss says $have. " +
+              "Update AppVersion in installer\veyl.iss."
     }
 
     # Prove it compiles something. PATH is stripped to System32 first so
     # this cannot accidentally succeed by finding a Go, an assembler or
     # a linker that the installed copy will not have.
     Write-Host '==> checking the compiler builds a program' -ForegroundColor Cyan
-    $probe = Join-Path $env:TEMP ("veylasm-probe-" + [guid]::NewGuid().ToString('N'))
+    $probe = Join-Path $env:TEMP ("veyl-probe-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $probe | Out-Null
     try {
         $src = Join-Path $probe 'probe.vl'
@@ -55,7 +55,7 @@ try {
         $env:PATH = "$env:SystemRoot\System32"
         try {
             $out = & $exe run $src
-            if ($LASTEXITCODE -ne 0) { throw "veylasm could not compile the probe" }
+            if ($LASTEXITCODE -ne 0) { throw "veyl could not compile the probe" }
             if ($out -notmatch 'installer probe 4') { throw "unexpected probe output: $out" }
         } finally {
             $env:PATH = $savedPath
@@ -81,7 +81,7 @@ try {
     & $iscc $iss
     if ($LASTEXITCODE -ne 0) { throw "iscc failed with $LASTEXITCODE" }
 
-    Get-ChildItem (Join-Path $dist 'veylasm-*-setup.exe') | ForEach-Object {
+    Get-ChildItem (Join-Path $dist 'veyl-*-setup.exe') | ForEach-Object {
         Write-Host ("==> {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB)) -ForegroundColor Green
     }
 } finally {

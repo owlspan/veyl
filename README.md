@@ -21,7 +21,7 @@ print("")
 ```
 
 ```
-$ veylasm run primes.vl
+$ veyl run primes.vl
 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 ```
 
@@ -36,7 +36,7 @@ toolchain and no Go in the pipeline, and none of them in what comes
 out.
 
 ```
-primes.vl  ->  [veylasm]  ->  primes.exe
+primes.vl  ->  [veyl]  ->  primes.exe
 ```
 
 That is the whole build. The same `collatz.vl` that produced a 2.4 MB
@@ -90,15 +90,15 @@ To build the installer yourself, double-click
 
 | Command | Effect |
 | --- | --- |
-| `veylasm run f.vl` | compile and run |
-| `veylasm build f.vl` | write an executable next to the source |
-| `veylasm asm f.vl` | print the generated assembly |
-| `veylasm ir f.vl` | print the intermediate representation |
-| `veylasm version` | print the version |
-| `veylasm f.vl` | same as `run` |
+| `veyl run f.vl` | compile and run |
+| `veyl build f.vl` | write an executable next to the source |
+| `veyl asm f.vl` | print the generated assembly |
+| `veyl ir f.vl` | print the intermediate representation |
+| `veyl version` | print the version |
+| `veyl f.vl` | same as `run` |
 
 Anything after the `.vl` file goes to your program, not to Veyl, so
-`veylasm run app.vl --verbose` reaches `os.args()`.
+`veyl run app.vl --verbose` reaches `os.args()`.
 
 `asm` and `ir` are the debugging tools. When a program does something
 strange, read what it actually compiled to. `ir` is the readable one:
@@ -107,15 +107,14 @@ x86 register exists.
 
 ### Explorer
 
-The installer adds two verbs to the right-click menu for a `.vl` file:
-**Compile to .exe with veylasm** and **Run with veylasm**. Both open a
-console that stays up, so you can read what it said whether that was a
-path or a list of errors.
+Right-clicking a `.vl` file gives **Run with Veyl** and **Compile to
+.exe**, with a **Veyl** submenu underneath holding the generated
+assembly, the IR, and a prompt in that folder. Right-clicking any
+folder gives **Open Veyl prompt here**. Double-clicking a `.vl` file
+runs it.
 
-It deliberately does not claim the `.vl` file type itself. The old
-backend's installer does, and two installers fighting over which one
-owns the extension means whichever ran last wins. Install either or
-both; the verbs sit side by side.
+All of them go through `cmd /K`, so the console stays up long enough to
+read what it said, whether that was a path or a list of errors.
 
 ### Editors
 
@@ -423,7 +422,7 @@ Running it, and running what it produces, needs nothing.
 ```
 git clone https://github.com/owlspan/veyl
 cd veyl/asm-src
-go build -o veylasm.exe ./compiler
+go build -o veyl.exe ./compiler
 ```
 
 Add that folder to your PATH to run it from anywhere. While working on

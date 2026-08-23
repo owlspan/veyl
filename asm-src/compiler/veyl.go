@@ -2,10 +2,10 @@ package main
 
 // The driver for the assembly backend.
 //
-//     veylasm run   f.vl    compile and run
-//     veylasm build f.vl    write an executable next to the source
-//     veylasm asm   f.vl    print the generated assembly
-//     veylasm ir    f.vl    print the intermediate representation
+//     veyl run   f.vl    compile and run
+//     veyl build f.vl    write an executable next to the source
+//     veyl asm   f.vl    print the generated assembly
+//     veyl ir    f.vl    print the intermediate representation
 //
 // `asm` and `ir` are the debugging tools, and they matter more here than
 // `veyl emit` does on the Go backend: when a register allocator produces
@@ -14,7 +14,7 @@ package main
 //
 // Nothing here shells out. The assembly text goes to the byte encoder
 // in encode.go, the linker in link.go lays it out, and pe.go writes a
-// Windows executable - so `veylasm build` needs no assembler, no linker
+// Windows executable - so `veyl build` needs no assembler, no linker
 // and no C runtime installed, which is the thing this backend exists
 // for. VEYL_LINK=mingw takes the old route through `as` and `gcc`, and
 // is kept as the reference the encoder is checked against.
@@ -32,28 +32,30 @@ import (
 
 const Version = "0.18.0"
 
-const usage = `veylasm ` + Version + ` - the Veyl assembly backend
+const usage = `veyl ` + Version + ` - the Veyl compiler
 
 usage:
-  veylasm run   <file.vl>    compile and run
-  veylasm build <file.vl>    compile to an executable next to the source
-  veylasm asm   <file.vl>    print the generated assembly
-  veylasm ir    <file.vl>    print the intermediate representation
-  veylasm version            print the version
+  veyl run   <file.vl>    compile and run
+  veyl build <file.vl>    compile to an executable next to the source
+  veyl asm   <file.vl>    print the generated assembly
+  veyl ir    <file.vl>    print the intermediate representation
+  veyl version            print the version
 
-This compiles Veyl straight to x86-64 and writes the .exe itself. No Go,
-no assembler, no linker, nothing installed. The executables come out
-around a thousand times smaller than the Go backend's and run about 20%
-slower, since there is no register allocator yet.
+Anything after the .vl file goes to your program rather than to veyl,
+so ` + "`veyl run app.vl --verbose`" + ` reaches os.args().
 
-It covers the language as the test suite exercises it: every program in
-the Go backend's suite compiles here and prints the same bytes. Missing
-against that backend are http, net, zip and win, and there is no
-resolver on this side. Anything absent is a compile error naming it,
-never wrong output.
+This compiles Veyl straight to x86-64 and writes the .exe itself: it
+encodes the instructions, resolves the symbols and lays out the PE. No
+assembler, no linker, no C toolchain, nothing to install, and none of
+them in what comes out.
 
-Set VEYL_LINK=mingw to go through as and gcc instead, which is only
-useful for comparing the two.
+asm and ir are the debugging tools. When a program does something
+strange, read what it actually compiled to. ir is the readable one:
+three-address code over virtual registers, before anything knows an x86
+register exists.
+
+Set VEYL_LINK=mingw to go through as and gcc instead. That is only for
+checking this compiler's own output against a known assembler.
 `
 
 func main() {
@@ -65,14 +67,14 @@ func main() {
 
 	cmd := args[0]
 	if cmd == "version" {
-		fmt.Printf("veylasm %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("veyl %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
 		return
 	}
 	if cmd == "help" || cmd == "-h" || cmd == "--help" {
 		fmt.Print(usage)
 		return
 	}
-	// `veylasm f.vl` means `veylasm run f.vl`, matching the Go backend.
+	// `veyl f.vl` means `veyl run f.vl`, matching the Go backend.
 	// A first argument ending in .vl can only be a file, since no command
 	// does, so this cannot shadow one.
 	if strings.HasSuffix(cmd, ".vl") {
@@ -81,7 +83,7 @@ func main() {
 	}
 
 	if len(args) < 2 {
-		fmt.Fprintf(os.Stderr, "veylasm: %s needs a file\n", cmd)
+		fmt.Fprintf(os.Stderr, "veyl: %s needs a file\n", cmd)
 		os.Exit(2)
 	}
 
@@ -106,7 +108,7 @@ func main() {
 		buildExe(mod, out)
 		fmt.Printf("wrote %s\n", out)
 	case "run":
-		tmp, err := os.MkdirTemp("", "veylasm-*")
+		tmp, err := os.MkdirTemp("", "veyl-*")
 		if err != nil {
 			fail("%v", err)
 		}
@@ -122,7 +124,7 @@ func main() {
 			fail("%v", err)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "veylasm: unknown command %q\n\n%s", cmd, usage)
+		fmt.Fprintf(os.Stderr, "veyl: unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
 	}
 }
@@ -178,7 +180,7 @@ func report(errs []string) {
 	for _, e := range errs {
 		fmt.Fprintln(os.Stderr, e)
 	}
-	fmt.Fprintf(os.Stderr, "veylasm: %d error(s)\n", len(errs))
+	fmt.Fprintf(os.Stderr, "veyl: %d error(s)\n", len(errs))
 	os.Exit(1)
 }
 
@@ -213,7 +215,7 @@ func buildExe(mod *Module, out string) {
 
 // buildExeWithMinGW writes the assembly, then assembles and links it.
 func buildExeWithMinGW(asmText string, out string) {
-	tmp, err := os.MkdirTemp("", "veylasm-build-*")
+	tmp, err := os.MkdirTemp("", "veyl-build-*")
 	if err != nil {
 		fail("%v", err)
 	}
@@ -296,7 +298,7 @@ func findToolchain() (as string, cc string, binDir string) {
 		}
 	}
 
-	fail("cannot find an assembler. veylasm needs MinGW's `as` and `gcc`.\n" +
+	fail("cannot find an assembler. veyl needs MinGW's `as` and `gcc`.\n" +
 		"Install MSYS2 and its mingw-w64 toolchain, or set VEYL_MINGW to the\n" +
 		"folder holding as.exe and gcc.exe.")
 	return "", "", ""
@@ -308,7 +310,7 @@ func exists(p string) bool {
 }
 
 func fail(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "veylasm: "+format+"\n", args...)
+	fmt.Fprintf(os.Stderr, "veyl: "+format+"\n", args...)
 	os.Exit(1)
 }
 

@@ -30,14 +30,14 @@ func TestEncoderMatchesAssembler(t *testing.T) {
 		t.Fatalf("no examples to encode: %v", err)
 	}
 
-	veylasm := asmBackend(t)
+	veyl := asmBackend(t)
 
 	for _, src := range programs {
 		src := src
 		t.Run(filepath.Base(src), func(t *testing.T) {
 			t.Parallel()
 
-			out, err := exec.Command(veylasm, "asm", src).Output()
+			out, err := exec.Command(veyl, "asm", src).Output()
 			if err != nil {
 				t.Fatalf("could not produce assembly: %v", err)
 			}

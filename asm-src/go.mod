@@ -1,4 +1,4 @@
-module veylasm
+module veyl
 
 go 1.21
 

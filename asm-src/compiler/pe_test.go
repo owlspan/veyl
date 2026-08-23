@@ -25,7 +25,7 @@ import (
 )
 
 func TestExecutableStructure(t *testing.T) {
-	veylasm := asmBackend(t)
+	veyl := asmBackend(t)
 
 	// dirs.vl reaches both libraries: Win32 for the file system and the
 	// C runtime for everything else. One program that imports from two
@@ -44,7 +44,7 @@ func TestExecutableStructure(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "dirs.exe")
-	if o, err := exec.Command(veylasm, "build", src).CombinedOutput(); err != nil {
+	if o, err := exec.Command(veyl, "build", src).CombinedOutput(); err != nil {
 		t.Fatalf("could not build: %v\n%s", err, o)
 	}
 

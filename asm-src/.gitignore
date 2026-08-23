@@ -1,6 +1,6 @@
 # compiler binary
-/veylasm
-/veylasm.exe
+/veyl
+/veyl.exe
 
 # `go build ./...` drops this next to the package it built, named
 # after the directory rather than the module. Only the .exe: a bare

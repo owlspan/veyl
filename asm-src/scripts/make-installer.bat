@@ -1,5 +1,5 @@
 @echo off
-rem Double-click this to build the veylasm installer.
+rem Double-click this to build the veyl installer.
 rem
 rem It exists because Windows will not run a .ps1 on double-click. That
 rem is a deliberate security default, not something to work around in
@@ -15,9 +15,9 @@ rem The scripts live in asm-src\scripts, and build.ps1 expects to be
 rem run from asm-src itself.
 cd /d "%~dp0.."
 
-echo Building the veylasm installer.
+echo Building the veyl installer.
 echo.
-echo This one is quick. There is no Go toolchain to bundle: veylasm
+echo This one is quick. There is no Go toolchain to bundle: veyl
 echo assembles and links by itself, so the installer is one small exe.
 echo.
 
@@ -36,7 +36,7 @@ if not "%BUILD_EXIT%"=="0" (
 ) else (
     echo Done. The installer is in the dist folder:
     echo.
-    dir /b dist\veylasm-*-setup.exe
+    dir /b dist\veyl-*-setup.exe
 )
 
 echo.
