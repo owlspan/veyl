@@ -2578,7 +2578,7 @@ func (l *lowerer) interp(x *Interp) Reg {
 	return acc
 }
 
-// ---- printing, for `veylasm ir` ----
+// ---- printing, for `veyl ir` ----
 
 func (m *Module) String() string {
 	var b strings.Builder

@@ -1,4 +1,4 @@
-# veylasm - the Veyl compiler
+# veyl - the Veyl compiler
 
 Veyl compiled to x86-64, with no Go anywhere.
 
@@ -14,10 +14,10 @@ This is how those got bought back. The old one is on the
 reference this compiler is checked against.
 
 ```
-hello.vl  ->  [veylasm]  ->  hello.exe
+hello.vl  ->  [veyl]  ->  hello.exe
 ```
 
-Nothing in that arrow is another program. veylasm encodes the
+Nothing in that arrow is another program. veyl encodes the
 instructions, links, and writes the PE itself, so a build needs nothing
 installed.
 
@@ -92,11 +92,16 @@ pipeline:
   written in Veyl in the prelude
 - a mark-and-sweep collector, conservative over roots
 
-Missing against the Go backend: `http`, `net`, `zip` and `win`. There
-is also no resolver on this side, so a name that is neither a local, a
-function nor a builtin is caught by the lowerer rather than the
-checker. Everything absent is a compile error naming it, never wrong
-output.
+- `net` TCP sockets and an `http` server and client, through WinSock
+- `win`: a window with a game loop, drawing, keyboard and mouse, and
+  immediate-mode widgets
+
+Missing against the Go backend: `zip`, and a handful of small builtins
+(`input`, `pause`, `padLeft`, `padRight`, `toFloat`, `isFloat`,
+`count`). There is also no resolver on this side, so a name that is
+neither a local, a function nor a builtin is caught by the lowerer
+rather than the checker. Everything absent is a compile error naming
+it, never wrong output.
 
 Byte-identical means error messages too, which is why the `os` library
 is written against Win32 rather than the C runtime: Go's message for a
@@ -104,7 +109,7 @@ missing file is FormatMessage's sentence, and strerror's is a
 different one.
 
 ```
-$ veylasm run examples/floats.vl
+$ veyl run examples/floats.vl
 5.5
 -2.5
 6
@@ -202,7 +207,7 @@ asm-src/
     result.go       the error type T!, built in the IR
     struct.go       struct layout, copying and printing
     strings.go      the string library, built in the IR
-    veylasm.go      the driver
+    veyl.go      the driver
     diff_test.go
   examples/
 ```
@@ -229,11 +234,11 @@ above - still `src`-only.
 ## Commands
 
 ```
-veylasm f.vl          compile and run
-veylasm run   f.vl    the same thing, spelled out
-veylasm build f.vl    write an executable next to the source
-veylasm asm   f.vl    print the generated assembly
-veylasm ir    f.vl    print the intermediate representation
+veyl f.vl          compile and run
+veyl run   f.vl    the same thing, spelled out
+veyl build f.vl    write an executable next to the source
+veyl asm   f.vl    print the generated assembly
+veyl ir    f.vl    print the intermediate representation
 ```
 
 `asm` and `ir` matter more here than `veyl emit` does on the Go
@@ -263,7 +268,7 @@ it does not understand is worse than one that refuses.
 
 ## Requirements
 
-To build a program: nothing. veylasm encodes, links and writes the PE
+To build a program: nothing. veyl encodes, links and writes the PE
 itself.
 
 To run the tests: Go, for the differential comparison against the other
@@ -280,7 +285,7 @@ Without them those two checks skip and everything else runs.
 scripts\make-installer.bat
 ```
 
-Double-click it. It builds `dist\veylasm-<version>-setup.exe`, which is
+Double-click it. It builds `dist\veyl-<version>-setup.exe`, which is
 about 5 MB because there is no toolchain to bundle. The Go backend's
 installer is roughly 90, most of it a trimmed copy of Go.
 
@@ -343,7 +348,7 @@ regenerating rather than trusting:
 ```bash
 cd asm-src
 for f in ../src/tests/ok/*.vl; do
-  ./veylasm.exe asm "$f" >/dev/null 2>&1 || echo "$f"
+  ./veyl.exe asm "$f" >/dev/null 2>&1 || echo "$f"
 done
 ```
 
@@ -459,7 +464,7 @@ that surfaces somewhere else entirely, hours later.
 dependency. Mechanical by then: `x64.go` is replaced and nothing above
 it changes.
 
-The two papercuts that used to sit here are done: `veylasm f.vl` is
+The two papercuts that used to sit here are done: `veyl f.vl` is
 shorthand for `run`, and the linker's real output surfaces instead of
 being swallowed. The one still open is sharing `resolve.go` the way
 `check.go` is shared, so that an undefined name is caught here by a
