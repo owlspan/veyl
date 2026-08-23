@@ -199,9 +199,21 @@ var sigs = map[string]front.Signature{
 	"bytes.putInt":     {Params: []*Type{Int, Int}, Ret: ResultOf(Bytes)},
 	"bytes.putIntBE":   {Params: []*Type{Int, Int}, Ret: ResultOf(Bytes)},
 
-	"hash.sha256": {Params: []*Type{Str}, Ret: Str},
-	"hash.sha1":   {Params: []*Type{Str}, Ret: Str},
-	"hash.md5":    {Params: []*Type{Str}, Ret: Str},
+	"hash.sha256":     {Params: []*Type{Str}, Ret: Str},
+	"hash.sha1":       {Params: []*Type{Str}, Ret: Str},
+	"hash.md5":        {Params: []*Type{Str}, Ret: Str},
+	"hash.sha512":     {Params: []*Type{Str}, Ret: Str},
+	"hash.crc32":      {Params: []*Type{Str}, Ret: Int},
+	"hash.file":       {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"hash.hex":        {Params: []*Type{Str}, Ret: Str},
+	"hash.fromHex":    {Params: []*Type{Str}, Ret: ResultOf(Str)},
+	"hash.base64":     {Params: []*Type{Str}, Ret: Str},
+	"hash.fromBase64": {Params: []*Type{Str}, Ret: ResultOf(Str)},
+
+	"csv.parse": {Params: []*Type{Str}, Ret: ResultOf(ListOf(ListOf(Str)))},
+	"csv.write": {Params: []*Type{ListOf(ListOf(Str))}, Ret: Str},
+	"csv.read":  {Params: []*Type{Str}, Ret: ResultOf(ListOf(ListOf(Str)))},
+	"csv.save":  {Params: []*Type{Str, ListOf(ListOf(Str))}, Ret: Bool},
 
 	// bits, args and url. All of these are prelude functions; see
 	// prelude_more.go.

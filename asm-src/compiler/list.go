@@ -373,7 +373,7 @@ func (l *lowerer) writeValue(n Node, v Reg, t vty) {
 		l.renderBytes(v)
 	case kStr:
 		l.writeLit("\"")
-		l.emitStr(v)
+		l.emitStr(l.quoteEscape(v))
 		l.writeLit("\"")
 	case kBool:
 		l.mod.needs("booltostr")
@@ -387,6 +387,81 @@ func (l *lowerer) writeValue(n Node, v Reg, t vty) {
 	default:
 		l.emitInt(v)
 	}
+}
+
+// quoteEscape builds the body of a Go strconv.Quote, without the quotes.
+//
+// A str inside a container is printed quoted, and the Go backend gets
+// those quotes from strconv.Quote, so a list holding a newline has to
+// print \n on both sides rather than break the line on one of them.
+//
+// Bytes at 0x80 and up go through untouched. That is what Quote does
+// for printable UTF-8, which is all any real string here holds; it
+// differs from Quote for invalid UTF-8 and for non-printable runes,
+// neither of which this backend can see without a rune decoder.
+func (l *lowerer) quoteEscape(s Reg) Reg {
+	n := l.strLen(s)
+	// Worst case four bytes, \xNN for a control character.
+	buf := l.strAlloc(l.arith(OpMul, n, l.constant(4)))
+
+	wSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: wSlot})
+
+	put := func(b Reg) {
+		w := l.load(wSlot, vInt)
+		l.storeByte(buf, w, b)
+		l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, w, l.constant(1)),
+			Dst: NoReg, Imm: wSlot})
+	}
+	escape := func(c int64) {
+		put(l.constant('\\'))
+		put(l.constant(c))
+	}
+
+	l.eachByte(s, n, func(i Reg) {
+		b := l.loadByte(s, i)
+		done := l.newLabel()
+
+		// The named escapes, the set and the spelling Quote uses.
+		for _, pair := range []struct {
+			from int64
+			to   int64
+		}{
+			{'"', '"'}, {'\\', '\\'}, {'\a', 'a'}, {'\b', 'b'}, {'\f', 'f'},
+			{'\n', 'n'}, {'\r', 'r'}, {'\t', 't'}, {'\v', 'v'},
+		} {
+			next := l.newLabel()
+			l.emit(Instr{Op: OpJumpNot, A: l.compare(OpEq, b, l.constant(pair.from)),
+				Dst: NoReg, Imm: next})
+			escape(pair.to)
+			l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+			l.mark(next)
+		}
+
+		// Anything else below a space, and DEL, goes out as \xNN.
+		hex := l.newLabel()
+		plain := l.newLabel()
+		needsHex := l.logicalOr(
+			l.compare(OpLt, b, l.constant(0x20)),
+			l.compare(OpEq, b, l.constant(0x7f)))
+		l.emit(Instr{Op: OpJumpIf, A: needsHex, Dst: NoReg, Imm: hex})
+		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: plain})
+
+		l.mark(hex)
+		put(l.constant('\\'))
+		put(l.constant('x'))
+		put(l.hexDigitLower(l.arith(OpShr, b, l.constant(4))))
+		put(l.hexDigitLower(l.arith(OpBAnd, b, l.constant(15))))
+		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+
+		l.mark(plain)
+		put(b)
+
+		l.mark(done)
+	})
+
+	l.storeByte(buf, l.load(wSlot, vInt), l.constant(0))
+	return buf
 }
 
 // emptyStr is the interned "", used as the zero value for a str.
