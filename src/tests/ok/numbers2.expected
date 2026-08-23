@@ -1,6 +1,0 @@
-hex 255 255 bin 170 grouped 1000000 1234.5
-same true true
-perms 5 read true write false exec true
-cleared 1 all 7
-byte 171 low 205
-grouped float 12

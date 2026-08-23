@@ -1,14 +1,17 @@
-# veylasm - the assembly backend
+# veylasm - the Veyl compiler
 
-A second backend for Veyl that emits x86-64 assembly instead of Go.
+Veyl compiled to x86-64, with no Go anywhere.
 
-The compiler in `../src` translates Veyl to Go source and hands it to
-the Go toolchain. That works, it produces genuinely native executables,
-and it stays the default. What it costs is a garbage collector, a
-runtime, a 2.4 MB floor on binary size, a 177 MB Go toolchain inside the
-installer, and any hope of pointers or manual memory.
+It used to work the other way. The old compiler translated Veyl to Go
+source and handed that to the Go toolchain. It produced genuinely
+native executables and it was the only thing that did for a long time.
+What it cost was a runtime, a 2.4 MB floor on binary size, a 177 MB Go
+toolchain inside the installer, and any hope of pointers or manual
+memory.
 
-This backend is how those get bought back.
+This is how those got bought back. The old one is on the
+[`veylgo`](../../../tree/veylgo) branch, discontinued, and is the
+reference this compiler is checked against.
 
 ```
 hello.vl  ->  [veylasm]  ->  hello.exe
