@@ -200,11 +200,23 @@ fn __vy_httpServe(port: int, handler: fn(Request) -> Response) -> void! {
 
 // A one-shot client. Enough to fetch a page, not a general HTTP client:
 // no redirects, no TLS, no keep-alive.
-fn __vy_httpGet(url: str) -> str! {
+// Both http:// and https:// go through WinHTTP, which does TLS, the
+// certificate chain, redirects and chunked bodies. Doing the plain case
+// over a raw socket instead would mean two sets of behaviour for one
+// function, and the differences would surface far from here.
+fn __vy_httpRequest(method: str, url: str, body: str) -> str! {
     let rest = url
-    if startsWith(rest, "http://") { rest = substr(rest, 7, len(rest)) }
+    let secure = false
+    let port = 80
+
     if startsWith(rest, "https://") {
-        return fail("https is not supported yet, there is no TLS on this backend")
+        rest = substr(rest, 8, len(rest))
+        secure = true
+        port = 443
+    } else {
+        if startsWith(rest, "http://") {
+            rest = substr(rest, 7, len(rest))
+        }
     }
 
     let slash = indexOf(rest, "/")
@@ -216,7 +228,6 @@ fn __vy_httpGet(url: str) -> str! {
     }
 
     let host = hostport
-    let port = 80
     let colon = indexOf(hostport, ":")
     if colon >= 0 {
         host = substr(hostport, 0, colon)
@@ -224,20 +235,23 @@ fn __vy_httpGet(url: str) -> str! {
         if isInt(p) { port = toInt(p) }
     }
 
-    let conn = net.connect(host, port)?
-    let req = "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nUser-Agent: veyl\r\n\r\n"
-    net.send(conn, req)?
-
-    let raw = ""
-    while true {
-        let chunk = net.recv(conn)?
-        if len(chunk) == 0 { break }
-        raw = raw + chunk
+    if host == "" {
+        return fail("cannot fetch \"{url}\": no host in the url")
     }
-    net.close(conn)
+    return __winhttp(host, port, path, secure, method, body)
+}
 
-    let sep = indexOf(raw, "\r\n\r\n")
-    if sep < 0 { return raw }
-    return substr(raw, sep + 4, len(raw))
+fn __vy_httpGet(url: str) -> str! {
+    return __vy_httpRequest("GET", url, "")
+}
+
+fn __vy_httpPost(url: str, body: str) -> str! {
+    return __vy_httpRequest("POST", url, body)
+}
+
+// Save a url straight to a file, which is what a fetch is usually for.
+fn __vy_httpDownload(url: str, path: str) -> void! {
+    let body = __vy_httpRequest("GET", url, "")?
+    return os.file.write(path, body)
 }
 `

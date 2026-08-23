@@ -49,13 +49,26 @@ func loadImports(prog *Program, from string) ([]string, []string) {
 
 func (l *importLoader) resolve(prog *Program, from string) {
 	for _, imp := range prog.Imports {
-		if !strings.HasSuffix(imp.Path, ".vl") {
-			l.errorAt(imp, "importing a package by name is not on the assembly "+
-				"backend yet - import the file, as in: import \"mod/geometry.vl\"")
-			continue
+		target := imp.Path
+
+		// A bare name is an installed package: `import "sqlite"` finds
+		// veyl_modules/sqlite/sqlite.vl. A path ending in .vl is a file,
+		// relative to the importing file as before.
+		if !strings.HasSuffix(target, ".vl") {
+			if strings.ContainsAny(target, `/\`) {
+				l.errorAt(imp, "an import is either a package name or a path to a "+
+					".vl file, and %q is neither", imp.Path)
+				continue
+			}
+			pkg := filepath.Join(filepath.Dir(from), modulesDir, target, target+".vl")
+			if _, err := os.Stat(pkg); err != nil {
+				l.errorAt(imp, "no package named %q - install it with `veyl get %s`",
+					target, target)
+				continue
+			}
+			target = pkg
 		}
 
-		target := imp.Path
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(filepath.Dir(from), target)
 		}

@@ -66,6 +66,9 @@ var importOverride = func() map[string]string {
 	for _, s := range gdi32Syms {
 		m[s] = "gdi32.dll"
 	}
+	for _, s := range winhttpSyms {
+		m[s] = "winhttp.dll"
+	}
 	return m
 }()
 

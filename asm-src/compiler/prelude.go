@@ -155,6 +155,8 @@ var preludeOf = map[string]string{
 	"csv.save":         "__vy_csvSave",
 	"http.serve":       "__vy_httpServe",
 	"http.get":         "__vy_httpGet",
+	"http.post":        "__vy_httpPost",
+	"http.download":    "__vy_httpDownload",
 	"http.ok":          "__vy_httpOK",
 	"http.text":        "__vy_httpText",
 	"http.json":        "__vy_httpJSON",

@@ -41,6 +41,19 @@ usage:
   veyl ir    <file.vl>    print the intermediate representation
   veyl version            print the version
 
+packages:
+  veyl get <name>         install a package into ./veyl_modules
+  veyl get <user/repo>    install from a GitHub repository
+  veyl get <url>          install from a url
+  veyl list               what is installed here
+  veyl remove <name>      uninstall it
+
+A package installs next to the program that uses it rather than
+machine-wide, so a project carries its own dependencies and deleting
+veyl_modules uninstalls everything. Reach one with a bare import:
+
+  import "sqlite"
+
 Anything after the .vl file goes to your program rather than to veyl,
 so ` + "`veyl run app.vl --verbose`" + ` reaches os.args().
 
@@ -72,6 +85,33 @@ func main() {
 	}
 	if cmd == "help" || cmd == "-h" || cmd == "--help" {
 		fmt.Print(usage)
+		return
+	}
+
+	// The package commands, which take a name rather than a file.
+	switch cmd {
+	case "get":
+		if len(args) < 2 {
+			fail("get needs a package name or a url")
+		}
+		for _, spec := range args[1:] {
+			if err := pkgGet(spec); err != nil {
+				fail("cannot get %s: %v", spec, err)
+			}
+		}
+		return
+	case "list":
+		if err := pkgList(); err != nil {
+			fail("%v", err)
+		}
+		return
+	case "remove":
+		if len(args) < 2 {
+			fail("remove needs a package name")
+		}
+		if err := pkgRemove(args[1]); err != nil {
+			fail("%v", err)
+		}
 		return
 	}
 	// `veyl f.vl` means `veyl run f.vl`, matching the Go backend.
@@ -106,6 +146,10 @@ func main() {
 	case "build":
 		out := strings.TrimSuffix(path, filepath.Ext(path)) + ".exe"
 		buildExe(mod, out)
+		// A package may carry a native library. Put it beside the
+		// executable, or the program will not start on a machine that
+		// does not happen to have it.
+		copyDLLsBeside(out, packageDLLs(filepath.Dir(path)))
 		fmt.Printf("wrote %s\n", out)
 	case "run":
 		tmp, err := os.MkdirTemp("", "veyl-*")
@@ -115,6 +159,7 @@ func main() {
 		defer os.RemoveAll(tmp)
 		out := filepath.Join(tmp, "prog.exe")
 		buildExe(mod, out)
+		copyDLLsBeside(out, packageDLLs(filepath.Dir(path)))
 		run := exec.Command(out)
 		run.Stdout, run.Stderr, run.Stdin = os.Stdout, os.Stderr, os.Stdin
 		if err := run.Run(); err != nil {
