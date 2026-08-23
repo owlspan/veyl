@@ -65,13 +65,23 @@ func (l *lowerer) isNil(v Reg) Reg {
 // widenNull boxes a plain T where a ?T was wanted. The checker marks
 // every such spot with a Widen, so this is the only place that boxes.
 func (l *lowerer) widenNull(x *Widen, t vty) Reg {
-	v := l.expr(x.X)
-	if l.regTy[v].null && l.regTy[v].k == kVoid {
+	return l.nullWiden(l.expr(x.X), t)
+}
+
+// nullWiden is widenNull on a value already lowered, so that widen can
+// put a nullable inside a result without lowering the expression twice.
+func (l *lowerer) nullWiden(v Reg, t vty) Reg {
+	vt := l.regTy[v]
+	if vt.null && vt.k == kVoid {
 		// `nil` widened to a ?T is just the zero word - there is
 		// nothing to box.
 		return l.nilValue(t)
 	}
-	if t.notNull().k == kFloat && l.regTy[v].k == kInt {
+	if vt.null {
+		// already a ?T, so boxing again would make a ??T
+		return v
+	}
+	if t.notNull().k == kFloat && vt.k == kInt {
 		v = l.toFloat(v)
 	}
 	return l.nullBox(v, t)

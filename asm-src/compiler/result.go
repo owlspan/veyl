@@ -327,16 +327,26 @@ func (l *lowerer) widen(x *Widen) Reg {
 		l.errorAt(x, "%s is not on the assembly backend yet", x.T)
 		return l.junk()
 	}
-	if t.null {
-		return l.widenNull(x, t)
-	}
-	if !t.res {
+	if !t.res && !t.null {
 		l.errorAt(x, "%s is not on the assembly backend yet", x.T)
 		return l.junk()
 	}
+
 	v := l.expr(x.X)
-	if t.inner().k == kFloat && l.regTy[v].k == kInt {
-		v = l.toFloat(v)
+
+	// res and null are separate flags, so a ?T! has both set and needs
+	// both wrappers. The nullable is the inner one, so it goes on first
+	// and the result closes over it. Testing null first and returning
+	// meant `return nil` from a ?int! handed back a bare zero where a
+	// result object was expected, and the first read of it segfaulted.
+	if t.null {
+		v = l.nullWiden(v, t.inner())
 	}
-	return l.resOk(v, t)
+	if t.res {
+		if !t.null && t.inner().k == kFloat && l.regTy[v].k == kInt {
+			v = l.toFloat(v)
+		}
+		v = l.resOk(v, t)
+	}
+	return v
 }

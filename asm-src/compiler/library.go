@@ -66,7 +66,7 @@ var sigs = map[string]front.Signature{
 	"sign":  {Params: []*Type{Numeric}, Ret: Int},
 	"isNan": {Params: []*Type{Numeric}, Ret: Bool},
 	"exit":  {Params: []*Type{Int}, Ret: Void},
-	"sleep": {Params: []*Type{Numeric}, Ret: Void},
+	"sleep": {Params: []*Type{Int}, Ret: Void},
 
 	// Private to the prelude. These reinterpret a float as its IEEE 754
 	// bit pattern and back, which Frexp, Ldexp and the special-case
@@ -332,6 +332,14 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkAnyAll("all")}, true
 	case "each":
 		return front.Signature{Check: checkEach}, true
+	case "task.map":
+		return front.Signature{Check: checkTaskMap}, true
+	case "task.mapLimit":
+		return front.Signature{Check: checkTaskMapLimit}, true
+	case "task.each":
+		return front.Signature{Check: checkTaskEach}, true
+	case "task.all":
+		return front.Signature{Check: checkTaskAll}, true
 	case "stats.mean", "stats.median", "stats.var", "stats.stdev":
 		return front.Signature{Check: checkNumberList}, true
 	case "stats.percentile":
@@ -1001,5 +1009,55 @@ func checkAnyAll(name string) func(*Checker, *Call, []*Type) *Type {
 func checkEach(c *Checker, x *Call, args []*Type) *Type {
 	elem := hofList(c, x, 0, args, "each")
 	hofCallback(c, x, 1, args, "each", []*Type{elem})
+	return Void
+}
+
+// The task family. Same shapes as the Go backend's, same wording, so a
+// program rejected there is rejected here for the same reason.
+func checkTaskMap(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "task.map")
+	ret := hofCallback(c, x, 1, args, "task.map", []*Type{elem})
+	if elem.IsUnknown() || ret.IsUnknown() {
+		return Unknown
+	}
+	if ret.Kind == KVoid {
+		c.ErrorAt(x.Args[1], "task.map needs a function that returns something - "+
+			"use task.each(...) to just do work")
+		return Unknown
+	}
+	return ListOf(ret)
+}
+
+func checkTaskMapLimit(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "task.mapLimit")
+	if len(args) > 1 && !args[1].IsUnknown() && args[1].Kind != KInt {
+		c.ErrorAt(x.Args[1], "task.mapLimit needs an int for argument 2, got %s", args[1])
+	}
+	ret := hofCallback(c, x, 2, args, "task.mapLimit", []*Type{elem})
+	if elem.IsUnknown() || ret.IsUnknown() {
+		return Unknown
+	}
+	if ret.Kind == KVoid {
+		c.ErrorAt(x.Args[2], "task.mapLimit needs a function that returns something")
+		return Unknown
+	}
+	return ListOf(ret)
+}
+
+func checkTaskEach(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "task.each")
+	hofCallback(c, x, 1, args, "task.each", []*Type{elem})
+	return Void
+}
+
+func checkTaskAll(c *Checker, x *Call, args []*Type) *Type {
+	elem := hofList(c, x, 0, args, "task.all")
+	if elem.IsUnknown() {
+		return Void
+	}
+	if !elem.IsFunc() || len(elem.Params) != 0 || elem.Elem.Kind != KVoid {
+		c.ErrorAt(x.Args[0], "task.all expects a list of fn() taking nothing "+
+			"and returning nothing, got []%s", elem)
+	}
 	return Void
 }

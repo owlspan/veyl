@@ -1,0 +1,21 @@
+# core.autocrlf is true on the development machine, so a checkout can
+# hand gofmt a CRLF file and it reports every line as unformatted. That
+# noise would hide a real formatting problem, so pin the line endings
+# for the files the toolchain reads.
+*.go        text eol=lf
+*.mod       text eol=lf
+*.md        text eol=lf
+*.vl        text eol=lf
+*.json      text eol=lf
+
+# Windows tooling wants its own endings.
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+*.iss       text eol=crlf
+
+# Binary, never touch.
+*.png       binary
+*.ico       binary
+*.syso      binary
+*.tar       binary
+*.exe       binary

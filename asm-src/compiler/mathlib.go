@@ -165,16 +165,11 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(1) {
 			return l.junk(), true
 		}
-		ms := l.numeric(c.Args[0])
-		// Veyl sleeps in seconds and Sleep takes milliseconds.
-		thousand := l.floatConst(1000)
-		scaled := l.newReg()
-		l.regTy[scaled] = vFloat
-		l.emit(Instr{Op: OpFMul, Dst: scaled, A: ms, B: thousand})
-		whole := l.newReg()
-		l.regTy[whole] = vInt
-		l.emit(Instr{Op: OpFloatToInt, Dst: whole, A: scaled, B: NoReg})
-		l.ccall("Sleep", []Reg{whole}, []vty{vInt}, vty{k: kVoid}, false, false)
+		// Milliseconds, which is what the Go backend's time.Sleep gets.
+		// This used to take seconds and multiply, so sleep(1) waited a
+		// second here and a millisecond there.
+		ms := l.expr(c.Args[0])
+		l.ccall("Sleep", []Reg{ms}, []vty{vInt}, vty{k: kVoid}, false, false)
 		return l.junk(), true
 	}
 
