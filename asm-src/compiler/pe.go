@@ -69,6 +69,12 @@ var importOverride = func() map[string]string {
 	for _, s := range winhttpSyms {
 		m[s] = "winhttp.dll"
 	}
+	// Not a Windows library: it ships with the sqlite package and is
+	// copied next to the executable at build time. A program that never
+	// calls db.* never imports it.
+	for _, s := range sqliteSyms {
+		m[s] = "sqlite3.dll"
+	}
 	return m
 }()
 
