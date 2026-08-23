@@ -105,22 +105,25 @@ strange, read what it actually compiled to. `ir` is the readable one:
 three-address code over virtual registers, before anything knows an
 x86 register exists.
 
-### Editors
-
-Syntax files for VS Code, Notepad++, Sublime Text and Vim/Neovim ship in
-`editors/`. The installer sets up whichever you tick. Ticking one for an
-editor you do not have is harmless, since it only writes into that
-editor's own config folder.
-
-All of them except the VS Code grammar are generated from the compiler's
-own keyword and builtin tables by `veyl editors`, so a new builtin is
-highlighted everywhere as soon as that is re-run.
-
 ### Explorer
 
-Double-clicking a `.vl` file asks whether to run it or build an `.exe`.
-Right-click gives a **Veyl** submenu: compile, run, format, show the
-generated Go. Right-clicking a folder offers a console there.
+The installer adds two verbs to the right-click menu for a `.vl` file:
+**Compile to .exe with veylasm** and **Run with veylasm**. Both open a
+console that stays up, so you can read what it said whether that was a
+path or a list of errors.
+
+It deliberately does not claim the `.vl` file type itself. The old
+backend's installer does, and two installers fighting over which one
+owns the extension means whichever ran last wins. Install either or
+both; the verbs sit side by side.
+
+### Editors
+
+The syntax files for VS Code, Notepad++, Sublime Text and Vim/Neovim
+are on [`veylgo`](../../tree/veylgo) under `src/editors/`, along with
+the `veyl editors` command that generates most of them from the
+compiler's keyword and builtin tables. They highlight the same
+language, so they work here; porting the generator is on the list.
 
 ---
 
@@ -252,14 +255,13 @@ top-level `let` belongs to the program body.
 No imports, ever. The dots only group names.
 
 **Output** `print` `write`
-**Input** `input` `pause`
-**Convert** `str` `int` `float` `toInt` `toFloat` `isInt` `isFloat` `divf`
+**Convert** `str` `int` `float` `toInt` `isInt` `divf`
 **Math** `sqrt` `cbrt` `pow` `exp` `hypot` `log` `log2` `log10` `abs`
 `mod` `floor` `ceil` `round` `trunc` `clamp` `sign` `isNan` `min` `max`
 `sin` `cos` `tan` `asin` `acos` `atan` `atan2`
 **Strings** `len` `upper` `lower` `trim` `contains` `startsWith`
-`endsWith` `indexOf` `count` `replace` `repeat` `charAt` `substr`
-`padLeft` `padRight` `split` `chars` `lines`
+`endsWith` `indexOf` `replace` `repeat` `charAt` `substr` `split`
+`chars` `lines`
 **Lists** `push` `pop` `insert` `removeAt` `clear` `first` `last`
 `slice` `reverse` `sort` `sum` `join` `map` `filter` `reduce` `sortBy`
 `any` `all` `each`
@@ -277,10 +279,15 @@ os.file.write("names.txt", join(names, "\n"))
 print("saved at {time.stamp()}")
 ```
 
-Not here yet: `http`, `net`, `zip`, and `win` for the Windows GUI. They
-exist on [`veylgo`](../../tree/veylgo) and are the next things to
-port. Anything missing is a compile error naming it, never wrong
-output.
+Not here yet: `http`, `net`, `zip`, `win` for the Windows GUI, and a
+handful of small builtins the old backend has - `input`, `pause`,
+`padLeft`, `padRight`, `toFloat`, `isFloat` and `count`. They all exist
+on [`veylgo`](../../tree/veylgo) and are the next things to port.
+
+Anything missing is a compile error naming it, never wrong output. That
+is the rule the whole subset rests on: `library.go` is the list, and a
+function absent from it is a type error with a file, line and column,
+not something the compiler discovers halfway through.
 
 [SYNTAX.md](docs/SYNTAX.md) has every signature.
 
