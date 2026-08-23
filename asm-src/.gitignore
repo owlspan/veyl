@@ -15,3 +15,7 @@ examples/*.o
 
 # leftover build artifacts
 *~
+
+# Installer build output: the setup executable, reproducible from
+# installer\build.ps1.
+/dist/

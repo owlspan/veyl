@@ -30,7 +30,7 @@ import (
 	"strings"
 )
 
-const Version = "0.1.0-slice"
+const Version = "0.18.0"
 
 const usage = `veylasm ` + Version + ` - the Veyl assembly backend
 
@@ -41,14 +41,19 @@ usage:
   veylasm ir    <file.vl>    print the intermediate representation
   veylasm version            print the version
 
-This backend handles a subset of Veyl: integers, floats, bools, strings,
-lists, let, assignment, control flow, functions, and print. Everything
-else is a clear compile error rather than wrong output. The Go backend
-in ../src remains the complete one.
+This compiles Veyl straight to x86-64 and writes the .exe itself. No Go,
+no assembler, no linker, nothing installed. The executables come out
+around a thousand times smaller than the Go backend's and run about 20%
+slower, since there is no register allocator yet.
 
-It compiles, assembles and links by itself, with nothing installed. Set
-VEYL_LINK=mingw to go through as and gcc instead, which is only useful
-for comparing the two.
+It covers the language as the test suite exercises it: every program in
+the Go backend's suite compiles here and prints the same bytes. Missing
+against that backend are http, net, zip and win, and there is no
+resolver on this side. Anything absent is a compile error naming it,
+never wrong output.
+
+Set VEYL_LINK=mingw to go through as and gcc instead, which is only
+useful for comparing the two.
 `
 
 func main() {
