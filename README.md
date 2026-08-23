@@ -130,6 +130,20 @@ veyl list
 veyl remove totp
 ```
 
+Or all of them:
+
+```
+veyl get officials                     every official package
+veyl get officials --nodlls            the same, minus the ones
+                                       carrying a native library
+veyl get github.com/you/registry --all any registry
+```
+
+`--nodlls` is about size. Everything official is a few kilobytes except
+`sqlite`, which is three megabytes because it carries the real library.
+A registry says what it holds in a `veyl.index` file, so `--all` works
+on anyone's, not only this one.
+
 They land in `./veyl_modules` next to your program rather than
 machine-wide, so a project carries its own dependencies and deleting
 the directory uninstalls everything. Reach one with a bare import:

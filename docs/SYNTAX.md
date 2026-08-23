@@ -2214,6 +2214,40 @@ defer own unsafe
 | `veyl version` | print the version |
 | `veyl f.vl` | same as `run` |
 
+### Packages
+
+| Command | Effect |
+| --- | --- |
+| `veyl get <name>` | install from the official registry |
+| `veyl get <user/repo>` | install from any GitHub repository |
+| `veyl get <url>` | install from a url |
+| `veyl get officials` | install every official package |
+| `veyl get officials --nodlls` | the same, minus the ones carrying a native library |
+| `veyl get <user/repo> --all` | every package a registry lists |
+| `veyl list` | what is installed here |
+| `veyl remove <name>` | uninstall it |
+
+Packages land in `./veyl_modules` next to your program rather than
+machine-wide, so a project carries its own dependencies and deleting
+the directory uninstalls everything. A bare import finds one:
+
+```veyl
+import "totp"
+print(must(totpNow(secret)))
+```
+
+An import lands in a **flat namespace** - there is no `totp.`
+qualifier - so packages prefix their exported names by convention.
+
+A package may carry a native `.dll`, which `veyl build` copies next to
+the executable. That is how [`sqlite`](#db---sqlite) works without
+every install carrying three megabytes of database.
+
+The registry is
+[owlspan/veyl-packages](https://github.com/owlspan/veyl-packages), and
+its README covers writing your own. You do not have to be in the
+registry to publish one.
+
 Anything after the `.vl` file goes to your program rather than to the
 compiler, so this reaches `args.flag("verbose")`:
 
