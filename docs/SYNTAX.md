@@ -1457,8 +1457,11 @@ You can also build one yourself: `Response{status: 302, contentType:
 let page = http.get("http://example.com")?
 ```
 
-Plain HTTP only. There is no TLS, so an `https://` URL will not work
-yet - see [Known limitations](#known-limitations).
+Both `http://` and `https://` work: requests go through WinHTTP, which
+does TLS, the certificate chain, redirects and chunked bodies. A 4xx
+or 5xx is a failure carrying the code.
+
+`http.post(url, body)` and `http.download(url, path)` are there too.
 
 **One request at a time.** The server handles a request, finishes it,
 then accepts the next. That is fine for a tool, a local dashboard or
@@ -1672,6 +1675,101 @@ recompile it each time.
 Digests are hex because that is what every other tool prints - a
 checksum you cannot compare by eye is not much use. Decoding can fail,
 since the input comes from outside; encoding cannot.
+
+---
+
+### `db` - SQLite
+
+Needs the `sqlite` package, which carries the library:
+
+```
+veyl get sqlite
+```
+
+Then:
+
+```veyl
+import "sqlite"
+
+const NONE: []str = []
+
+let conn = must(db.open("app.db"))
+must(db.exec(conn, "create table if not exists notes (id integer primary key, body text)", NONE))
+must(db.exec(conn, "insert into notes (body) values (?)", ["hello"]))
+
+for row in must(db.query(conn, "select id, body from notes", NONE)) {
+    print("{row[0]}: {row[1]}")
+}
+db.close(conn)
+```
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `db.open(path)` | `int!` | a connection; the file is created if missing |
+| `db.close(conn)` | | |
+| `db.exec(conn, sql, args)` | `void!` | a statement with no results |
+| `db.query(conn, sql, args)` | `[][]str!` | rows, each a list of columns |
+| `db.changes(conn)` | `int` | rows affected by the last statement |
+| `db.lastId(conn)` | `int` | the id the last insert generated |
+| `db.version()` | `str` | the SQLite version |
+
+**Arguments are always bound, never pasted.** `args` is a separate
+`[]str` and each `?` in the SQL takes one, in order. There is no
+function here that builds SQL from a value, so an injection cannot be
+written through this API even by accident:
+
+```veyl
+let typed = "a' or '1'='1"
+db.query(conn, "select id from notes where tag = ?", [typed])   // matches nothing
+```
+
+**Everything comes back as `str`.** A SQLite column is dynamically
+typed, so one type out is the honest answer. Use `toInt` and `float()`.
+
+A `NULL` column reads as `""`. If you need to tell null from empty, ask
+the database: `select body is null from ...`.
+
+**An empty argument list needs a name.** A bare `[]` in an argument
+position has nothing to infer its element type from, so declare one:
+
+```veyl
+const NONE: []str = []
+must(db.exec(conn, "delete from notes", NONE))
+```
+
+#### The package's helpers
+
+`import "sqlite"` also brings these, which are ordinary Veyl over the
+above:
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `dbScalar(conn, sql, args, fallback)` | `str!` | the first column of the first row |
+| `dbScalarInt(conn, sql, args, fallback)` | `int!` | the same as an int, failing if it is not one |
+| `dbRow(conn, sql, args)` | `[]str!` | the first row, or empty |
+| `dbCount(conn, table)` | `int!` | `select count(*)` |
+| `dbTables(conn)` | `[]str!` | table names |
+| `dbColumns(conn, table)` | `[]str!` | column names |
+| `dbHasTable(conn, name)` | `bool!` | |
+| `dbQueryNamed(conn, table, sql, args)` | `[]{str: str}!` | rows as maps keyed by column |
+| `dbBegin` `dbCommit` `dbRollback` | `void!` | transactions |
+
+Transactions are worth using for speed as well as correctness. SQLite
+commits every statement on its own otherwise, so a few thousand inserts
+go from seconds to milliseconds inside one:
+
+```veyl
+must(dbBegin(conn))
+for line in lines(text) {
+    must(db.exec(conn, "insert into notes (body) values (?)", [line]))
+}
+must(dbCommit(conn))
+```
+
+**A table name cannot be bound.** SQLite binds values, not identifiers,
+so anything taking a table name checks it is a plain identifier and
+fails rather than pasting it in. That is why `dbCount(conn, "notes;
+drop table notes")` is an error and not a disaster.
 
 ---
 
@@ -2183,10 +2281,11 @@ Honest list of what v0.18.0 does not do yet.
 
 **The library**
 
-- **No HTTPS.** `http.get` speaks plain HTTP only. TLS needs either
-  Windows' own Schannel or a TLS implementation, and neither is
-  written, so an `https://` URL will not work.
-- **No SQL or database of any kind.** See below.
+- **`net` is plain TCP, with no TLS.** `http.get` and friends do speak
+  HTTPS - they go through WinHTTP, which handles the handshake - but a
+  socket opened with `net.connect` is unencrypted.
+- **SQL is SQLite only**, through the `sqlite` package. No Postgres,
+  MySQL or anything over a network.
 - **No `zip`.** It exists on the `veylgo` branch and has not been
   ported.
 - **The web server handles one request at a time.** Fine for a tool or
