@@ -516,3 +516,79 @@ fn __vy_removeDots(p: str) -> str {
     return joined
 }
 `
+
+// os.dir.home, os.dir.temp and os.path.clean, in Veyl. None of them
+// needs Win32: two are an environment variable and the third is string
+// work.
+const preludeOsMore = `
+fn __vy_dirHome() -> str {
+    let h = os.env.get("USERPROFILE")
+    if h != "" { return h }
+    // A service account may have neither, in which case there is no
+    // home directory to report rather than a wrong one.
+    return os.env.get("HOME")
+}
+
+fn __vy_dirTemp() -> str {
+    let t = os.env.get("TEMP")
+    if t != "" { return t }
+    t = os.env.get("TMP")
+    if t != "" { return t }
+    return "C:\\Windows\\Temp"
+}
+
+// Collapse separators, drop "." segments, and resolve ".." against what
+// came before it. Purely textual: it never touches the disk, so it does
+// not follow links and does not care whether the path exists.
+fn __vy_pathClean(p: str) -> str {
+    if p == "" { return "." }
+
+    let rooted = false
+    let prefix = ""
+    let rest = p
+
+    // Keep a drive letter or a leading separator, so cleaning does not
+    // turn an absolute path into a relative one.
+    if len(p) >= 2 && __strAt(p, 1) == 58 {
+        prefix = substr(p, 0, 2)
+        rest = substr(p, 2, len(p))
+    }
+    if len(rest) > 0 && (__strAt(rest, 0) == 47 || __strAt(rest, 0) == 92) {
+        rooted = true
+    }
+
+    let parts: []str = []
+    let cur = ""
+    let i = 0
+    while i <= len(rest) {
+        let atEnd = i == len(rest)
+        let c = 0
+        if !atEnd { c = __strAt(rest, i) }
+        if atEnd || c == 47 || c == 92 {
+            if cur == "." || cur == "" {
+                // nothing to add
+            } else {
+                if cur == ".." {
+                    if len(parts) > 0 && parts[len(parts) - 1] != ".." {
+                        removeAt(parts, len(parts) - 1)
+                    } else {
+                        if !rooted { push(parts, "..") }
+                    }
+                } else {
+                    push(parts, cur)
+                }
+            }
+            cur = ""
+        } else {
+            cur = cur + charAt(rest, i)
+        }
+        i = i + 1
+    }
+
+    let out = join(parts, "/")
+    if rooted { out = "/" + out }
+    out = prefix + out
+    if out == "" { return "." }
+    return out
+}
+`

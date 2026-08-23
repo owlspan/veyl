@@ -463,6 +463,60 @@ func (l *lowerer) pathBuiltin(c *Call, name string) (Reg, bool) {
 		l.ccall("GetComputerNameA", []Reg{buf, size},
 			[]vty{vStr, vInt}, vInt, true, false)
 		return buf, true
+
+	case "os.name":
+		// This compiler emits a Windows PE and nothing else, so the
+		// answer is known at compile time rather than asked for.
+		return l.strLit("windows"), true
+
+	case "os.arch":
+		return l.strLit("amd64"), true
+
+	case "os.dir.current":
+		const pathMax = 32768
+		buf := l.allocObj(l.constant(pathMax), tagBytes)
+		l.regTy[buf] = vStr
+		l.ccall("GetCurrentDirectoryA", []Reg{l.constant(pathMax), buf},
+			[]vty{vInt, vStr}, vInt, true, false)
+		return buf, true
+
+	case "os.dir.change":
+		if len(c.Args) != 1 {
+			l.errorAt(c, "os.dir.change takes 1 argument, got %d", len(c.Args))
+			return l.junk(), true
+		}
+		return l.dirChange(l.expr(c.Args[0])), true
+
+	case "os.path.absolute":
+		if len(c.Args) != 1 {
+			l.errorAt(c, "os.path.absolute takes 1 argument, got %d", len(c.Args))
+			return l.junk(), true
+		}
+		const pathMax = 32768
+		buf := l.allocObj(l.constant(pathMax), tagBytes)
+		l.regTy[buf] = vStr
+		l.ccall("GetFullPathNameA",
+			[]Reg{l.expr(c.Args[0]), l.constant(pathMax), buf, l.constant(0)},
+			[]vty{vStr, vInt, vStr, vInt}, vInt, true, false)
+		return buf, true
 	}
 	return NoReg, false
+}
+
+// dirChange is SetCurrentDirectory, reporting why rather than a bool.
+func (l *lowerer) dirChange(path Reg) Reg {
+	ret := vty{k: kVoid, res: true}
+	sym := l.helperFunc("dirchange", []vty{vStr}, ret, func(a []Reg) {
+		ok := l.ccall("SetCurrentDirectoryA", []Reg{a[0]},
+			[]vty{vStr}, vInt, true, false)
+		bad := l.newLabel()
+		l.emit(Instr{Op: OpJumpNot, A: l.asBool(ok), Dst: NoReg, Imm: bad})
+		l.emit(Instr{Op: OpRet, A: l.resOk(l.constant(0), ret), Dst: NoReg})
+		l.mark(bad)
+		l.emit(Instr{Op: OpRet,
+			A:   l.resFail(l.why("change directory to", a[0], l.sysMessage()), ret),
+			Dst: NoReg},
+		)
+	})
+	return l.callHelper(sym, []Reg{path}, []vty{vStr}, ret)
 }

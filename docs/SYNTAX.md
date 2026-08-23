@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.17.02** - the language as currently implemented.
+**Version 0.18.0** - the language as currently implemented.
 
 Veyl compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -22,15 +22,16 @@ program is a single self-contained binary with no runtime to install.
 8. [Control flow](#control-flow)
 9. [Functions](#functions)
 10. [Builtin library](#builtin-library)
-11. [Reserved words](#reserved-words)
-12. [Compiler commands](#compiler-commands)
-13. [Known limitations](#known-limitations)
+11. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
+12. [Reserved words](#reserved-words)
+13. [Compiler commands](#compiler-commands)
+14. [Known limitations](#known-limitations)
 
 ---
 
 ## Hello, world
 
-```qz
+```veyl
 print("Hello, world!")
 ```
 
@@ -45,7 +46,7 @@ function - statements at the top level of a file run in order.
 
 ## Comments
 
-```qz
+```veyl
 // a line comment
 
 /* a block comment
@@ -62,7 +63,7 @@ contains a block comment without the inner `*/` ending it early.
 
 Statements end at a line break. There are no semicolons.
 
-```qz
+```veyl
 let a = 1
 let b = 2
 ```
@@ -70,7 +71,7 @@ let b = 2
 Blocks use braces, not indentation. Indentation is style only - the
 compiler ignores it.
 
-```qz
+```veyl
 if a < b {
     print("smaller")
 }
@@ -79,7 +80,7 @@ if a < b {
 Inside brackets - `(...)` in a call or a grouped expression - line
 breaks are ignored, so long argument lists can wrap:
 
-```qz
+```veyl
 print(
     "this",
     "spans",
@@ -93,7 +94,7 @@ print(
 
 `let` declares a variable. `const` declares one that cannot be reassigned.
 
-```qz
+```veyl
 let count = 0
 const limit = 10
 
@@ -105,7 +106,7 @@ limit = 11         // error: cannot assign to "limit" because it was declared co
 The type is inferred from the value. Annotate it explicitly with `: Type`
 when you want to be specific:
 
-```qz
+```veyl
 let name: str = "Veyl"
 let ratio: float = 0.5
 ```
@@ -113,7 +114,7 @@ let ratio: float = 0.5
 A name may be declared only once per scope, but an inner block may shadow
 an outer name:
 
-```qz
+```veyl
 let x = 1
 {
     let x = 2       // a different variable
@@ -124,7 +125,7 @@ print(x)            // 1
 
 Reading an undeclared variable is an error, not an implicit declaration:
 
-```qz
+```veyl
 total = 5           // error: undefined variable "total"
 ```
 
@@ -150,7 +151,7 @@ is a `float`.
 Integers can be written in decimal, hex or binary, and `_` may be used
 to group digits anywhere:
 
-```qz
+```veyl
 let mask  = 0xFF          // 255
 let bits  = 0b1010_1010   // 170
 let big   = 1_000_000
@@ -160,7 +161,7 @@ let ratio = 1_234.5
 Veyl does not convert between types automatically. Mixing them is an
 error - use `str()`, `int()`, or `float()` to convert explicitly.
 
-```qz
+```veyl
 let n = 5
 print("count: " + n)        // error: cannot add str and int
 print("count: " + str(n))   // fine
@@ -190,7 +191,7 @@ generating any code. The rules are short:
 There is **no implicit conversion between two values**. This is an
 error, and the message says so in Veyl's words:
 
-```qz
+```veyl
 let a = 1
 let b = 2.5
 let c = a + b   // error: cannot mix int and float in '+'
@@ -203,7 +204,7 @@ The one exception is a plain integer literal, which will happily become
 a float where one is expected. This follows Go's untyped-constant rule
 and keeps ordinary arithmetic readable:
 
-```qz
+```veyl
 let radius = 2.5
 let area = PI * radius * radius   // fine
 let wide  = radius * 2            // fine - 2 becomes 2.0
@@ -213,7 +214,7 @@ let ratio: float = 1              // fine
 The flexibility belongs to the *literal*, not to the type. Once a value
 is in a variable, its type is fixed:
 
-```qz
+```veyl
 let two = 2                       // an int variable
 let nope = radius * two           // error: cannot mix float and int
 let ok   = radius * float(two)    // fine
@@ -228,7 +229,7 @@ deliberately.
 
 For a fractional result, use `divf()` or make a side a float:
 
-```qz
+```veyl
 print(7 / 2)          // 3
 print(divf(7, 2))     // 3.5
 print(7.0 / 2.0)      // 3.5
@@ -239,7 +240,7 @@ print(7.0 / 2.0)      // 3.5
 `[]T` is a list of `T`. `{K: V}` is a map from `K` to `V`, where the key
 must be `str` or `int`.
 
-```qz
+```veyl
 let nums  = [3, 1, 2]                  // []int
 let words = ["beta", "alpha"]          // []str
 let ages  = {"ada": 36, "alan": 41}    // {str: int}
@@ -247,7 +248,7 @@ let ages  = {"ada": 36, "alan": 41}    // {str: int}
 
 They nest without any special rules:
 
-```qz
+```veyl
 let grid:   [][]int      = [[1, 2], [3, 4]]
 let groups: {str: []str} = {}
 ```
@@ -255,7 +256,7 @@ let groups: {str: []str} = {}
 An **empty literal carries no element type**, so it needs an annotation.
 The compiler says exactly that if you forget:
 
-```qz
+```veyl
 let xs: []int = []          // fine
 let m: {str: int} = {}      // fine
 let oops = []               // error: cannot tell what kind of list
@@ -265,7 +266,7 @@ let oops = []               // error: cannot tell what kind of list
 Printing uses Veyl's own notation, so a printed value is something you
 could paste back into your program:
 
-```qz
+```veyl
 print([1, 2, 3])                   // [1, 2, 3]
 print({"a": 1})                    // {"a": 1}
 print(["x", "y"])                  // ["x", "y"]
@@ -275,7 +276,7 @@ print(["x", "y"])                  // ["x", "y"]
 
 A plain type can **never** be nil. `?T` is the type that can.
 
-```qz
+```veyl
 let name: str  = "ada"    // always holds a string
 let note: ?str = nil      // holds a string, or nothing
 ```
@@ -287,7 +288,7 @@ crash. The cost is that a `?T` has to be checked before it can be used.
 **Checking narrows the type.** Inside a proven `!= nil`, the value is a
 plain `T`:
 
-```qz
+```veyl
 let note: ?str = maybeLoad()
 
 if note != nil {
@@ -298,7 +299,7 @@ print(upper(note))         // error: ?str might be nil
 
 It works in either direction, and through `&&`:
 
-```qz
+```veyl
 if note == nil {
     print("nothing")
 } else {
@@ -316,7 +317,7 @@ be harder to predict than it is worth.
 
 **Widening is automatic.** A `T` goes into a `?T` without ceremony:
 
-```qz
+```veyl
 let n: ?int = 5           // fine
 ```
 
@@ -325,7 +326,7 @@ Going the other way needs the check - that is the whole point.
 **A bare `nil` needs a type to aim at**, so a binding that starts empty
 must say what it will hold:
 
-```qz
+```veyl
 let x: ?int = nil         // fine
 let y = nil               // error: cannot tell what "y" can hold
 ```
@@ -333,7 +334,7 @@ let y = nil               // error: cannot tell what "y" can hold
 Nullables work anywhere a type does - struct fields, list elements, map
 values, parameters and return types:
 
-```qz
+```veyl
 struct Config {
     name:    str
     timeout: ?int
@@ -356,7 +357,7 @@ a missing key is distinguishable from a key holding zero.
 "there might be nothing here", `T!` says "this might not have worked,
 and here is why".
 
-```qz
+```veyl
 fn parsePort(text: str) -> int! {
     if !isInt(text) {
         return fail("{text} is not a number")
@@ -371,7 +372,7 @@ Inside a function returning `T!`, `return value` succeeds and
 **A result is not a value until you unwrap it.** Using one directly is
 an error, which is the whole point:
 
-```qz
+```veyl
 let port = parsePort("8080")
 print(port + 1)         // error: int! might have failed
 ```
@@ -391,7 +392,7 @@ Four ways to get at it:
 `?` is the reason the error type is worth having. It unwraps a result,
 or returns its failure from the enclosing function:
 
-```qz
+```veyl
 fn addressFor(host: str, port: str) -> str! {
     let n = parsePort(port)?      // on failure, addressFor returns it
     return "{host}:{n}"
@@ -403,7 +404,7 @@ That is Go's four-line `if err != nil` dance in one character.
 It works mid-expression, and chains - the first failure wins and
 nothing after it runs:
 
-```qz
+```veyl
 fn sumPorts(a: str, b: str) -> int! {
     return parsePort(a)? + parsePort(b)?
 }
@@ -419,7 +420,7 @@ enclosing function must return a `T!`. The compiler says so if not.
 - `?int!` - it might have failed; if it worked, there might be no value.
 - `int!` inside a `?` - not a thing; wrap the other way round.
 
-```qz
+```veyl
 fn maybePort(text: str) -> ?int! {
     if text == "" {
         return nil        // worked, and there is nothing
@@ -437,7 +438,7 @@ The standard library uses all of this: `os.file.read` returns `str!`,
 
 A `struct` groups named values into a new type.
 
-```qz
+```veyl
 struct Point {
     x: float
     y: float
@@ -451,7 +452,7 @@ Fields go one per line, or separated by commas - whichever reads better.
 Name the struct, then give the fields in any order. **Fields you leave
 out take their zero value**, so `Point{}` is a valid origin.
 
-```qz
+```veyl
 let origin = Point{}
 let p = Point{x: 3.0, y: 4.0}
 let q = Point{y: 1.0, x: 2.0}    // order does not matter
@@ -459,7 +460,7 @@ let q = Point{y: 1.0, x: 2.0}    // order does not matter
 
 Read and write fields with `.`:
 
-```qz
+```veyl
 print(p.x)
 p.x = 6.0
 ```
@@ -468,7 +469,7 @@ p.x = 6.0
 
 Methods go in an `impl` block. The first parameter is always `self`.
 
-```qz
+```veyl
 impl Point {
     fn length(self) -> float {
         return sqrt(self.x * self.x + self.y * self.y)
@@ -492,7 +493,7 @@ cannot share a name.
 **Assigning a struct copies it.** The two values are independent
 afterwards - there are no references and no aliasing to reason about.
 
-```qz
+```veyl
 let a = Point{x: 1.0, y: 1.0}
 let b = a
 b.x = 99.0
@@ -506,7 +507,7 @@ copy - otherwise `scale` could not work at all.
 
 They nest in both directions:
 
-```qz
+```veyl
 struct User {
     name: str
     tags: []str
@@ -523,7 +524,7 @@ byName["origin"] = Point{}
 A struct cannot contain **itself** by value - the type would need
 infinite space. Through a list it is fine:
 
-```qz
+```veyl
 struct Node {
     value:    int
     children: []Node    // fine
@@ -536,7 +537,7 @@ struct Node {
 literal `p{...}`. Veyl resolves it the way Go does - a struct literal
 cannot appear unparenthesised in an `if`, `while` or `for` header:
 
-```qz
+```veyl
 if ready { }                                  // fine
 if (Point{x: 1.0, y: 0.0}).length() > 0.5 { } // parens needed
 ```
@@ -545,7 +546,7 @@ if (Point{x: 1.0, y: 0.0}).length() > 0.5 { } // parens needed
 
 Structs print in the same notation you would write them in:
 
-```qz
+```veyl
 print(Point{x: 3.0, y: 4.0})    // Point{x: 3, y: 4}
 ```
 
@@ -573,7 +574,7 @@ All binary operators are left-associative: `a - b - c` means `(a - b) - c`.
 
 Use `( )` to group explicitly:
 
-```qz
+```veyl
 let a = 2 + 3 * 4        // 14
 let b = (2 + 3) * 4      // 20
 ```
@@ -588,7 +589,7 @@ Compound assignment: `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`.
 `&` `|` `^` `~` `<<` `>>` work on `int` only. Masks read better in hex
 or binary - `0xFF`, `0b1010` - and `_` can group the digits.
 
-```qz
+```veyl
 let flags = 0
 flags |= 4          // set a bit
 flags &= ~4         // clear it
@@ -598,7 +599,7 @@ print(flags & 1)    // test it
 **The precedence ladder is C's**, which means comparison binds *tighter*
 than `&`, `^` and `|`. So this does not do what it looks like:
 
-```qz
+```veyl
 if flags & 4 == 4 { }      // parses as flags & (4 == 4)
 if (flags & 4) == 4 { }    // what you meant
 ```
@@ -622,7 +623,7 @@ String literals use double quotes. Escapes: `\n`, `\t`, `\r`, `\\`,
 Backticks give a string with **no escapes and no interpolation**, which
 may span lines:
 
-```qz
+```veyl
 const pattern = `\d{4}-\d{2}-\d{2}`
 const table = `name,age
 ada,36`
@@ -638,7 +639,7 @@ for that.
 
 Any expression inside `{ }` is evaluated and inserted:
 
-```qz
+```veyl
 let name = "world"
 let n = 3
 
@@ -649,14 +650,14 @@ print("big: {n > 2 && name != ""}")
 
 String literals may appear inside an interpolation, so this works:
 
-```qz
+```veyl
 print("shouting: {upper("hello")}")
 print("fixed: {replace(path, "\\", "/")}")
 ```
 
 For a literal brace, double it:
 
-```qz
+```veyl
 print("{{literal braces}}")     // {literal braces}
 ```
 
@@ -669,7 +670,7 @@ is safe - it needs no escaping.
 
 ### if / else if / else
 
-```qz
+```veyl
 if score >= 90 {
     print("A")
 } else if score >= 80 {
@@ -687,7 +688,7 @@ single statement.
 A multi-way branch on one value. Arms may list several values, and
 **they do not fall through** - there is no `break` to forget.
 
-```qz
+```veyl
 match code {
     200      => print("ok")
     301, 302 => print("redirect")
@@ -698,7 +699,7 @@ match code {
 
 An arm's body is a single statement, or a block:
 
-```qz
+```veyl
 match n % 3 {
     0 => {
         print("divisible by three")
@@ -719,7 +720,7 @@ the match as returning on every path.
 
 ### while
 
-```qz
+```veyl
 let i = 0
 while i < 10 {
     print(i)
@@ -731,14 +732,14 @@ while i < 10 {
 
 Counted loops use a range. `..` excludes the end, `..=` includes it.
 
-```qz
+```veyl
 for i in 0..5 { print(i) }      // 0 1 2 3 4
 for i in 1..=5 { print(i) }     // 1 2 3 4 5
 ```
 
 `step` sets the increment. A negative step counts down.
 
-```qz
+```veyl
 for i in 0..=100 step 25 { print(i) }   // 0 25 50 75 100
 for i in 10..0 step -2 { print(i) }     // 10 8 6 4 2
 ```
@@ -751,7 +752,7 @@ without disturbing it.
 
 ### break and continue
 
-```qz
+```veyl
 for i in 0..100 {
     if i % 2 == 0 { continue }   // skip to the next iteration
     if i > 20 { break }          // leave the loop
@@ -766,14 +767,14 @@ Using either outside a loop is a compile error.
 
 `for x in list` walks the elements. A second name gives the index too.
 
-```qz
+```veyl
 for w in words { print(w) }
 for i, w in words { print("{i}: {w}") }
 ```
 
 A map binds two names, key and value:
 
-```qz
+```veyl
 for name, age in ages { print("{name} is {age}") }
 ```
 
@@ -788,7 +789,7 @@ A `str` is not directly iterable - use `chars(s)` or `split(s, sep)`.
 
 ## Functions
 
-```qz
+```veyl
 fn add(a: int, b: int) -> int {
     return a + b
 }
@@ -801,7 +802,7 @@ fn add(a: int, b: int) -> int {
   later in the file.
 - Recursion works.
 
-```qz
+```veyl
 fn fib(n: int) -> int {
     if n < 2 {
         return n
@@ -818,7 +819,7 @@ fn greet(name: str) {
 A function with a return type must return on **every** path. This is an
 error:
 
-```qz
+```veyl
 fn bad(n: int) -> int {
     if n > 0 {
         return 1
@@ -832,7 +833,7 @@ fn bad(n: int) -> int {
 A declared function can be handed around like anything else, and
 written down anonymously where it is needed:
 
-```qz
+```veyl
 fn double(n: int) -> int {
     return n * 2
 }
@@ -844,7 +845,7 @@ print(f(21), triple(5))
 
 The type is written the way the signature is:
 
-```qz
+```veyl
 let op: fn(int) -> int = double
 let show: fn(str) = fn(s: str) { print(s) }     // returns nothing
 ```
@@ -854,7 +855,7 @@ not infer them.
 
 **Taking and returning them** is what makes callbacks work:
 
-```qz
+```veyl
 fn applyTwice(g: fn(int) -> int, start: int) -> int {
     return g(g(start))
 }
@@ -868,7 +869,7 @@ print(applyTwice(adder(10), 1))     // 21
 
 **Literals close over what is around them**, and can change it:
 
-```qz
+```veyl
 let seen = 0
 let tally = fn(n: int) { seen += n }
 tally(3)
@@ -878,7 +879,7 @@ print(seen)     // 7
 
 They go in lists, maps and struct fields like any other value:
 
-```qz
+```veyl
 struct Rule {
     label: str
     test:  fn(int) -> bool
@@ -896,7 +897,7 @@ Each function has its own scope. A top-level `let` is local to the
 implicit `main`, so functions cannot see it - pass it in as a
 parameter, or make it a `const`, which is global.
 
-```qz
+```veyl
 let total = 10
 const LIMIT = 100
 
@@ -923,7 +924,7 @@ Available everywhere; no import needed.
 | `print(...)` | writes its arguments, then a line break   |
 | `write(...)` | writes its arguments with no line break   |
 
-```qz
+```veyl
 write("Loading")
 write("...")
 print("done")           // Loading...done
@@ -937,7 +938,7 @@ print("done")           // Loading...done
 | `input(prompt)`   | `str`   | writes `prompt`, then reads one line            |
 | `pause()`         | -       | waits for Enter; useful before a program exits  |
 
-```qz
+```veyl
 let name = input("Your name: ")
 print("hi, {name}")
 pause()
@@ -960,7 +961,7 @@ Surrounding whitespace is ignored, so `toInt(" 7 ")` gives `7`.
 **Careful:** `toInt` never fails - it returns the fallback instead. If bad
 input should not be silently accepted, check it first:
 
-```qz
+```veyl
 let raw = input("Age: ")
 while !isInt(raw) {
     print("that isn't a number")
@@ -971,7 +972,7 @@ let age = toInt(raw)
 
 Or pick a fallback that cannot be mistaken for a real answer:
 
-```qz
+```veyl
 let age = toInt(input("Age: "), -1)
 if age < 0 {
     print("I'll take that as a no.")
@@ -1002,7 +1003,7 @@ Every numeric builtin accepts `int` or `float` arguments.
 
 Constants: `PI`, `E`, `INF`, `NAN`.
 
-```qz
+```veyl
 print("sqrt(2) is {sqrt(2)}")
 print("a full turn is {2 * PI} radians")
 print("{floor(3.7)} {ceil(3.2)} {round(2.6)}")
@@ -1047,7 +1048,7 @@ one side a float.
 Index-based functions never crash - an out-of-range index gives `""`
 rather than stopping the program.
 
-```qz
+```veyl
 print(padLeft(str(7), 3, "0"))    // 007
 print(substr("Hello, world", 7, 12))
 ```
@@ -1096,7 +1097,7 @@ list and leave the original alone.
 | `any(xs, test)` `all(xs, test)` | `bool` | whether some or every element passes  |
 | `each(xs, do)`          | -        | run `do` for each element                   |
 
-```qz
+```veyl
 let nums = [5, 3, 8, 1]
 
 print(map(nums, fn(n: int) -> int { return n * 2 }))
@@ -1108,12 +1109,12 @@ print(sortBy(nums, fn(a: int, b: int) -> bool { return a > b }))
 `reduce` starts from a value of the type you want back, so it can build
 something other than a list of the same thing:
 
-```qz
+```veyl
 let words = ["fig", "pear"]
 print(reduce(words, "", fn(acc: str, w: str) -> str { return acc + charAt(w, 0) }))
 ```
 
-```qz
+```veyl
 let xs: []int = []
 push(xs, 3, 1, 2)
 print(sort(xs))        // [1, 2, 3]
@@ -1136,7 +1137,7 @@ matters.
 | `clear(m)`      | -       | remove everything                       |
 | `len(m)`        | `int`   | how many entries                        |
 
-```qz
+```veyl
 let counts: {str: int} = {}
 for w in split("a b a", " ") {
     counts[w] += 1        // a missing key starts at 0
@@ -1172,7 +1173,7 @@ Builtin names cannot be redefined.
 program. The path is relative to the file that writes it - there is no
 search path, no registry, and no package names to learn.
 
-```qz
+```veyl
 import "geometry.vl"
 import "shapes/circle.vl"
 ```
@@ -1181,7 +1182,7 @@ import "shapes/circle.vl"
 
 A declaration is private to its own file unless it is marked `pub`:
 
-```qz
+```veyl
 // geometry.vl
 pub const TAU = 6.283185307179586
 
@@ -1215,7 +1216,7 @@ Declarations only: `import`, `const`, `struct`, `fn` and `impl`. A
 loose statement is refused, because there is no sensible moment for it
 to run:
 
-```qz
+```veyl
 // in an imported file
 print("hello")     // error: an imported file can only declare things
 ```
@@ -1232,7 +1233,7 @@ A top-level `let` is not: it belongs to the implicit `main`, so
 functions cannot see it. That is the difference between the two at the
 top level, and the compiler explains it when you trip:
 
-```qz
+```veyl
 let count = 10
 const LIMIT = 100
 
@@ -1248,7 +1249,7 @@ fn broken() -> bool {
 Because globals are initialised before the program body runs, a `const`
 cannot use a `let`:
 
-```qz
+```veyl
 let name = "ada"
 const GREETING = "hi {name}"   // error: use 'let' instead of 'const' here
 ```
@@ -1260,7 +1261,7 @@ const GREETING = "hi {name}"   // error: use 'let' instead of 'const' here
 Everything above is a bare name. The rest of the standard library lives
 under a dotted path:
 
-```qz
+```veyl
 let text = os.file.read("notes.txt")
 let page = http.get("https://example.com")
 print(time.stamp())
@@ -1293,7 +1294,7 @@ An operation that **produces a value** returns `T!`, so you unwrap it
 with `?`, `must()`, `valueOr()` or a check - see
 [Results](#results--things-that-can-fail).
 
-```qz
+```veyl
 let text = must(os.file.read("notes.txt"))    // or stop, saying why
 
 fn wordCount(path: str) -> int! {
@@ -1313,7 +1314,7 @@ gap, and the last thing left to tidy here.
 Most fallible things hand back a value, so `T!` covers them. Writing a
 file does not: it either worked, or it did not. That is `void!`.
 
-```qz
+```veyl
 fn save(path: str, text: str) -> void! {
     os.file.write(path, text)?
     os.file.append(path, "!")?
@@ -1328,7 +1329,7 @@ other result.
 Used as a plain statement, nothing changes - the result is simply
 ignored:
 
-```qz
+```veyl
 os.file.write("notes.txt", "hello")
 ```
 
@@ -1340,7 +1341,7 @@ mandatory.
 all just `false`. There was no way to say "this failed and here is why"
 for something with no value to carry. Now there is:
 
-```qz
+```veyl
 let r = os.file.write("/nowhere/a.txt", "x")
 if !isOk(r) {
     print(errorOf(r))   // open /nowhere/a.txt: no such file or directory
@@ -1383,14 +1384,13 @@ nothing for them to fail at.
 | `os.env.has(n)` | `bool` | whether it is set at all |
 | `os.args()` | `[]str` | command-line arguments |
 | `os.run(cmd, args)` | `str!` | run a program, return its output |
-| `os.runCode(cmd, args)` | `int` | run a program, return its exit code |
 | `os.name()` `os.arch()` | `str` | the OS and CPU architecture |
 | `os.cpus()` `os.pid()` | `int` | processor count, process id |
 | `os.hostname()` | `str` | this machine's name |
 
 The path functions never touch the disk - they are string manipulation.
 
-```qz
+```veyl
 os.file.write("notes.txt", "hello")
 for line in os.file.lines("notes.txt") {
     print(line)
@@ -1404,48 +1404,102 @@ the library grows.
 
 ---
 
-### `http` - fetching things
+### `http` - a web server, and fetching
 
-| Function | Returns | Description |
+Writing a server is the main thing here. `http.serve` takes a port and
+a function, calls it once per request, and sends back whatever it
+returns.
+
+```veyl
+http.serve(8080, fn(req: Request) -> Response {
+    if req.path == "/" {
+        return http.ok("<h1>hello from Veyl</h1>")
+    }
+    if req.path == "/time" {
+        return http.text(time.stamp())
+    }
+    return http.notFound()
+})
+```
+
+That is a complete program. Run it and open `http://localhost:8080`.
+
+**What you are given.** A `Request` is a struct:
+
+| Field | Type | |
 | --- | --- | --- |
-| `http.get(url)` | `str!` | the response body; 4xx and 5xx are failures |
-| `http.getOr(url, alt)` | `str` | the body, or `alt` on any failure |
-| `http.getWith(url, headers)` | `str!` | with a `{str: str}` of headers |
-| `http.post(url, body)` | `str!` | POST as `text/plain` |
-| `http.post(url, body, type)` | `str!` | POST with a content type |
-| `http.postJson(url, body)` | `str!` | POST as `application/json` |
-| `http.status(url)` | `int` | the status code; `0` if it never connected |
-| `http.ok(url)` | `bool` | whether the status was 2xx or 3xx |
-| `http.download(url, path)` | `bool` | save the body to a file |
-| `http.encode(s)` `http.decode(s)` | `str` | URL escaping |
+| `method` | `str` | `"GET"`, `"POST"`, ... |
+| `path` | `str` | `"/users"`, with no query string |
+| `query` | `str` | everything after `?`, empty if none |
+| `body` | `str` | the request body |
+| `headers` | `{str: str}` | header names lowercased |
 
-Every request times out after 30 seconds.
+`http.header(req, "user-agent")` reads one header and gives `""` when
+it is absent, which saves checking the map first.
+
+**What you send back.** A `Response` is `status`, `contentType` and
+`body`, and these build one for you:
+
+| Function | Sends |
+| --- | --- |
+| `http.ok(body)` | 200, `text/html` |
+| `http.text(body)` | 200, `text/plain` |
+| `http.json(body)` | 200, `application/json` |
+| `http.status(code, body)` | any code, `text/plain` |
+| `http.notFound()` | 404 |
+
+You can also build one yourself: `Response{status: 302, contentType:
+"text/plain", body: ""}`.
+
+**Fetching.** `http.get(url)` returns the body as `str!`.
+
+```veyl
+let page = http.get("http://example.com")?
+```
+
+Plain HTTP only. There is no TLS, so an `https://` URL will not work
+yet - see [Known limitations](#known-limitations).
+
+**One request at a time.** The server handles a request, finishes it,
+then accepts the next. That is fine for a tool, a local dashboard or
+something on your own network. It is not a production web server, and a
+slow handler blocks everything behind it.
 
 ---
 
-### `net` - addresses and ports
+### `net` - TCP sockets
+
+`http` is written on top of these, and they are there when you want the
+socket itself. A socket is an `int` handle.
 
 | Function | Returns | Description |
 | --- | --- | --- |
-| `net.ip(host)` | `str!` | the first address for a name |
-| `net.ips(host)` | `[]str!` | every address, sorted |
-| `net.names(ip)` | `[]str` | reverse lookup |
-| `net.canConnect(host, port)` | `bool` | whether a TCP connection succeeds |
-| `net.canConnect(host, port, ms)` | `bool` | with a timeout |
-| `net.scan(host, lo, hi)` | `[]int` | which ports in a range accept a connection |
-| `net.scan(host, lo, hi, ms)` | `[]int` | with a per-port timeout |
-| `net.send(host, port, data)` | `str!` | send over TCP, return the reply |
-| `net.localIP()` | `str` | this machine's outward-facing address |
-| `net.interfaces()` | `[]str` | every non-loopback address |
+| `net.listen(port)` | `int!` | a listening socket |
+| `net.accept(sock)` | `int!` | blocks until someone connects |
+| `net.recv(sock)` | `str!` | read once; `""` when the peer closes |
+| `net.send(sock, data)` | `int!` | writes all of it, returns the length |
+| `net.connect(host, port)` | `int!` | connect out, by name or address |
+| `net.close(sock)` | | |
 
-`net.scan` probes concurrently, so a thousand ports takes well under a
-second. Only scan hosts you are responsible for.
+An echo server:
 
-```qz
-for port in net.scan("127.0.0.1", 1, 1024) {
-    print("open: {port}")
+```veyl
+let server = must(net.listen(9000))
+print("listening on 9000")
+
+while true {
+    let conn = must(net.accept(server))
+    let line = must(net.recv(conn))
+    must(net.send(conn, "you said: {line}"))
+    net.close(conn)
 }
 ```
+
+Two things to know. `net.recv` reads **once** and gives you whatever
+had arrived - TCP is a stream, so a message may come back in pieces and
+deciding where one ends is yours to do. And a string here is
+NUL-terminated, so binary data with a zero byte in it reads back short;
+that is what `bytes` is for.
 
 ---
 
@@ -1458,7 +1512,7 @@ Two ways to use it, because two different things are usually wanted.
 the annotation on the binding - Veyl has no type arguments, so this is
 how the decoder is told what to build:
 
-```qz
+```veyl
 struct Point {
     x: float
     y: float
@@ -1472,7 +1526,7 @@ print(must(p).x)
 The annotation names the shape *and* says it can fail. It travels
 through a wrapper too, so this reads the way you would expect:
 
-```qz
+```veyl
 let p: Point = must(json.decode(text))
 ```
 
@@ -1482,7 +1536,7 @@ structs and lists of structs all work.
 **Single values.** When you only want one field out of a response,
 reach in with a dotted path. Numbers step into arrays:
 
-```qz
+```veyl
 let name  = json.get(body, "user.name")
 let age   = json.int(body, "user.age")
 let first = json.get(body, "members.0.name")
@@ -1510,7 +1564,7 @@ rather than failing; use `json.has` when the difference matters.
 **Writing JSON by hand needs doubled braces.** `{` starts an
 interpolation inside a string, so a literal one is written `{{`:
 
-```qz
+```veyl
 let text = "{{"x": 1}}"        // the string {"x": 1}
 ```
 
@@ -1524,7 +1578,7 @@ text out.
 `task.map` is `map`, run concurrently. Same arguments, same ordered
 results - switching between them is a one-word edit.
 
-```qz
+```veyl
 let pages = task.map(urls, fn(u: str) -> str {
     return valueOr(http.get(u), "")
 })
@@ -1550,7 +1604,7 @@ function passed to `task.map` runs on several threads at once, so it
 should compute a value from its argument rather than change something
 outside itself:
 
-```qz
+```veyl
 // Fine: each call produces a value.
 let sizes = task.map(paths, fn(p: str) -> int {
     return valueOr(os.file.size(p), 0)
@@ -1574,7 +1628,7 @@ Patterns belong in raw strings. In an ordinary string `{4}` is an
 interpolation, so a quantifier would have to be written `{{4}}`, and
 `\d` would be an unknown escape.
 
-```qz
+```veyl
 const DATE = `\d{4}-\d{2}-\d{2}`
 
 print(re.find(DATE, log))
@@ -1657,7 +1711,7 @@ Format strings use readable tokens rather than a reference date:
 | `time.weekday()` | `str` | the day's name |
 | `time.sleep(ms)` | - | pause |
 
-```qz
+```veyl
 let started = time.millis()
 work()
 print("took {time.millis() - started} ms")
@@ -1685,7 +1739,7 @@ allocate and free. Manual memory needs the C backend and does not exist.
 `bytes` is a real type, alongside `int`, `str` and the rest. It holds
 binary: what comes off a socket, out of a file, or into a hash.
 
-```qz
+```veyl
 let b: bytes = bytes.of("hello")
 print(len(b))        // 5
 print(b[0])          // 104
@@ -1758,7 +1812,7 @@ Programs differ from run to run without seeding. `rand.seed` is for
 when you want the same sequence every time - a test, or a puzzle with a
 daily number.
 
-```qz
+```veyl
 rand.seed(7)
 print(rand.int(1, 100))       // 87, every time
 print(rand.pick(["a", "b"]))
@@ -1782,7 +1836,7 @@ Every one of these takes `[]int` or `[]float` and returns `float`.
 | `stats.stdev(xs)` | the square root of that |
 | `stats.percentile(xs, p)` | interpolated, `p` from 0 to 100 |
 
-```qz
+```veyl
 let scores = [2, 4, 4, 4, 5, 5, 7, 9]
 print(stats.mean(scores))            // 5
 print(stats.median(scores))          // 4.5
@@ -1805,7 +1859,7 @@ spread to measure.
 | `term.clear()` | - | clear the screen |
 | `term.colour()` | `bool` | whether colour will actually show |
 
-```qz
+```veyl
 print(term.green("passed") + " " + term.grey("0.4s"))
 print(term.bar(7, 10, 20))           // [##############------]
 ```
@@ -1821,22 +1875,6 @@ On Windows the console has to be switched into virtual-terminal mode or
 the escape codes appear literally as `←[31m`. Veyl does that
 automatically at startup for any program using `term`.
 
-### `log` - timestamped output
-
-| Function | Description |
-| --- | --- |
-| `log.info(msg)` | an ordinary line |
-| `log.warn(msg)` | something worth noticing |
-| `log.error(msg)` | something wrong |
-
-```qz
-log.info("started")     // 14:22:07 info  started
-```
-
-These write to **standard error**, not standard output, so logging does
-not contaminate output being piped somewhere. `print` is still the way
-to produce a program's actual results.
-
 ### `url` - taking a URL apart
 
 | Function | Returns | Description |
@@ -1846,7 +1884,7 @@ to produce a program's actual results.
 | `url.build(base, params)` | `str` | append an encoded query |
 | `url.join(base, ref)` | `str!` | resolve a relative reference |
 
-```qz
+```veyl
 let u = "https://api.example.com:8443/v2/items?limit=10"
 print(must(url.host(u)))               // api.example.com
 print(must(url.port(u)))               // 8443
@@ -1860,31 +1898,6 @@ is perfectly valid. Failure is reserved for a URL that will not parse.
 same URL; that matters for caching and for tests. A repeated query key
 keeps its first value, since a map cannot hold both.
 
-### `zip` - archives
-
-| Function | Returns | Description |
-| --- | --- | --- |
-| `zip.make(dest, paths)` | `bool!` | create an archive |
-| `zip.list(src)` | `[]str!` | the names inside, without unpacking |
-| `zip.extract(src, dir)` | `int!` | unpack, returning how many files |
-
-```qz
-must(zip.make("backup.zip", ["notes.txt", "src"]))
-print(must(zip.list("backup.zip")))
-print(must(zip.extract("backup.zip", "restored")))
-```
-
-A directory is added whole, with paths relative to it, so unpacking does
-not recreate your machine's whole tree. **Extraction refuses any entry
-whose path climbs out of the destination** and names it:
-
-```
-archive contains an unsafe path: ../../escaped.txt
-```
-
-An archive that could write outside its own folder could overwrite
-anything you can, so this is a refusal rather than a warning.
-
 ### `args` - the command line
 
 | Function | Returns | Description |
@@ -1893,9 +1906,9 @@ anything you can, so this is a refusal rather than a warning.
 | `args.value(name, fallback)` | `str` | the value after `--name` |
 | `args.rest()` | `[]str` | everything that is not a flag |
 
-```qz
+```veyl
 if args.flag("verbose") {
-    log.info("starting")
+    print("starting")
 }
 for file in args.rest() {
     print(must(os.file.read(file)))
@@ -1922,7 +1935,7 @@ positional arguments. `os.args()` is still there for the raw list.
 | `bits.toBase(n, base)` | `str` | 2 to 36; `""` if out of range |
 | `bits.fromBase(s, base)` | `int!` | parse in that base |
 
-```qz
+```veyl
 print(bits.count(255))            // 8
 print(bits.toBase(255, 16))       // ff
 print(must(bits.fromBase("1010", 2)))  // 10
@@ -1933,86 +1946,146 @@ operations that need a function.
 
 ---
 
-## Windows library
+## `win` - windows, drawing and input
 
-These call into Win32 and are available only when building for Windows.
-Using one on another target is a compile error, not a runtime crash.
+Veyl opens a real window you can draw in. The shape is a **game loop**:
+open once, then poll, draw, present, repeat.
 
-| Function                              | Description                                   |
-| ------------------------------------- | --------------------------------------------- |
-| `setTitle(s)`                         | sets the console window title                  |
-| `beep(freq, ms)`                      | plays a tone at `freq` Hz for `ms` ms          |
-| `messageBox(title, text)`             | shows a native dialog and waits                |
-| `hideConsole()`                       | hides the console window                       |
-| `winBuild()`                          | the Windows build number, as an `int`          |
-| `isWin11()`                           | whether the build is 22000 or higher           |
-| `openWindow(title, w, h)`             | opens a real window; returns whether corners were rounded |
-| `openWindow(title, w, h, rounded)`    | same, with rounded corners requested or not    |
+```veyl
+let w = must(win.open("my game", 800, 500))
 
-```qz
-setTitle("My App")
-beep(880, 150)
-let rounded = openWindow("Hello from Veyl", 800, 500)
-messageBox("Done", "Corners rounded: {rounded}")
+while win.poll(w) {
+    if win.pressed(w, "esc") { break }
+
+    win.clear(w, win.rgb(18, 20, 28))
+    win.circle(w, 400, 250, 40, win.rgb(120, 200, 140))
+    win.text(w, 20, 20, "hello", win.rgb(235, 238, 245))
+
+    win.present(w)
+    sleep(16)
+}
+win.close(w)
 ```
 
-`openWindow` **blocks** until the user closes the window - it runs the
-Win32 message loop internally.
+That is a complete program. `sleep(16)` is roughly 60 frames a second.
 
-**Rounded corners need Windows 11** (build 22000+). They are requested
-by default. On Windows 10 the attribute does not exist, so the window
-stays square and `openWindow` returns `false` - it reports what actually
-happened, never what was asked for.
-
-`hideConsole()` combined with `openWindow` gives a GUI-only program with
-no console behind it.
-
-These compile down to `syscall` calls that load DLLs at runtime, so a
-Veyl program with a window is still one self-contained `.exe` with no
-DLLs to ship and no C compiler involved.
-
-### The `win` namespace
-
-Everything added after the original bare names is grouped under `win.`.
+### The loop
 
 | Function | Returns | Description |
 | --- | --- | --- |
-| `win.clipboard.get()` | `str` | the clipboard's text, `""` if it holds none |
-| `win.clipboard.set(text)` | `bool` | replace it |
-| `win.registry.read(root, path, name)` | `str!` | a registry value |
-| `win.screen.width()` `win.screen.height()` | `int` | screen size in pixels |
-| `win.mouse.x()` `win.mouse.y()` | `int` | cursor position |
-| `win.process.list()` | `[]str` | running executables, sorted |
-| `win.process.running(name)` | `bool` | whether one of them is running |
-| `win.key.down(code)` | `bool` | whether a virtual key is held |
+| `win.open(title, w, h)` | `int!` | a window handle; `w` and `h` are the **drawing area** |
+| `win.poll(w)` | `bool` | handle input; `false` once the window is closed |
+| `win.present(w)` | | show everything drawn since the last present |
+| `win.close(w)` | | |
 
-The registry root is `HKCU`, `HKLM`, `HKCR` or `HKU`, or the long form.
-Only reading - writing to the registry from a scripting language is a
-good way to break a machine by accident.
+`win.poll` is what makes the window respond at all. Without calling it
+the window freezes, because nothing is reading its messages.
 
-```qz
-const KEY = `SOFTWARE\Microsoft\Windows NT\CurrentVersion`
-print(valueOr(win.registry.read("HKLM", KEY, "ProductName"), "unknown"))
+Drawing goes into a back buffer and `win.present` copies it to the
+screen in one go. That is why nothing flickers, and why you should draw
+a whole frame before presenting rather than presenting as you go.
+
+### Drawing
+
+| Function | Description |
+| --- | --- |
+| `win.rgb(r, g, b)` | a colour, each 0 to 255 |
+| `win.clear(w, colour)` | fill the whole window |
+| `win.rect(w, x, y, width, height, colour)` | filled rectangle |
+| `win.circle(w, x, y, radius, colour)` | filled circle, centred on `x, y` |
+| `win.line(w, x1, y1, x2, y2, colour)` | one-pixel line |
+| `win.text(w, x, y, s, colour)` | text, `x, y` is the top-left |
+| `win.frame(w, x, y, width, height, colour)` | a one-pixel outline |
+
+`0, 0` is the top-left corner and y grows downwards, which is the usual
+convention for screens and the opposite of graph paper.
+
+### Input
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `win.pressed(w, name)` | `bool` | is this key held down |
+| `win.key(w, code)` | `bool` | the same, by virtual key code |
+| `win.mouseX(w)` `win.mouseY(w)` | `int` | pointer position |
+| `win.mouseDown(w)` | `bool` | is the left button held |
+| `win.clicked(w)` | `bool` | was it clicked **this frame** |
+
+Key names: `"left"`, `"right"`, `"up"`, `"down"`, `"space"`, `"esc"`,
+`"enter"`, `"tab"`, `"backspace"`, `"shift"`, `"ctrl"`, `"alt"`, and
+any single character - `win.pressed(w, "a")`, `win.pressed(w, "7")`.
+
+The difference between `mouseDown` and `clicked` matters. `mouseDown`
+is true for every frame the button is held, so a button wired to it
+fires sixty times a second. `clicked` is true for one frame per press.
+
+### Widgets
+
+Built on the above, and written in Veyl. They are **immediate mode**:
+there is no widget tree and nothing to keep in sync, so a button draws
+itself and tells you whether it was clicked in the same call.
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `win.button(w, x, y, width, height, label)` | `bool` | draws a button, true when clicked |
+| `win.bar(w, x, y, width, height, frac, colour)` | | a fill bar, `frac` from 0.0 to 1.0 |
+| `win.hover(w, x, y, width, height)` | `bool` | is the pointer inside this box |
+
+```veyl
+let count = 0
+while win.poll(w) {
+    win.clear(w, win.rgb(22, 24, 32))
+    if win.button(w, 24, 24, 130, 40, "count up") {
+        count = count + 1
+    }
+    win.text(w, 24, 80, "count is {count}", win.rgb(235, 238, 245))
+    win.present(w)
+    sleep(16)
+}
 ```
 
-Note the raw string: registry paths are full of backslashes, and an
-ordinary string would need every one of them doubled.
+Because the button is drawn fresh every frame, moving it is just
+changing the numbers - there is nothing to update or lay out again.
 
-`examples\windows.vl` exercises all of it, and puts your clipboard back
-the way it found it.
+### Size and the title
 
-### Cross-compiling
+| Function | Description |
+| --- | --- |
+| `win.width(w)` `win.height(w)` | the drawing area, in pixels |
+| `win.title(w, s)` | change the title bar |
+| `win.resizable(w, on)` | add or remove the drag border |
 
-Set `VEYL_TARGET` to build for a different OS than the one you are on:
+**Windows open at a fixed size.** No drag border, no maximise button.
+That is almost always what a game wants, and it matches the back buffer
+being made once at a known size.
 
+`win.resizable(w, true)` turns it on, and the buffer is rebuilt when
+the drawing area changes, so `win.width(w)` and `win.height(w)` are
+always current. Draw in terms of them rather than the numbers you
+passed to `win.open` and the layout follows the window:
+
+```veyl
+win.resizable(w, true)
+while win.poll(w) {
+    win.clear(w, bg)
+    // stays centred however the window is dragged
+    win.circle(w, win.width(w) / 2, win.height(w) / 2, 40, fg)
+    win.present(w)
+    sleep(16)
+}
 ```
-VEYL_TARGET=windows veyl build app.vl
-```
 
-`veyl run` needs the target to match your machine; use `veyl build`
-otherwise.
+The size you pass to `win.open` is the **drawing area**, not the window
+including its title bar, so `win.open("x", 640, 400)` gives you exactly
+640 by 400 pixels to draw in.
 
----
+### What it does not do yet
+
+No images, no sound, no text measurement, and one font. Text is drawn
+with the system font at a fixed size, so centring a label means
+guessing at its width. There is one window per program.
+
+Working examples are in `examples/gui/`: `pong.vl` is a playable game
+in about 130 lines, `widgets.vl` exercises the widget set.
 
 ## Reserved words
 
@@ -2034,156 +2107,110 @@ defer own unsafe
 
 ## Compiler commands
 
-| Command                  | Effect                                        |
-| ------------------------ | --------------------------------------------- |
-| `veyl run f.vl`        | compile and run                                |
-| `veyl build f.vl`      | write an executable next to the source         |
-| `veyl fmt f.vl`        | reformat the file in place                     |
-| `veyl emit f.vl`       | print the generated Go                         |
-| `veyl tokens f.vl`     | print the token stream                         |
-| `veyl version`         | print the version                              |
-| `veyl f.vl`            | same as `run`                                  |
-
-### Double-clicking a .vl file
-
-If Veyl was installed with the file association ticked, opening a
-`.vl` from Explorer asks what to do rather than guessing:
-
-```
-  Veyl 0.17
-  hello.vl
-
-    [R]  Run it now
-    [B]  Build hello.exe, so it can run without Veyl
-    [F]  Open the folder
-    [Q]  Nothing, close this
-```
-
-The window stays open until you dismiss it. That is the point of going
-through this rather than running the program directly: a console
-program launched from Explorer otherwise opens, prints, and closes
-faster than anyone can read.
-
-Right-click offers **Run with Veyl** and **Build .exe with Veyl**
-directly, skipping the menu. The same thing from a terminal:
-
-```
-veyl open hello.vl            # the menu
-veyl open hello.vl --build    # straight to building
-```
-
-### The console
-
-```
-veyl console
-```
-
-An interactive session: type an expression to see its value, a
-statement to run it. Brackets hold the prompt open, so a function or a
-loop can be typed across lines.
-
-```
-qz> 1 + 1
-2
-qz> let name = "veyl"
-qz> "hello, {name}"
-hello, veyl
-qz> fn double(n: int) -> int {
-..>     return n * 2
-..> }
-qz> double(21)
-42
-```
-
 | Command | Effect |
 | --- | --- |
-| `:help` | the commands |
-| `:list` | every line in the session |
-| `:undo` | drop the last line |
-| `:clear` | start over |
-| `:save <file>` | write the session out as a `.vl` program |
-| `:emit` | show the Go the session compiles to |
-| `:quit` | leave |
+| `veyl run f.vl` | compile and run |
+| `veyl build f.vl` | write `f.exe` next to the source |
+| `veyl asm f.vl` | print the generated assembly |
+| `veyl ir f.vl` | print the intermediate representation |
+| `veyl version` | print the version |
+| `veyl f.vl` | same as `run` |
 
-**How it works, and the one consequence.** Veyl is compiled, so there
-is no interpreter to feed a line at a time. The console keeps every
-line you have typed and rebuilds the whole program on each new one.
-Only the new output is shown, and a line that does not compile is
-reported and discarded rather than added - one mistake cannot poison
-the session.
-
-The consequence is worth knowing: **side effects happen again on every
-line.** Appending to a file three times in a row appends more than
-three times. Pure code, which is almost everything anyone types into a
-console, behaves exactly as expected.
-
-### Formatting
-
-`veyl fmt` fixes indentation and spacing, collapses runs of blank
-lines, and leaves everything else alone. It does **not** reflow your
-line breaks - where you end a line is your decision.
-
-It works on the token stream rather than the parsed program, which
-means **comments survive**, and anything it does not understand passes
-through untouched. A file that does not lex is left completely alone
-rather than half-rewritten:
+Anything after the `.vl` file goes to your program rather than to the
+compiler, so this reaches `args.flag("verbose")`:
 
 ```
-notes.vl does not lex cleanly, so it was left alone
+veyl run tool.vl --verbose
 ```
 
-### Warnings
+### Reading what it compiled to
 
-Some things are worth saying but not worth refusing to compile over:
+`asm` and `ir` are the debugging tools, and they are the most useful
+thing here when a program does something you did not expect. `ir` is
+the readable one - three-address code over virtual registers, before
+anything knows an x86 register exists.
 
 ```
-warning: app.vl:12:5: this can never run - the 'return' above it always leaves
-warning: app.vl:17:1: "leftover" is declared but never used
+veyl ir hello.vl
+veyl asm hello.vl
 ```
 
-Warnings go to stderr, and only once the program is known to compile -
-stacking them on top of a dozen type errors buries the thing that
-actually needs fixing. Set `VEYL_QUIET=1` to silence them.
+### Right-clicking a .vl file
 
-Unreachable code is reported once per block, not once per statement,
-and it is not emitted into the compiled program.
+The installer puts these on the menu:
 
-`emit` and `tokens` are debugging aids - `emit` in particular is the
-fastest way to understand what the compiler did with your program.
+- **Run with Veyl**
+- **Compile to .exe**
+- **Veyl ▸** - the generated assembly, the IR, or a prompt in that
+  folder
 
-**On Windows:** a program built with `build` and then double-clicked will
-open a console, run, and close instantly. That is normal for a console
-program. Either run it from a terminal, or end the program with
-`pause()`.
+Right-clicking any folder gives **Open Veyl prompt here**. Double-
+clicking a `.vl` file runs it. All of them open a console that stays
+up, so you can read what it said whether that was output or errors.
+
+### Errors
+
+Every error names a file, a line and a column, and the compiler reports
+all of them rather than stopping at the first:
+
+```
+hello.vl:3:11: undefined variable "nmae"
+hello.vl:7:5: "count" is declared but never used
+veyl: 2 error(s)
+```
 
 ---
 
 ## Known limitations
 
-Honest list of what v0.17.02 does not do yet.
+Honest list of what v0.18.0 does not do yet.
 
-- **A missing map key is still silent.** `m["absent"]` returns the zero
+**The language**
+
+- **A missing map key is silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left
-  alone because making every map read return `?V` would mean a nil check
-  on each one.
-- **An action that fails cannot say why.** `os.file.write` returns a
-  plain `bool`, because there is no unit type to put inside a `T!`.
-  Everything that returns a *value* carries its reason properly.
+  alone because making every map read return `?V` would mean a nil
+  check on each one.
 - **No namespacing on imports.** Everything `pub` in an imported file
   lands in one flat namespace, so two files exporting the same name
   collide. The error names both files.
 - **No global *variables*.** A top-level `const` is global, but a
   top-level `let` belongs to the program body and functions cannot see
   it. Pass it in, or make it a `const`.
-- **Garbage collected.** Memory is managed automatically. Manual memory,
-  pointers, and `unsafe` require a C backend and are not available.
-- **Windows library is Windows-only.** There is no Linux or macOS
-  equivalent for the window and console functions yet.
-- **Windows are blank.** `openWindow` opens and manages a real window,
-  but there is no drawing or event API yet - no buttons, no input
-  handling, no canvas.
-- **Go must be installed** to compile a Veyl program, since Veyl
-  hands the generated code to the Go toolchain.
+- **No generics.** A function works on one set of types.
+- **Garbage collected**, and manual memory, pointers and `unsafe` are
+  not available.
+
+**The library**
+
+- **No HTTPS.** `http.get` speaks plain HTTP only. TLS needs either
+  Windows' own Schannel or a TLS implementation, and neither is
+  written, so an `https://` URL will not work.
+- **No SQL or database of any kind.** See below.
+- **No `zip`.** It exists on the `veylgo` branch and has not been
+  ported.
+- **The web server handles one request at a time.** Fine for a tool or
+  something on your own network, not a production server.
+- **A string is NUL-terminated bytes.** Binary data containing a zero
+  byte reads back short - use `bytes` for that - and building a string
+  by repeated appending is quadratic.
+- **Printing a float rounds through the C library**, which stops at
+  seventeen significant digits, so a value needing sixteen can round
+  the wrong way in the last place.
+
+**Windows**
+
+- **Windows-only.** The whole `win` library, and the compiler's output,
+  target Windows on x86-64. There is no cross-compilation.
+- **One window per program**, no images, no sound, one font at one
+  size, and no way to measure text.
+
+**Memory**
+
+- **Nothing is collected automatically.** There is a mark-and-sweep
+  collector, but `mem.collect()` is the only thing that runs it. A loop
+  that allocates and never terminates will consume all of memory rather
+  than being collected out of trouble.
 
 
 
