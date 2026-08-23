@@ -210,6 +210,34 @@ var sigs = map[string]front.Signature{
 	"hash.base64":     {Params: []*Type{Str}, Ret: Str},
 	"hash.fromBase64": {Params: []*Type{Str}, Ret: ResultOf(Str)},
 
+	// Windows. A window is an opaque int handle, the same way a socket
+	// is, so the UI layer above can be written in Veyl.
+	"win.open":      {Params: []*Type{Str, Int, Int}, Ret: ResultOf(Int)},
+	"win.poll":      {Params: []*Type{Int}, Ret: Bool},
+	"win.present":   {Params: []*Type{Int}, Ret: Void},
+	"win.close":     {Params: []*Type{Int}, Ret: Void},
+	"win.title":     {Params: []*Type{Int, Str}, Ret: Void},
+	"win.rgb":       {Params: []*Type{Int, Int, Int}, Ret: Int},
+	"win.clear":     {Params: []*Type{Int, Int}, Ret: Void},
+	"win.rect":      {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Void},
+	"win.line":      {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Void},
+	"win.circle":    {Params: []*Type{Int, Int, Int, Int, Int}, Ret: Void},
+	"win.text":      {Params: []*Type{Int, Int, Int, Str, Int}, Ret: Void},
+	"win.mouseX":    {Params: []*Type{Int}, Ret: Int},
+	"win.mouseY":    {Params: []*Type{Int}, Ret: Int},
+	"win.width":     {Params: []*Type{Int}, Ret: Int},
+	"win.height":    {Params: []*Type{Int}, Ret: Int},
+	"win.mouseDown": {Params: []*Type{Int}, Ret: Bool},
+	"win.clicked":   {Params: []*Type{Int}, Ret: Bool},
+	"win.key":       {Params: []*Type{Int, Int}, Ret: Bool},
+
+	// The widgets, written in Veyl in the prelude on top of the above.
+	"win.pressed": {Params: []*Type{Int, Str}, Ret: Bool},
+	"win.hover":   {Params: []*Type{Int, Int, Int, Int, Int}, Ret: Bool},
+	"win.button":  {Params: []*Type{Int, Int, Int, Int, Int, Str}, Ret: Bool},
+	"win.bar":     {Params: []*Type{Int, Int, Int, Int, Int, Float, Int}, Ret: Void},
+	"win.frame":   {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Void},
+
 	// http. Request and Response are structs declared in the prelude and
 	// folded into any program that names them, so StructOf is enough
 	// here: the checker resolves the name against what was folded in and

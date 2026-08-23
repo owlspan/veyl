@@ -158,6 +158,11 @@ var preludeOf = map[string]string{
 	"http.status":      "__vy_httpStatus",
 	"http.notFound":    "__vy_httpNotFound",
 	"http.header":      "__vy_httpHeader",
+	"win.button":       "__vy_winButton",
+	"win.bar":          "__vy_winBar",
+	"win.frame":        "__vy_winFrame",
+	"win.hover":        "__vy_winHover",
+	"win.pressed":      "__vy_winPressed",
 
 	"re.matches": "__vy_reMatches",
 	"re.find":    "__vy_reFind",
@@ -416,5 +421,6 @@ var preludeSource = strings.Join([]string{
 	preludeHash2,
 	preludeCsv,
 	preludeHTTP,
+	preludeUI,
 	preludeRe,
 }, "\n")

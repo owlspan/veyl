@@ -1883,6 +1883,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.winBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.bytesBuiltin(c, name); handled {
 		return r
 	}

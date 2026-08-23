@@ -76,6 +76,7 @@ Source: "..\..\docs\SYNTAX.md";   DestDir: "{app}"; Components: docs; Flags: ign
 Source: "..\..\docs\TUTORIAL.md"; DestDir: "{app}"; Components: docs; Flags: ignoreversion
 Source: "..\examples\*.vl";       DestDir: "{app}\examples"; Components: docs; Flags: ignoreversion
 Source: "..\examples\net\*.vl";   DestDir: "{app}\examples\net"; Components: docs; Flags: ignoreversion
+Source: "..\examples\gui\*.vl";   DestDir: "{app}\examples\gui"; Components: docs; Flags: ignoreversion
 
 [Icons]
 ; A terminal with veylasm on PATH whether or not the PATH task was
@@ -129,6 +130,7 @@ Root: HKA; Subkey: "Software\Classes\Veyl.Source\shell\veylasmrun\command"; Valu
 
 [UninstallDelete]
 Type: dirifempty; Name: "{app}\examples\net"
+Type: dirifempty; Name: "{app}\examples\gui"
 Type: dirifempty; Name: "{app}\examples"
 Type: dirifempty; Name: "{app}"
 
