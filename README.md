@@ -65,7 +65,7 @@ extension and a Windows installer.
 - [Commands](#commands)
 - [A tour of the language](#a-tour-of-the-language)
 - [Windows GUI](#windows-gui)
-- [Two backends](#two-backends)
+- [What replaced this](#what-replaced-this)
 - [Building from source](#building-from-source)
 - [Project layout](#project-layout)
 - [Roadmap](#roadmap)
@@ -319,50 +319,39 @@ compiler, no DLLs to ship.
 
 ---
 
-## Two backends
+## What replaced this
 
-Veyl has two ways of turning your source into an executable. They share
-the lexer, the parser and the type checker, and differ only in the last
-two stages.
+Veyl now compiles straight to x86-64 and writes the executable itself.
+No Go in the pipeline and none in what comes out. That work is on the
+[`veyl`](../../tree/veyl) branch.
 
-**The Go backend** is the default and the definition of what Veyl means.
-It emits Go source and hands it to the Go toolchain.
-
-**The assembly backend** emits x86-64 directly, then assembles and links
-it itself. No Go is involved in compiling with it and none is present in
-what it produces.
-
-```
-                        +-->  Go source  -->  go build  -->  .exe
-hello.vl  -->  frontend  |
-                        +-->  x86-64  -->  encoder, linker  -->  .exe
-```
-
-The two are checked against each other byte for byte on every example.
-The Go backend is the reference, so if they disagree, the assembly one
-is wrong. Anything the assembly backend does not cover yet is a compile
-error naming what is missing, never wrong output.
+The two share the lexer, the parser and the type checker, so they agree
+on what a program means and differ only in how they emit it. That is
+what makes the comparison fair, and it is why this branch still has a
+job: every example is compiled by both and the output compared byte for
+byte, with this backend as the definition of what Veyl means.
 
 `collatz.vl`, nested loops, 10,000 iterations:
 
-| | via Go | asm, linked by gcc | asm, self-linked |
+| | this backend | native, linked by gcc | native, self-linked |
 | --- | ---: | ---: | ---: |
 | runtime, best of 5 | 67 ms | 81 ms | 81 ms |
 | executable size | 2,524,160 | 123,102 | **2,560** |
 
 The size difference is the Go runtime, which is no longer there. The
 speed difference is that every value still round-trips through a stack
-slot, because there is no register allocator yet.
+slot over there, because there is no register allocator yet.
 
-[asm-src/README.md](asm-src/README.md) covers what it does and does not
-handle.
+What this backend still has that the native one does not: `http`,
+`net`, `zip`, and `win` for the Windows GUI. Those are the next things
+to port. If you need them today, this branch is where they are.
 
 ---
 
 ## Building from source
 
-You need Go 1.21 or newer for the Go backend. The assembly backend needs
-nothing installed once it is built.
+You need Go 1.21 or newer, both to build this compiler and to run what
+it produces through the Go toolchain.
 
 ```
 git clone https://github.com/owlspan/veyl
@@ -384,11 +373,10 @@ The first `run` is Go's, the second is Veyl's.
 ```
 cd src      && go test ./...
 cd frontend && go test ./...
-cd asm-src  && go test ./...
 ```
 
-The three modules are separate, so there is no single command that
-covers everything.
+The two modules are separate, so there is no single command that
+covers both.
 
 Each Go-backend case is a `.vl` file next to a `.expected` file holding
 what the compiler should produce: program output for `tests/ok`, error
@@ -402,8 +390,15 @@ expectations and read the diff before committing:
 go test -run TestVeyl -update ./compiler
 ```
 
-The assembly backend has no expected-output files. Every example is run
-through both backends and compared.
+The native compiler on [`veyl`](../../tree/veyl) has no expected-output
+files at all. It compiles every example through both backends and
+compares the bytes, treating this one as correct. Running that test
+needs this branch checked out beside it:
+
+```
+git worktree add ../veylgo veylgo
+cd ../veylgo/src && go build -o veyl.exe ./compiler
+```
 
 ---
 
@@ -411,14 +406,17 @@ through both backends and compared.
 
 ```
 veyl/
-  frontend/    lexer, parser, type checker. Shared.
+  frontend/    lexer, parser, type checker. Shared with veyl.
   src/         the Go backend, the CLI, and all the tooling
-  asm-src/     the assembly backend, its assembler and linker
   docs/        SYNTAX, TUTORIAL, ARCHITECTURE, PACKAGES
 ```
 
-Three Go modules wired together with `replace`. Run `go` commands from
+Two Go modules wired together with `replace`. Run `go` commands from
 inside each one.
+
+`frontend/` is the half both compilers share, which is why the native
+one on [`veyl`](../../tree/veyl) has an identical copy. Changing the
+language means changing it in both places.
 
 ---
 
@@ -440,7 +438,7 @@ inside each one.
 | v0.16 | a package manager, `rand`, `stats`, `term`, `log` |
 | v0.17 | namespaced imports, `bytes`, an interactive console |
 | v0.17.02 | four editors, an Explorer menu, the Veyl rename |
-| unreleased | the assembly backend |
+| v0.18 | superseded by the native compiler, on the veyl branch |
 | next | generics |
 
 ---

@@ -23,3 +23,8 @@ Working version/
 # --code-only`, and large. It has been swept into a commit by `git add
 # -A` once already.
 /graphify-out/
+
+# The native compiler lives on the veyl branch. Switching from it
+# leaves its untracked build output behind, and without this a
+# `git add -A` here sweeps that into a commit.
+/asm-src/
