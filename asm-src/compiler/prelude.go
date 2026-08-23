@@ -150,6 +150,14 @@ var preludeOf = map[string]string{
 	"csv.write":        "__vy_csvWrite",
 	"csv.read":         "__vy_csvRead",
 	"csv.save":         "__vy_csvSave",
+	"http.serve":       "__vy_httpServe",
+	"http.get":         "__vy_httpGet",
+	"http.ok":          "__vy_httpOK",
+	"http.text":        "__vy_httpText",
+	"http.json":        "__vy_httpJSON",
+	"http.status":      "__vy_httpStatus",
+	"http.notFound":    "__vy_httpNotFound",
+	"http.header":      "__vy_httpHeader",
 
 	"re.matches": "__vy_reMatches",
 	"re.find":    "__vy_reFind",
@@ -284,6 +292,32 @@ func addPrelude(prog *Program, sources []string) []string {
 	// Unconditionally would cost a word of static storage in every
 	// program, which is why it is behind the same gate.
 	prog.Globals = append(prog.Globals, pre.Globals...)
+
+	// A prelude struct comes in only if something actually names it,
+	// either the program or one of the functions being folded in.
+	// Unconditionally would reserve `Request` and `Response` in every
+	// program that so much as calls sin, and a user's own struct of
+	// that name would collide with one they never asked for.
+	for _, s := range pre.Structs {
+		named := false
+		for _, src := range sources {
+			if mentions(src, s.Name) {
+				named = true
+				break
+			}
+		}
+		if !named {
+			for name := range taken {
+				if mentions(chunks[name], s.Name) {
+					named = true
+					break
+				}
+			}
+		}
+		if named {
+			prog.Structs = append(prog.Structs, s)
+		}
+	}
 	return nil
 }
 
@@ -381,5 +415,6 @@ var preludeSource = strings.Join([]string{
 	preludeHash,
 	preludeHash2,
 	preludeCsv,
+	preludeHTTP,
 	preludeRe,
 }, "\n")
