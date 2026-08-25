@@ -356,9 +356,9 @@ let sum = hash.sha256("abc")
 print(re.findAll(`\d+`, "a1 b22 c333"))
 ```
 
-`os` files and processes · `http` fetching · `net` DNS and ports ·
-`json` · `csv` · `time` · `hash` · `re` patterns · `task` concurrency ·
-`mem` · `win` Windows-only.
+`os` files and processes, `http` fetching, `net` DNS and ports,
+`json`, `csv`, `time`, `hash`, `re` patterns, `task` concurrency,
+`mem`, and `win` for the Windows-only parts.
 
 Doing several things at once is `map` with a different name:
 
