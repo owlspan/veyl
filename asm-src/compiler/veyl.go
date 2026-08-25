@@ -267,6 +267,7 @@ func compile(source, path string) *Module {
 	if len(lowerErrs) > 0 {
 		report(lowerErrs)
 	}
+	Optimize(mod)
 	return mod
 }
 
