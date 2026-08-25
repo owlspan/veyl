@@ -32,6 +32,15 @@ func Optimize(m *Module) {
 		if !envOff("VEYL_NODCE") {
 			dce(fn)
 		}
+		if !envOff("VEYL_NOFORWARD") {
+			forwardLoads(fn)
+			if !envOff("VEYL_NODCE") {
+				// Sweep once more: forwarding just turned loads into
+				// plain register mentions, which can leave the loaded
+				// constants they fed with no remaining readers.
+				dce(fn)
+			}
+		}
 	}
 }
 
@@ -363,4 +372,82 @@ func deadOK(op Op) bool {
 		return true
 	}
 	return false
+}
+
+// ---- redundant load elimination ----
+
+// forwardLoads deletes a load of a slot whose value some register is
+// already known to hold, renaming every later use of the loaded
+// register to that one.
+//
+// The two halves of the bookkeeping have different lifetimes, and the
+// difference is the whole pass:
+//
+//   - Which register holds a slot's value is runtime state. Two paths
+//     into a join can store different things, so slotVal resets at
+//     every label and nothing is forwarded across one.
+//   - What a register means is a static fact. Registers are single
+//     assignment, so a deleted load leaves its number with exactly one
+//     meaning for the rest of the function, and every mention of it -
+//     including mentions after joins and around back-edges, which its
+//     definition always dominates - renames to the same word. sameAs
+//     therefore lives until the function ends. Wiping it at a label
+//     strands the later mentions on a register whose defining load no
+//     longer exists, and they read whatever the frame happened to
+//     hold. That bug shipped for exactly one evening before this
+//     paragraph did.
+//
+// Equivalences survive calls. Frame slots are not addressable from
+// Veyl, boxes live on the heap rather than in the frame, and today
+// every register value physically lives in its own stack slot across a
+// call. The one exception is a slot handed out by OpSlotAddr: a C
+// function with an out-parameter writes it behind our back, anywhere
+// in the function, so an escaped slot never joins the map at all.
+func forwardLoads(fn *Func) {
+	escaped := map[int64]bool{}
+	for _, in := range fn.Code {
+		if in.Op == OpSlotAddr {
+			escaped[in.Imm] = true
+		}
+	}
+
+	slotVal := map[int64]Reg{} // slot -> a register holding its value
+	sameAs := map[Reg]Reg{}    // deleted load dst -> register to use instead
+	follow := func(r Reg) Reg {
+		for {
+			next, ok := sameAs[r]
+			if !ok {
+				return r
+			}
+			r = next
+		}
+	}
+
+	out := make([]Instr, 0, len(fn.Code))
+	for _, in := range fn.Code {
+		if in.A != NoReg {
+			in.A = follow(in.A)
+		}
+		if in.B != NoReg {
+			in.B = follow(in.B)
+		}
+		for i := range in.Args {
+			in.Args[i] = follow(in.Args[i])
+		}
+
+		switch in.Op {
+		case OpLabel:
+			slotVal = map[int64]Reg{}
+		case OpStore:
+			slotVal[in.Imm] = in.A
+		case OpLoad:
+			if v, ok := slotVal[in.Imm]; ok && !escaped[in.Imm] {
+				sameAs[in.Dst] = v
+				continue // the load dies; later uses read v instead
+			}
+			slotVal[in.Imm] = in.Dst
+		}
+		out = append(out, in)
+	}
+	fn.Code = out
 }

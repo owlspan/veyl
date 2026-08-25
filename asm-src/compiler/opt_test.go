@@ -244,6 +244,108 @@ func TestDCEKeepsEffects(t *testing.T) {
 	}
 }
 
+func TestForwardStoreToLoad(t *testing.T) {
+	// The load of a just-stored value dies and later uses read the
+	// stored register instead.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 5},
+		{Op: OpStore, A: 0, Imm: 1},
+		{Op: OpLoad, Dst: 1, Imm: 1},
+		{Op: OpAdd, Dst: 2, A: 1, B: 1},
+		{Op: OpStore, A: 2, Imm: 0},
+	}, 3)
+	forwardLoads(fn)
+
+	if len(fn.Code) != 4 {
+		t.Fatalf("the redundant load survived: %+v", fn.Code)
+	}
+	if got := fn.Code[2]; got.Op != OpAdd || got.A != 0 || got.B != 0 {
+		t.Fatalf("uses were not renamed to the stored register: %+v", got)
+	}
+}
+
+func TestForwardRestoresAtLabel(t *testing.T) {
+	// A join can be reached by a path that never saw the store, so the
+	// slot map resets and the load after the label stays. (The register
+	// equivalence from before the label is unrelated to this and still
+	// holds; see TestForwardRenamesAcrossLabel.)
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpStore, A: 0, Imm: 0},
+		{Op: OpLabel, Imm: 0},
+		{Op: OpLoad, Dst: 1, Imm: 0},
+		{Op: OpStore, A: 1, Imm: 1},
+	}, 2)
+	forwardLoads(fn)
+
+	if len(fn.Code) != 5 {
+		t.Fatalf("a load across a join was forwarded: %+v", fn.Code)
+	}
+}
+
+func TestForwardRenamesAcrossLabel(t *testing.T) {
+	// The load dies, but one of its uses sits after a join. That use
+	// must still rename: registers are single assignment, so the dead
+	// load's number means the same word everywhere below it. Renaming
+	// only up to the label would leave the later mention reading a
+	// register nobody ever writes.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 7},
+		{Op: OpStore, A: 0, Imm: 0},
+		{Op: OpLoad, Dst: 1, Imm: 0},  // deleted, means v0
+		{Op: OpLoadMem, A: 1, Dst: 2}, // before the label
+		{Op: OpLabel, Imm: 0},
+		{Op: OpLoadMem, A: 1, Dst: 3}, // after the label
+	}, 4)
+	forwardLoads(fn)
+
+	if len(fn.Code) != 5 {
+		t.Fatalf("the load survived: %+v", fn.Code)
+	}
+	if got := fn.Code[4]; got.A != 0 {
+		t.Fatalf("the use after the label was not renamed: %+v", got)
+	}
+}
+
+func TestForwardEscapedSlot(t *testing.T) {
+	// Slot 2 escapes through its address, so the C callee may rewrite it
+	// at any point after the call; nothing about it is trusted.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 7},
+		{Op: OpStore, A: 0, Imm: 2},
+		{Op: OpSlotAddr, Dst: 3, Imm: 2},
+		{Op: OpLoad, Dst: 1, Imm: 2},
+		{Op: OpCall, Sym: "frexp", Args: []Reg{0, 3}, Dst: 4},
+		{Op: OpStore, A: 1, Imm: 1},
+	}, 5)
+	forwardLoads(fn)
+
+	if len(fn.Code) != 6 {
+		t.Fatalf("an escaped slot was forwarded: %+v", fn.Code)
+	}
+}
+
+func TestForwardSecondStoreWins(t *testing.T) {
+	// Each load forwards to the value stored most recently before it.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpStore, A: 0, Imm: 0},
+		{Op: OpLoad, Dst: 1, Imm: 0},
+		{Op: OpConst, Dst: 2, Imm: 2},
+		{Op: OpStore, A: 2, Imm: 0},
+		{Op: OpLoad, Dst: 3, Imm: 0},
+		{Op: OpAdd, Dst: 4, A: 1, B: 3},
+	}, 5)
+	forwardLoads(fn)
+
+	if len(fn.Code) != 5 {
+		t.Fatalf("redundant loads survived: %+v", fn.Code)
+	}
+	if got := fn.Code[4]; got.Op != OpAdd || got.A != 0 || got.B != 2 {
+		t.Fatalf("forwarding picked the wrong stores: %+v", got)
+	}
+}
+
 func TestFoldKillSwitches(t *testing.T) {
 	build := func() *Module {
 		fn := mkfn([]Instr{
