@@ -4,9 +4,10 @@ package main
 // its own environment variable so a suspect pass can be turned off
 // without touching the rest:
 //
-//	VEYL_NOFOLD     constant and branch folding
-//
-// More passes land behind their own switches as they are written.
+//	VEYL_NOFOLD      constant and branch folding
+//	VEYL_NODCE       dead code elimination
+//	VEYL_NOFORWARD   redundant load elimination
+//	VEYL_NOSLOTPACK  frame slot packing
 //
 // VEYL_NOOPT=1 turns every pass off and leaves the output identical to
 // what the unoptimized compiler emits.
@@ -14,6 +15,7 @@ package main
 import (
 	"math"
 	"os"
+	"sort"
 )
 
 func envOff(name string) bool { return os.Getenv(name) == "1" }
@@ -40,6 +42,9 @@ func Optimize(m *Module) {
 				// constants they fed with no remaining readers.
 				dce(fn)
 			}
+		}
+		if !envOff("VEYL_NOSLOTPACK") {
+			packSlots(fn)
 		}
 	}
 }
@@ -450,4 +455,274 @@ func forwardLoads(fn *Func) {
 		out = append(out, in)
 	}
 	fn.Code = out
+}
+
+// ---- slot packing ----
+
+// packSlots renumbers frame slots so that values whose live ranges do
+// not meet share one. The lowerer never reuses a slot - "nothing can
+// alias", and for a compiler with no type-driven liveness that is the
+// safe call - but by the time optimization has run, every read and
+// write of a slot is an explicit instruction, so liveness is known.
+//
+// Which slots may share is decided by real liveness, not by the line
+// positions of the mentions. The first cut took each slot's range as
+// the stretch from its first mention to its last and shared out
+// anything whose stretches did not meet. That miscompiles any loop
+// that carries a value backwards: a slot written below the join and
+// read above it never meet on the page, but on the next lap round the
+// back edge the write lands before the read. Backward liveness walks
+// around the back edge and puts the two in the same range, and ranges
+// that meet never share.
+//
+// Two kinds of slot never share anything. One whose address escapes
+// through OpSlotAddr can be written by a C callee at any point after
+// the address is taken, so it counts as live everywhere. And a
+// closure's environment pointer is parked in slot zero by the
+// prologue, named there by number rather than through any instruction
+// this pass sees, so that slot keeps the number zero itself.
+func packSlots(fn *Func) {
+	n := len(fn.Code)
+
+	// ---- basic blocks ----
+
+	labelAt := map[int64]int{}
+	isLead := make([]bool, n)
+	if n > 0 {
+		isLead[0] = true
+	}
+	for i := range fn.Code {
+		switch fn.Code[i].Op {
+		case OpLabel:
+			labelAt[fn.Code[i].Imm] = i
+			isLead[i] = true
+		case OpJump, OpJumpIf, OpJumpNot, OpRet, OpMustFail, OpBoundsFail:
+			if i+1 < n {
+				isLead[i+1] = true
+			}
+		}
+	}
+
+	type blk struct {
+		start, end int
+		succ       []int
+	}
+	blocks := []blk{}
+	idOf := make([]int, n)
+	for i := 0; i < n; i++ {
+		if !isLead[i] {
+			continue
+		}
+		id := len(blocks)
+		end := i
+		for end+1 < n && !isLead[end+1] {
+			end++
+		}
+		blocks = append(blocks, blk{start: i, end: end})
+		for j := i; j <= end; j++ {
+			idOf[j] = id
+		}
+	}
+	for b := range blocks {
+		last := blocks[b].end
+		switch fn.Code[last].Op {
+		case OpJump:
+			blocks[b].succ = []int{idOf[labelAt[fn.Code[last].Imm]]}
+		case OpJumpIf, OpJumpNot:
+			blocks[b].succ = []int{b + 1, idOf[labelAt[fn.Code[last].Imm]]}
+		case OpRet, OpMustFail, OpBoundsFail:
+			// nothing follows
+		default:
+			if last+1 < n {
+				blocks[b].succ = []int{b + 1}
+			}
+		}
+	}
+
+	// ---- backward liveness to a fixed point ----
+
+	touches := func(in *Instr) int64 {
+		switch in.Op {
+		case OpLoad, OpStore, OpSlotAddr, OpStoreByte:
+			return in.Imm
+		}
+		return -1
+	}
+
+	liveIn := make([]map[int64]bool, len(blocks))
+	liveOut := make([]map[int64]bool, len(blocks))
+	for b := range blocks {
+		liveIn[b] = map[int64]bool{}
+		liveOut[b] = map[int64]bool{}
+	}
+	sameSet := func(a, b map[int64]bool) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for k := range a {
+			if !b[k] {
+				return false
+			}
+		}
+		return true
+	}
+	for changed := true; changed; {
+		changed = false
+		for b := len(blocks) - 1; b >= 0; b-- {
+			out := map[int64]bool{}
+			for _, s := range blocks[b].succ {
+				for v := range liveIn[s] {
+					out[v] = true
+				}
+			}
+			live := make(map[int64]bool, len(out))
+			for v := range out {
+				live[v] = true
+			}
+			for i := blocks[b].end; i >= blocks[b].start; i-- {
+				t := touches(&fn.Code[i])
+				if t < 0 {
+					continue
+				}
+				if fn.Code[i].Op == OpStore {
+					delete(live, t)
+				} else { // load, byte store, address taken: a read
+					live[t] = true
+				}
+			}
+			if !sameSet(live, liveIn[b]) || !sameSet(out, liveOut[b]) {
+				liveIn[b], liveOut[b] = live, out
+				changed = true
+			}
+		}
+	}
+
+	// ---- the range each slot stays live over ----
+	//
+	// Between two instructions that name slots, the live set cannot
+	// change, so the walk below marks one stretch per gap rather than
+	// one mark per instruction. Ends only, since a range that covers
+	// its gap's ends covers the gap.
+
+	gmin := map[int64]int{}
+	gmax := map[int64]int{}
+	note := func(s int64, a, z int) {
+		if old, ok := gmin[s]; !ok || a < old {
+			gmin[s] = a
+		}
+		if old, ok := gmax[s]; !ok || z > old {
+			gmax[s] = z
+		}
+	}
+
+	for b := range blocks {
+		live := make(map[int64]bool, len(liveOut[b]))
+		for v := range liveOut[b] {
+			live[v] = true
+		}
+		start := blocks[b].start
+		i := blocks[b].end
+		for i >= start {
+			j := i
+			for j >= start && touches(&fn.Code[j]) < 0 {
+				j--
+			}
+			if len(live) > 0 {
+				lo := j + 1
+				if lo < start {
+					lo = start
+				}
+				if lo <= i {
+					for s := range live {
+						note(s, lo, i)
+					}
+				}
+			}
+			if j < start {
+				break
+			}
+			t := touches(&fn.Code[j])
+			note(t, j, j)
+			if fn.Code[j].Op == OpStore {
+				delete(live, t)
+			} else {
+				live[t] = true
+			}
+			i = j - 1
+		}
+		for s := range live {
+			note(s, start, start) // carried into the predecessors
+		}
+	}
+
+	// A slot handed to a C callee can be written whenever that callee
+	// likes, so its range is the whole function.
+	for i := range fn.Code {
+		if fn.Code[i].Op == OpSlotAddr {
+			s := fn.Code[i].Imm
+			note(s, 0, n-1)
+		}
+	}
+
+	// ---- hand out the indexes ----
+
+	next := int64(0)
+	remap := map[int64]int64{}
+
+	// The prologue stores the environment into slot zero by number, so
+	// a closure's slot zero keeps that number and no other slot may
+	// take it. Reserving it here, before the loop below can hand the
+	// first free index to anyone else.
+	if fn.Env {
+		remap[0] = 0
+		next = 1
+	}
+
+	order := make([]int64, 0, len(gmin))
+	for s := range gmin {
+		order = append(order, s)
+	}
+	sort.Slice(order, func(x, y int) bool { return gmin[order[x]] < gmin[order[y]] })
+
+	type lease struct {
+		until int
+		id    int64
+	}
+	busy := []lease{}
+	var free []int64
+
+	for _, s := range order {
+		if fn.Env && s == 0 {
+			continue // already fixed at zero above
+		}
+		first := gmin[s]
+		alive := busy[:0]
+		for _, b := range busy {
+			if b.until < first {
+				free = append(free, b.id)
+			} else {
+				alive = append(alive, b)
+			}
+		}
+		busy = alive
+
+		var id int64
+		if len(free) > 0 {
+			id = free[len(free)-1]
+			free = free[:len(free)-1]
+		} else {
+			id = next
+			next++
+		}
+		busy = append(busy, lease{until: gmax[s], id: id})
+		remap[s] = id
+	}
+
+	for i := range fn.Code {
+		switch fn.Code[i].Op {
+		case OpLoad, OpStore, OpSlotAddr, OpStoreByte:
+			fn.Code[i].Imm = remap[fn.Code[i].Imm]
+		}
+	}
+	fn.NSlots = int(next)
 }
