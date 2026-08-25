@@ -292,6 +292,9 @@ func report(errs []string) {
 // localises a bug to the half that changed.
 func buildExe(mod *Module, out string) {
 	asmText := Emit(mod)
+	if !envOff("VEYL_NOPEEP") {
+		asmText = peephole(asmText)
+	}
 
 	if os.Getenv("VEYL_LINK") != "mingw" {
 		obj, err := assembleObject(asmText)
