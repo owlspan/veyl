@@ -179,6 +179,71 @@ func TestFoldFloatZeroNotPooled(t *testing.T) {
 	}
 }
 
+func TestDCERemovesUnusedChains(t *testing.T) {
+	// The add is unused, so it dies; that leaves const r1 unused, so it
+	// dies on the next sweep. r0 survives on the store.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpConst, Dst: 1, Imm: 2},
+		{Op: OpAdd, Dst: 2, A: 0, B: 1},
+		{Op: OpStore, A: 0, Imm: 0},
+	}, 3)
+	dce(fn)
+
+	if len(fn.Code) != 2 {
+		t.Fatalf("dead chain survived: %+v", fn.Code)
+	}
+	if fn.Code[0].Op != OpConst || fn.Code[0].Dst != 0 ||
+		fn.Code[1].Op != OpStore || fn.Code[1].A != 0 {
+		t.Fatalf("wrong instructions kept: %+v", fn.Code)
+	}
+}
+
+func TestDCEKeepsTraps(t *testing.T) {
+	// Nobody reads the quotient, but x/0 still has to stop the program.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 7},
+		{Op: OpConst, Dst: 1, Imm: 0},
+		{Op: OpDiv, Dst: 2, A: 0, B: 1},
+	}, 3)
+	dce(fn)
+
+	if len(fn.Code) != 3 {
+		t.Fatalf("dividing by zero was deleted: %+v", fn.Code)
+	}
+}
+
+func TestDCEKeepsEffects(t *testing.T) {
+	// A store stays; a call with an ignored result stays (it may print,
+	// or write through a pointer); an unused load goes.
+	fn := mkfn([]Instr{
+		{Op: OpStr, Dst: 0, Imm: 0},
+		{Op: OpStore, A: 0, Imm: 0},
+		{Op: OpLoad, Dst: 1, Imm: 0},
+		{Op: OpCall, Dst: 2, Sym: "f", Args: []Reg{0}},
+	}, 3)
+	dce(fn)
+
+	if len(fn.Code) != 3 {
+		t.Fatalf("wrong number of instructions kept: %+v", fn.Code)
+	}
+	sawLoad, sawCall := false, false
+	for _, in := range fn.Code {
+		switch in.Op {
+		case OpLoad:
+			sawLoad = true
+		case OpCall:
+			sawCall = true
+		}
+	}
+	if sawLoad {
+		t.Fatal("the dead load should have gone")
+	}
+	if !sawCall {
+		t.Fatal("a call must survive even when its result is ignored")
+	}
+}
+
 func TestFoldKillSwitches(t *testing.T) {
 	build := func() *Module {
 		fn := mkfn([]Instr{

@@ -29,6 +29,9 @@ func Optimize(m *Module) {
 		if !envOff("VEYL_NOFOLD") {
 			fold(m, fn)
 		}
+		if !envOff("VEYL_NODCE") {
+			dce(fn)
+		}
 	}
 }
 
@@ -302,4 +305,62 @@ func dropUnreachable(fn *Func) {
 		}
 	}
 	fn.Code = code
+}
+
+// ---- dead code elimination ----
+
+// dce removes pure definitions whose result is never used, down to a
+// fixed point: killing one definition can make the one feeding it dead.
+// Anything that traps, stores, prints, allocates or calls stays even
+// with an ignored result, because removing it would change what the
+// program does. Division and modulo stay too - they trap on a zero
+// divisor whether or not anyone reads the quotient.
+func dce(fn *Func) {
+	for {
+		used := map[Reg]bool{}
+		mark := func(r Reg) {
+			if r != NoReg {
+				used[r] = true
+			}
+		}
+		for _, in := range fn.Code {
+			mark(in.A)
+			mark(in.B)
+			for _, arg := range in.Args {
+				mark(arg)
+			}
+		}
+
+		kept := fn.Code[:0]
+		changed := false
+		for _, in := range fn.Code {
+			if in.Dst != NoReg && !used[in.Dst] && deadOK(in.Op) {
+				changed = true
+				continue
+			}
+			kept = append(kept, in)
+		}
+		fn.Code = kept
+		if !changed {
+			return
+		}
+	}
+}
+
+// deadOK says whether the operation is safe to delete when its result
+// is unused. One list, read as "everything else has an effect".
+func deadOK(op Op) bool {
+	switch op {
+	case OpConst, OpStr, OpLoad, OpFConst,
+		OpAdd, OpSub, OpMul, OpNeg,
+		OpFAdd, OpFSub, OpFMul, OpFDiv, OpFNeg,
+		OpFEq, OpFNe, OpFLt, OpFLe, OpFGt, OpFGe,
+		OpIntToFloat, OpFloatToInt, OpSqrt, OpFMod,
+		OpBAnd, OpBOr, OpBXor, OpBNot, OpShl, OpShr,
+		OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpNot,
+		OpIndexAddr, OpLoadByte,
+		OpStackPtr, OpGlobalAddr, OpSymAddr, OpSlotAddr:
+		return true
+	}
+	return false
 }
