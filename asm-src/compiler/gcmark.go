@@ -402,6 +402,27 @@ func (l *lowerer) traceOne(obj, table, mask, work, workLen Reg) {
 	l.tryMark(l.peekWord(obj, mapValsOff), table, mask, work, workLen)
 	l.mark(notMap)
 
+	// A result box always traces its first word, the error string. Its
+	// second word is traced too when the header says the value inside is
+	// a pointer shape. Before this case existed the only thing keeping a
+	// failure's message alive was stale copies of its address left on
+	// the stack below the caller's frame, so any collection that ran
+	// after deeper calls overwrote those words freed a string the
+	// program still meant to read.
+	isRes := l.compare(OpEq, l.load(tagSlot, vInt), l.constant(tagRes))
+	notRes := l.newLabel()
+	l.emit(Instr{Op: OpJumpNot, A: isRes, Dst: NoReg, Imm: notRes})
+	l.tryMark(l.peekWord(obj, resErrOff), table, mask, work, workLen)
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+	l.mark(notRes)
+
+	isResPtr := l.compare(OpEq, l.load(tagSlot, vInt), l.constant(tagResPtr))
+	notResPtr := l.newLabel()
+	l.emit(Instr{Op: OpJumpNot, A: isResPtr, Dst: NoReg, Imm: notResPtr})
+	l.tryMark(l.peekWord(obj, resErrOff), table, mask, work, workLen)
+	l.tryMark(l.peekWord(obj, resValOff), table, mask, work, workLen)
+	l.mark(notResPtr)
+
 	l.mark(done)
 }
 
