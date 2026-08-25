@@ -115,11 +115,36 @@ const (
 )
 
 // writePE lays the object out and writes an executable.
+//
+// The read-only data rides inside the text section rather than getting
+// one of its own. Both land on read-only pages once mapped, so one
+// section carries both, and every executable saves a file-aligned block
+// and a page of image. The trade is stated plainly: string bytes sit on
+// pages marked executable. Nothing writes through those addresses and
+// control never reaches them, so the pages are allowed more than they
+// are used for, never less. The region is kept eight-byte aligned,
+// because float loads read pooled doubles straight out of it.
+// Disabled with VEYL_NOMERGE=1, which puts .rdata back in its own
+// section exactly as before.
 func writePE(obj *object, out string) error {
 	text := append([]byte(nil), obj.text...)
 
+	// Where the read-only data begins inside the merged text, or -1
+	// when the two stay separate sections.
+	rdataAt := -1
+	if !envOff("VEYL_NOMERGE") && len(obj.rdata) > 0 {
+		for len(text)%8 != 0 {
+			text = append(text, 0)
+		}
+		rdataAt = len(text)
+		text = append(text, obj.rdata...)
+	}
+
 	textRVA := sectionAlignment
 	rdataRVA := alignUp(textRVA+len(text), sectionAlignment)
+	if rdataAt >= 0 {
+		rdataRVA = textRVA + rdataAt
+	}
 	idataRVA := alignUp(rdataRVA+len(obj.rdata), sectionAlignment)
 
 	idata, slots, iatRVA, iatSize := buildImports(obj.externs, idataRVA)
@@ -168,9 +193,15 @@ func writePE(obj *object, out string) error {
 
 	sections := []peSection{
 		{".text", textRVA, len(text), text, scnCode | scnExecute | scnRead},
-		{".rdata", rdataRVA, len(obj.rdata), obj.rdata, scnData | scnRead},
-		{".idata", idataRVA, len(idata), idata, scnData | scnRead | scnWrite},
 	}
+	if rdataAt < 0 {
+		// Separate sections: the old layout, kept byte-for-byte under
+		// the switch so the two are always comparable.
+		sections = append(sections,
+			peSection{".rdata", rdataRVA, len(obj.rdata), obj.rdata, scnData | scnRead})
+	}
+	sections = append(sections,
+		peSection{".idata", idataRVA, len(idata), idata, scnData | scnRead | scnWrite})
 	if obj.bssLen > 0 {
 		sections = append(sections,
 			peSection{".bss", bssRVA, obj.bssLen, nil, scnBSS | scnRead | scnWrite})

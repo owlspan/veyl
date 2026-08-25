@@ -17,6 +17,7 @@ package main
 
 import (
 	"debug/pe"
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,5 +121,72 @@ func TestExecutableStructure(t *testing.T) {
 	}
 	if !seen["kernel32.dll"] || !seen["msvcrt.dll"] {
 		t.Errorf("dirs.vl imports from %v, want both libraries", seen)
+	}
+}
+
+func TestRdataMerge(t *testing.T) {
+	// A four-byte instruction whose whole body is one reference into
+	// .rdata, and six bytes of data. Small enough to do the address
+	// arithmetic by hand in both layouts, which is the point: the merge
+	// moves where every string resolves to, so a wrong base here is a
+	// program reading garbage with nothing anywhere saying why.
+	build := func() *object {
+		return &object{
+			text:  []byte{0, 0, 0, 0}, // the rel32 field itself
+			rdata: []byte("hello!"),
+			sym: map[string]symbol{
+				"s":         {secRdata, 0},
+				entrySymbol: {secText, 0},
+			},
+			relocs: []reloc{{at: 0, sym: "s", next: 4}},
+		}
+	}
+
+	write := func(t *testing.T, obj *object) []byte {
+		t.Helper()
+		out := filepath.Join(t.TempDir(), "out.exe")
+		if err := writePE(obj, out); err != nil {
+			t.Fatal(err)
+		}
+		bs, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f, err := pe.Open(out); err != nil {
+			t.Fatalf("the loader would not accept this either: %v", err)
+		} else {
+			f.Close()
+		}
+		return bs
+	}
+
+	// Merged. The data starts eight bytes in, after padding for
+	// alignment, at RVA 0x1008; the reference points there. The switch
+	// is cleared first, so the test says what it checks rather than
+	// inheriting it from whatever ran it.
+	t.Setenv("VEYL_NOMERGE", "")
+	bs := write(t, build())
+	if got := binary.LittleEndian.Uint16(bs[0x46:]); got != 2 {
+		t.Fatalf("the merged image has %d sections, want text and idata", got)
+	}
+	if got := binary.LittleEndian.Uint32(bs[512:516]); got != 0x1008-0x1004 {
+		t.Fatalf("the merged reference points at %#x, want %#x", got, 4)
+	}
+	if string(bs[520:526]) != "hello!" {
+		t.Fatalf("the data did not land behind the code: %q", bs[520:526])
+	}
+
+	// Separate. The switch puts everything back exactly as it was:
+	// three sections, the data on its own page at RVA 0x2000.
+	t.Setenv("VEYL_NOMERGE", "1")
+	bs = write(t, build())
+	if got := binary.LittleEndian.Uint16(bs[0x46:]); got != 3 {
+		t.Fatalf("the separate image has %d sections, want three", got)
+	}
+	if got := binary.LittleEndian.Uint32(bs[512:516]); got != 0x2000-0x1004 {
+		t.Fatalf("the separate reference points at %#x, want %#x", got, 0xFFC)
+	}
+	if string(bs[1024:1030]) != "hello!" {
+		t.Fatalf("the data did not land on its own page: %q", bs[1024:1030])
 	}
 }
