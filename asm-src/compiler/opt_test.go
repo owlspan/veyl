@@ -372,3 +372,180 @@ func TestFoldKillSwitches(t *testing.T) {
 		t.Fatal("VEYL_NOFOLD did not disable folding")
 	}
 }
+
+func TestPackDisjointSpans(t *testing.T) {
+	// Slot 6's whole life comes after slot 5's, so one index serves
+	// both and the frame loses a slot.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpStore, A: 0, Imm: 5},
+		{Op: OpLoad, Dst: 1, Imm: 5},
+		{Op: OpConst, Dst: 2, Imm: 2},
+		{Op: OpStore, A: 2, Imm: 6},
+		{Op: OpLoad, Dst: 3, Imm: 6},
+	}, 4)
+	packSlots(fn)
+
+	for _, i := range []int{1, 4} {
+		if got := fn.Code[i]; got.Imm != 0 {
+			t.Fatalf("disjoint slots did not share an index: %+v", got)
+		}
+	}
+	if fn.NSlots != 1 {
+		t.Fatalf("the frame did not shrink: %d", fn.NSlots)
+	}
+}
+
+func TestPackOverlappingKept(t *testing.T) {
+	// Slot 6 is written while slot 5 is still live (read below it), so
+	// they cannot share an index.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpStore, A: 0, Imm: 5},
+		{Op: OpConst, Dst: 1, Imm: 2},
+		{Op: OpStore, A: 1, Imm: 6},
+		{Op: OpLoad, Dst: 2, Imm: 5},
+		{Op: OpStore, A: 2, Imm: 6},
+	}, 3)
+	packSlots(fn)
+
+	if got := fn.Code[1]; got.Imm != 0 {
+		t.Fatalf("first slot not numbered from zero: %+v", got)
+	}
+	if got := fn.Code[3]; got.Imm != 1 {
+		t.Fatalf("overlapping slot shared an index: %+v", got)
+	}
+	if fn.NSlots != 2 {
+		t.Fatalf("wrong slot count: %d", fn.NSlots)
+	}
+}
+
+func TestPackEscapedPrivate(t *testing.T) {
+	// Slot 4 escapes through its address after slot 8 is dead. The
+	// spans do not meet, but a C callee may write slot 4 whenever it
+	// likes, so sharing slot 8's index would let that write land on an
+	// unrelated value.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 7},
+		{Op: OpStore, A: 0, Imm: 8},
+		{Op: OpLoad, Dst: 1, Imm: 8},
+		{Op: OpSlotAddr, Dst: 2, Imm: 4},
+	}, 3)
+	packSlots(fn)
+
+	// The escaped slot counts as live everywhere, so it is placed
+	// first and nothing else may join it.
+	if got := fn.Code[3]; got.Imm != 0 {
+		t.Fatalf("an escaped slot lost its private index: %+v", got)
+	}
+	if got := fn.Code[1]; got.Imm != 1 {
+		t.Fatalf("an ordinary slot joined an escaped one: %+v", got)
+	}
+	if fn.NSlots != 2 {
+		t.Fatalf("wrong slot count: %d", fn.NSlots)
+	}
+}
+
+func TestPackEnvKeepsZero(t *testing.T) {
+	// The prologue parks the environment pointer in slot zero by
+	// number, outside the instruction stream. Another slot being
+	// mentioned first must not take zero away from it.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpStore, A: 0, Imm: 2},
+		{Op: OpLoad, Dst: 1, Imm: 0},
+	}, 2)
+	fn.Env = true
+	packSlots(fn)
+
+	if got := fn.Code[2]; got.Imm != 0 {
+		t.Fatalf("the environment slot moved: %+v", got)
+	}
+	if got := fn.Code[1]; got.Imm != 1 {
+		t.Fatalf("the other slot was not kept off zero: %+v", got)
+	}
+	if fn.NSlots != 2 {
+		t.Fatalf("wrong slot count: %d", fn.NSlots)
+	}
+}
+
+func TestPackRemapsAllSlotOps(t *testing.T) {
+	// Every operation that names a slot by number must follow the
+	// renumbering: stores, loads, byte stores through a slot-held
+	// value, and addresses taken for out-parameters.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 65},
+		{Op: OpStore, A: 0, Imm: 9},
+		{Op: OpConst, Dst: 1, Imm: 66},
+		{Op: OpStore, A: 1, Imm: 2},
+		{Op: OpStoreByte, A: 5, B: NoReg, Imm: 9},
+		{Op: OpSlotAddr, Dst: 6, Imm: 2},
+		{Op: OpLoad, Dst: 7, Imm: 9},
+	}, 8)
+	packSlots(fn)
+
+	// Slot 2's address escapes at instruction 5, which makes it live
+	// everywhere and so first in line; slot 9 takes the second index.
+	want := map[int]int64{1: 1, 3: 0, 4: 1, 5: 0, 6: 1}
+	for i, w := range want {
+		if got := fn.Code[i]; got.Imm != w {
+			t.Fatalf("instruction %d kept the old slot number: %+v", i, got)
+		}
+	}
+}
+
+func TestPackBackedge(t *testing.T) {
+	// Slot 3 is written before the loop and read at the top of it;
+	// slot 5 is written inside the loop body. On the page their
+	// mentions never meet, but each lap round the back edge runs the
+	// write to slot 5 before the next read of slot 3. Sharing an index
+	// would hand every lap a clobbered value; liveness around the edge
+	// is what tells them apart.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 1},
+		{Op: OpStore, A: 0, Imm: 3},
+		{Op: OpLabel, Imm: 0},
+		{Op: OpLoad, Dst: 1, Imm: 3},
+		{Op: OpConst, Dst: 2, Imm: 9},
+		{Op: OpStore, A: 2, Imm: 5},
+		{Op: OpJump, Imm: 0},
+	}, 3)
+	packSlots(fn)
+
+	if got := fn.Code[5]; got.Imm == fn.Code[1].Imm {
+		t.Fatalf("a loop-carried slot shared an index: %+v", got)
+	}
+	if fn.NSlots != 2 {
+		t.Fatalf("wrong slot count: %d", fn.NSlots)
+	}
+}
+
+func TestPackSwitch(t *testing.T) {
+	build := func() *Module {
+		fn := mkfn([]Instr{
+			{Op: OpConst, Dst: 0, Imm: 1},
+			{Op: OpStore, A: 0, Imm: 5},
+			{Op: OpLoad, Dst: 1, Imm: 5},
+			{Op: OpConst, Dst: 2, Imm: 2},
+			{Op: OpStore, A: 2, Imm: 6},
+			{Op: OpLoad, Dst: 3, Imm: 6},
+		}, 4)
+		fn.NSlots = 10
+		return &Module{Funcs: []*Func{fn}}
+	}
+
+	t.Setenv("VEYL_NOSLOTPACK", "1")
+	m := build()
+	Optimize(m)
+	if m.Funcs[0].NSlots != 10 || m.Funcs[0].Code[1].Imm != 5 {
+		t.Fatal("VEYL_NOSLOTPACK did not disable packing")
+	}
+
+	t.Setenv("VEYL_NOSLOTPACK", "")
+	t.Setenv("VEYL_NOOPT", "1")
+	m = build()
+	Optimize(m)
+	if m.Funcs[0].NSlots != 10 {
+		t.Fatal("VEYL_NOOPT did not disable packing")
+	}
+}
