@@ -1286,9 +1286,9 @@ says so in its type:
 
 | Shape | On failure |
 | --- | --- |
-| `os.file.read(p)` → `str!` | a failure carrying the reason |
-| `os.file.readOr(p, fallback)` → `str` | returns the fallback |
-| `os.file.write(p, text)` → `bool` | returns `false` |
+| `os.file.read(p)` -> `str!` | a failure carrying the reason |
+| `os.file.readOr(p, fallback)` -> `str` | returns the fallback |
+| `os.file.write(p, text)` -> `bool` | returns `false` |
 
 An operation that **produces a value** returns `T!`, so you unwrap it
 with `?`, `must()`, `valueOr()` or a check - see
@@ -1860,7 +1860,7 @@ second numeric type would infect every arithmetic rule to buy nothing.
 | `bytes.base64(b)` / `bytes.fromBase64(s)` | `str` / `bytes!` | base64 |
 | `bytes.slice(b, a, z)` | `bytes` | a copy of part of it |
 | `bytes.concat(a, b, ...)` | `bytes` | join |
-| `bytes.find(hay, needle)` | `int` | position, or −1 |
+| `bytes.find(hay, needle)` | `int` | position, or -1 |
 | `bytes.fill(n, value)` | `bytes!` | `n` copies of one byte |
 | `bytes.getInt(b, off, size)` | `int!` | read a number |
 | `bytes.putInt(n, size)` | `bytes!` | write one |
@@ -1886,7 +1886,7 @@ text. On four bytes that are not valid UTF-8:
 | --- | --- |
 | `len`, `trim` | unchanged |
 | `upper` | corrupted |
-| `json.encode` | every invalid byte becomes `�` |
+| `json.encode` | every invalid byte becomes U+FFFD, the replacement character |
 
 The data survives right up until something touches it, and then it is
 quietly wrong. A separate type makes that impossible rather than merely
@@ -1930,7 +1930,7 @@ Every one of these takes `[]int` or `[]float` and returns `float`.
 | --- | --- |
 | `stats.mean(xs)` | the average |
 | `stats.median(xs)` | the middle value, or the middle pair averaged |
-| `stats.var(xs)` | the **sample** variance, dividing by n−1 |
+| `stats.var(xs)` | the **sample** variance, dividing by n-1 |
 | `stats.stdev(xs)` | the square root of that |
 | `stats.percentile(xs, p)` | interpolated, `p` from 0 to 100 |
 
@@ -1941,7 +1941,7 @@ print(stats.median(scores))          // 4.5
 print(stats.percentile(scores, 90))  // 7.6
 ```
 
-`stats.var` is the sample variance, dividing by n−1 rather than n. That
+`stats.var` is the sample variance, dividing by n-1 rather than n. That
 is what you want when your numbers are measurements rather than an
 entire population, which is the usual case and the one people get
 wrong. An empty list gives 0, and so does a single value, which has no
@@ -1970,7 +1970,7 @@ program can pick a different layout rather than relying on colour that
 is not there.
 
 On Windows the console has to be switched into virtual-terminal mode or
-the escape codes appear literally as `←[31m`. Veyl does that
+the escape codes appear literally as `ESC[31m`. Veyl does that
 automatically at startup for any program using `term`.
 
 ### `url` - taking a URL apart
@@ -2290,8 +2290,8 @@ The installer puts these on the menu:
 
 - **Run with Veyl**
 - **Compile to .exe**
-- **Veyl ▸** - the generated assembly, the IR, or a prompt in that
-  folder
+- **Veyl**, a submenu: the generated assembly, the IR, or a prompt in
+  that folder
 
 Right-clicking any folder gives **Open Veyl prompt here**. Double-
 clicking a `.vl` file runs it. All of them open a console that stays
