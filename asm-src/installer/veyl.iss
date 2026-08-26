@@ -12,12 +12,12 @@
 
 #define AppName "Veyl"
 #define ShortName "veyl"
-#define AppVersion "0.18.0"
+#define AppVersion "0.18.1"
 #define AppPublisher "Veyl"
 #define AppExeName "veyl.exe"
 ; Kept in step with editors/vscode/package.json by hand; the folder
 ; name VS Code expects embeds it.
-#define ExtVersion "0.18.0"
+#define ExtVersion "0.18.1"
 
 [Setup]
 AppId={{B7D42A19-3E6C-4F80-A5D3-91C7E20B4F68}
