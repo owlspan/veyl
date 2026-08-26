@@ -321,6 +321,25 @@ type FnDecl struct {
 	// under "pkg.name" so two packages exporting the same name cannot
 	// collide, and are reachable from outside only through that path.
 	Pkg string
+
+	// Extern marks a native function declared rather than defined:
+	//
+	//     extern fn MessageBoxA(hwnd: int, text: str, cap: str, kind: int) -> int
+	//
+	// There is no body to check; a call lowers straight to the named
+	// symbol in whatever DLL the declaration names or the backend's
+	// naming rule places.
+	Extern bool
+
+	// DLL is the library an extern declaration names after `from`, as in
+	// `from "miniz.dll"`. Empty means the backend's own rule decides.
+	DLL string
+
+	// Variadic marks a trailing `...` in the parameter list, which is
+	// only meaningful on an extern declaration: it says calls may pass
+	// more arguments than there are named parameters, and tells the
+	// emitter to set AL per the Windows x64 variadic rule.
+	Variadic bool
 }
 
 // ---- statements ----

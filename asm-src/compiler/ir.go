@@ -594,10 +594,6 @@ type Module struct {
 	Externs map[string]bool // foreign symbols called directly, declared
 	// as .extern at the top of the .s file
 	NGlobals int // words of static storage the program needs
-
-	// usesSQLite means the program calls db.*, so the build needs
-	// sqlite3.dll from the sqlite package beside the executable.
-	usesSQLite bool
 }
 
 func (m *Module) needs(h string) { m.Helpers[h] = true }
@@ -639,6 +635,80 @@ type sig struct {
 	ret    vty
 }
 
+// externSig is what the lowerer knows about a declared native function.
+// It is a sig plus what a foreign call needs that a Veyl call does not:
+// how wide the return register was when the C side left it there
+// (ret32), whether the caller may pass extra arguments (variadic), and
+// which library exports the symbol when the declaration said `from`.
+type externSig struct {
+	params   []vty
+	ret      vty
+	ret32    bool
+	variadic bool
+	sym      string
+	dll      string
+}
+
+// collectExtern records one extern declaration. The checker has already
+// refused non-scalar parameters and returns; this pass works out what a
+// call to the symbol will need at emission time.
+//
+// ret32 deserves its own word. A C function returning something that
+// fits in 32 bits leaves the upper half of rax holding whatever was
+// there before, so reading it as a full 64-bit value would be garbage
+// half the time. `-> int` and `-> bool` therefore sign-extend from eax;
+// `-> ptr` takes the whole register, because handles and pointers are
+// genuine 64-bit values; `-> str` likewise, since what comes back is a
+// char* to be copied; and `-> float` arrives in xmm0, untouched by all
+// of this.
+func (l *lowerer) collectExtern(fd *FnDecl) {
+	es := externSig{sym: fd.Name, dll: fd.DLL, variadic: fd.Variadic}
+	for _, pa := range fd.Params {
+		t, good := typeOfName(pa.Type)
+		if !good || !scalarVty(t) {
+			l.errorAt(fd, "parameter %q has type %q, which cannot cross into native code",
+				pa.Name, pa.Type)
+			continue
+		}
+		es.params = append(es.params, t)
+	}
+	ret, good := typeOfName(fd.Ret)
+	if !good || !scalarVty(ret) {
+		l.errorAt(fd, "return type %q cannot come back from native code", fd.Ret)
+		return
+	}
+	switch strings.TrimSpace(fd.Ret) {
+	case "int", "bool":
+		es.ret32 = true
+	case "", "float", "str", "ptr":
+	default:
+		l.errorAt(fd, "return type %q cannot come back from native code", fd.Ret)
+		return
+	}
+	es.ret = ret
+	if es.dll != "" && !strings.HasSuffix(strings.ToLower(es.dll), ".dll") &&
+		!strings.HasSuffix(strings.ToLower(es.dll), ".exe") {
+		// Windows loads "miniz" and "miniz.dll" identically, but the import
+		// table stores one canonical spelling and the missing-DLL check
+		// stats for exactly that one.
+		es.dll += ".dll"
+	}
+	if _, dup := l.externFns[es.sym]; dup {
+		l.errorAt(fd, "%s is declared twice", es.sym)
+		return
+	}
+	l.externFns[es.sym] = es
+}
+
+// scalarVty reports whether t can cross the native boundary at all.
+func scalarVty(t vty) bool {
+	switch t.k {
+	case kInt, kFloat, kBool, kStr, kVoid:
+		return true
+	}
+	return false
+}
+
 // ---- lowering ----
 
 type lowerer struct {
@@ -673,6 +743,11 @@ type lowerer struct {
 
 	loops []loopTarget
 	sigs  map[string]sig
+
+	// externFns holds the native functions the program declared with
+	// `extern fn`. Keyed by plain name, the same way sigs is, because an
+	// import lands in one flat namespace.
+	externFns map[string]externSig
 
 	// Helper functions written directly in the IR, by symbol, so each
 	// is emitted once however many times it is called.
@@ -720,13 +795,14 @@ type loopTarget struct {
 // mistake should not hide the next one.
 func Lower(p *Program, file string) (*Module, []string) {
 	l := &lowerer{
-		mod:      &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
-		file:     file,
-		sigs:     map[string]sig{},
-		globals:  map[string]int64{},
-		globalTy: map[int64]vty{},
-		buf:      -1,
-		gcStress: os.Getenv("VEYL_GC_STRESS") != "",
+		mod:       &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
+		file:      file,
+		sigs:      map[string]sig{},
+		externFns: map[string]externSig{},
+		globals:   map[string]int64{},
+		globalTy:  map[int64]vty{},
+		buf:       -1,
+		gcStress:  os.Getenv("VEYL_GC_STRESS") != "",
 	}
 
 	// Struct layouts before signatures, because a parameter or a return
@@ -737,6 +813,10 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// The Go backend guarantees order-independent declaration and this
 	// has to match.
 	for _, fd := range p.Funcs {
+		if fd.Extern {
+			l.collectExtern(fd)
+			continue
+		}
 		s := sig{}
 		ok := true
 		for i, pa := range fd.Params {
@@ -789,6 +869,9 @@ func Lower(p *Program, file string) (*Module, []string) {
 	}
 
 	for _, fd := range p.Funcs {
+		if fd.Extern {
+			continue // no body to lower; calls go straight to the symbol
+		}
 		l.function(fd)
 	}
 
@@ -1621,6 +1704,10 @@ func (l *lowerer) call(c *Call) Reg {
 		return l.junk()
 	}
 
+	if es, isExtern := l.externFns[name]; isExtern {
+		return l.callExtern(c, name, es)
+	}
+
 	if s, isUser := l.sigs[name]; isUser {
 		if len(c.Args) != len(s.params) {
 			l.errorAt(c, "%s takes %d argument(s), got %d",
@@ -1674,6 +1761,53 @@ func (l *lowerer) ccall(sym string, args []Reg, argTypes []vty, ret vty, ret32, 
 	l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
 		ArgTypes: argTypes, RetType: ret, Sym: sym, Extern: true,
 		Ret32: ret32, Variadic: variadic, Comment: sym + "()"})
+	return d
+}
+
+// callExtern lowers a call to a native function the program declared.
+//
+// Arguments go through the same conversion user calls do - values are
+// passed as the declared parameter asks, with an int widened to float
+// where the declaration says float. Two things are foreign-specific:
+// a declared `from "x.dll"` pins which library the import table names
+// the symbol under, and a `-> str` return is copied into a fresh Veyl
+// string, because the C side may free or overwrite the buffer it
+// handed back as soon as we return to it.
+func (l *lowerer) callExtern(c *Call, name string, es externSig) Reg {
+	n := len(c.Args)
+	if n < len(es.params) || (!es.variadic && n > len(es.params)) {
+		want := fmt.Sprintf("%d", len(es.params))
+		if es.variadic {
+			want = "at least " + want
+		}
+		l.errorAt(c, "%s takes %s argument(s), got %d", name, want, n)
+		return l.junk()
+	}
+	args := make([]Reg, n)
+	argTypes := make([]vty, n)
+	for i := 0; i < n; i++ {
+		var v Reg
+		if i < len(es.params) {
+			v = l.rvalueAs(c.Args[i], es.params[i])
+			if es.params[i].k == kFloat && l.regTy[v].k == kInt {
+				v = l.toFloat(v)
+			}
+		} else {
+			// An argument beyond the named parameters of a variadic
+			// extern has no declaration to convert toward; it is passed
+			// as its own type and the emitter places it by that.
+			v = l.rvalue(c.Args[i])
+		}
+		args[i] = v
+		argTypes[i] = l.regTy[v]
+	}
+	if es.dll != "" {
+		overrideImport(name, es.dll)
+	}
+	d := l.ccall(name, args, argTypes, es.ret, es.ret32, es.variadic)
+	if es.ret.k == kStr && d != NoReg {
+		d = l.dupStr(d)
+	}
 	return d
 }
 

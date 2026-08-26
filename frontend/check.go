@@ -308,6 +308,16 @@ func (c *Checker) Check(p *Program) {
 	// Pass 1: resolve every signature before checking any body, so calls
 	// to functions declared later in the file type-check correctly.
 	for _, f := range p.Funcs {
+		// The entry point is the top-level statements, which each backend
+		// wraps in a generated main. A function the author named main
+		// collides with it: the Go backend refuses the generated file
+		// with "main redeclared", and the assembly one linked the empty
+		// wrapper over the real body and ran nothing. Saying it here
+		// points at the author's line instead.
+		if f.Name == "main" && f.Recv == "" {
+			c.ErrorAt(f, "a program starts at its top-level statements, which are already "+
+				"called main - rename this function or move its body to the top level")
+		}
 		for i := range f.Params {
 			prm := &f.Params[i]
 			// `self` takes its type from the impl block, not an annotation.
@@ -325,13 +335,22 @@ func (c *Checker) Check(p *Program) {
 		} else {
 			f.RetT = c.resolveAnnotation(f.Ret, f)
 		}
+		if f.Extern {
+			c.checkExternDecl(f)
+		} else if f.Variadic {
+			c.ErrorAt(f, "'...' is only allowed on an extern declaration")
+		}
 		if f.Recv == "" {
 			c.funcs[Qual(f.Pkg, f.Name)] = f
 		}
 	}
 
-	// Pass 2: each function body, in its own scope.
+	// Pass 2: each function body, in its own scope. An extern has no
+	// body to check - it names code that lives outside the program.
 	for _, f := range p.Funcs {
+		if f.Extern {
+			continue
+		}
 		c.checkFn(f)
 	}
 
@@ -359,6 +378,48 @@ func (c *Checker) checkFn(f *FnDecl) {
 	}
 	c.pop()
 	c.curFn = prev
+}
+
+// checkExternDecl validates the shape of an extern declaration. Only
+// scalars cross the C boundary - a list or struct has no layout foreign
+// code could agree on, and a result type would have nowhere to put its
+// failure half.
+func (c *Checker) checkExternDecl(f *FnDecl) {
+	if f.Body != nil {
+		c.ErrorAt(f, "extern %s cannot have a body", f.Name)
+	}
+	if f.Recv != "" {
+		c.ErrorAt(f, "%s cannot be an extern method - methods run as Veyl code", f.Name)
+	}
+	for i := range f.Params {
+		prm := &f.Params[i]
+		if prm.Name == "self" {
+			c.ErrorAt(prm, "extern %s cannot take self", f.Name)
+			continue
+		}
+		if !externScalar(prm.T) {
+			c.ErrorAt(prm, "extern parameter %q must be int, float, str, bool or ptr - %s cannot cross into native code",
+				prm.Name, prm.T)
+		}
+	}
+	if f.RetT != nil && f.RetT != Void && !externScalar(f.RetT) {
+		c.ErrorAt(f, "extern return type must be int, float, str, bool or ptr - %s cannot come back from native code",
+			f.RetT)
+	}
+}
+
+// externScalar reports whether t is one of the types that can cross the
+// native boundary. Unknown suppresses: the real error was already
+// reported where the annotation failed to resolve.
+func externScalar(t *Type) bool {
+	if t == nil || t.IsUnknown() {
+		return true
+	}
+	switch t.Kind {
+	case KInt, KFloat, KStr, KBool:
+		return true
+	}
+	return false
 }
 
 // ---- statements ----
@@ -748,6 +809,10 @@ func (c *Checker) expr(e Expr) *Type {
 		}
 		// A declared function used as a value.
 		if f, ok := c.funcs[x.Name]; ok {
+			if f.Extern {
+				c.ErrorAt(x, "extern %s names native code and cannot be used as a value - call it directly", f.Name)
+				return Unknown
+			}
 			return signatureOf(f)
 		}
 		return Unknown // the resolver reported the undefined name

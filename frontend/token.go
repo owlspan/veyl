@@ -27,6 +27,7 @@ const (
 	FALSE
 	NIL
 	IMPORT
+	EXTERN
 
 	// reserved for later - recognised but not yet implemented
 	CONST
@@ -64,6 +65,7 @@ const (
 	ARROW
 	DOTDOT
 	DOTDOTEQ
+	ELLIPSIS
 	FATARROW
 
 	// bitwise
@@ -121,6 +123,7 @@ var kindNames = [...]string{
 	"FALSE",
 	"NIL",
 	"IMPORT",
+	"EXTERN",
 
 	"CONST",
 	"STRUCT",
@@ -156,6 +159,7 @@ var kindNames = [...]string{
 	"ARROW",
 	"DOTDOT",
 	"DOTDOTEQ",
+	"ELLIPSIS",
 	"FATARROW",
 
 	"AMP",
@@ -208,6 +212,7 @@ var Keywords = map[string]Kind{
 	"false":    FALSE,
 	"nil":      NIL,
 	"import":   IMPORT,
+	"extern":   EXTERN,
 
 	"const":  CONST,
 	"struct": STRUCT,

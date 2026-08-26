@@ -375,6 +375,12 @@ func ParseType(s string) *Type {
 		return Bool
 	case "bytes":
 		return Bytes
+	case "ptr":
+		// A raw machine word, only meaningful on an extern declaration.
+		// Everywhere else it behaves exactly like an int; the two spellings
+		// differ solely in how an extern call's return value is widened
+		// (a C int needs sign extension from eax, a pointer does not).
+		return Int
 	}
 
 	// A function type is recognised before the `!` suffix, because the

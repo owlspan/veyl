@@ -26,6 +26,7 @@ package main
 // other one exists.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -360,22 +361,81 @@ func packageDLLs(root string) []string {
 	return out
 }
 
-// requireSQLite checks that the sqlite package is installed before a
-// program that uses db.* is built.
+// officialCarrier maps a DLL to the official package that ships it, so
+// a build that cannot find one can say what would. It is a hint about
+// the published catalogue rather than compiler knowledge: a package not
+// listed here still works, the error just names the file instead of the
+// install command.
+var officialCarrier = map[string]string{
+	"sqlite3.dll": "sqlite",
+}
+
+// missingForeignDLLs checks that every non-system library this program
+// will import can actually be found, before anything is built.
 //
 // Without this the build succeeds and the executable refuses to start
 // with 0xC0000135 and no message, because Windows resolves imports
 // before main runs and says nothing useful about which one was
-// missing. Catching it here costs a directory listing and turns it into
-// a sentence naming the fix.
-func requireSQLite(root string) error {
-	for _, dll := range packageDLLs(root) {
-		if strings.EqualFold(filepath.Base(dll), "sqlite3.dll") {
-			return nil
+// missing. Catching it here costs a few stats and turns it into a
+// sentence naming the fix.
+//
+// A library counts as found when it sits beside the source, in any
+// installed package, in System32, or on PATH - the same places Windows
+// itself looks, minus the ones that would silently load something from
+// another program's directory.
+func missingForeignDLLs(root string, mod *Module) error {
+	var missing []string
+	seen := map[string]bool{}
+	for sym := range mod.Externs {
+		dll := importDLL(sym)
+		if knownSystemDLL[dll] || seen[dll] {
+			continue
+		}
+		seen[dll] = true
+		if findDLL(root, dll) != "" {
+			continue
+		}
+		msg := fmt.Sprintf("this program needs %s, which could not be found.", dll)
+		if pkg, ok := officialCarrier[dll]; ok {
+			msg += fmt.Sprintf("\n        Install it next to the program with:  veyl get %s", pkg)
+		} else {
+			msg += "\n        Put the DLL next to the program, or install the package that ships it."
+		}
+		missing = append(missing, msg)
+	}
+	sort.Strings(missing)
+	if len(missing) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(missing, "\n"))
+}
+
+// findDLL reports where a named library would be loaded from, or "".
+func findDLL(root, dll string) string {
+	dirs := []string{root}
+	pkgs := filepath.Join(root, modulesDir)
+	entries, err := os.ReadDir(pkgs)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				dirs = append(dirs, filepath.Join(pkgs, e.Name()))
+			}
 		}
 	}
-	return fmt.Errorf("this program uses db.*, which needs SQLite.\n" +
-		"        Install it next to the program with:  veyl get sqlite")
+	if sys := os.Getenv("SystemRoot"); sys != "" {
+		dirs = append(dirs, filepath.Join(sys, "System32"))
+	}
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if p != "" {
+			dirs = append(dirs, p)
+		}
+	}
+	for _, d := range dirs {
+		if _, err := os.Stat(filepath.Join(d, dll)); err == nil {
+			return d
+		}
+	}
+	return ""
 }
 
 // copyDLLsBeside puts each one next to the executable, unless a file of

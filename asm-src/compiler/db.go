@@ -62,14 +62,12 @@ func (l *lowerer) dbBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(1) {
 			return l.junk(), true
 		}
-		l.mod.usesSQLite = true
 		return l.dbOpen(l.expr(c.Args[0])), true
 
 	case "db.close":
 		if !arity(1) {
 			return l.junk(), true
 		}
-		l.mod.usesSQLite = true
 		l.ccall("sqlite3_close", []Reg{l.expr(c.Args[0])},
 			[]vty{vInt}, vInt, true, false)
 		return l.junk(), true
@@ -78,21 +76,18 @@ func (l *lowerer) dbBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(3) {
 			return l.junk(), true
 		}
-		l.mod.usesSQLite = true
 		return l.dbRun(l.expr(c.Args[0]), l.expr(c.Args[1]), l.expr(c.Args[2]), false), true
 
 	case "db.query":
 		if !arity(3) {
 			return l.junk(), true
 		}
-		l.mod.usesSQLite = true
 		return l.dbRun(l.expr(c.Args[0]), l.expr(c.Args[1]), l.expr(c.Args[2]), true), true
 
 	case "db.changes":
 		if !arity(1) {
 			return l.junk(), true
 		}
-		l.mod.usesSQLite = true
 		return l.ccall("sqlite3_changes", []Reg{l.expr(c.Args[0])},
 			[]vty{vInt}, vInt, true, false), true
 
@@ -100,12 +95,10 @@ func (l *lowerer) dbBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(1) {
 			return l.junk(), true
 		}
-		l.mod.usesSQLite = true
 		return l.ccall("sqlite3_last_insert_rowid", []Reg{l.expr(c.Args[0])},
 			[]vty{vInt}, vInt, false, false), true
 
 	case "db.version":
-		l.mod.usesSQLite = true
 		v := l.ccall("sqlite3_libversion", nil, nil, vInt, false, false)
 		l.regTy[v] = vStr
 		return v, true

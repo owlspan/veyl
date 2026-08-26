@@ -96,6 +96,33 @@ func importDLL(sym string) string {
 	return "msvcrt.dll"
 }
 
+// overrideImport pins a foreign symbol to the library that exports it.
+// This is how `extern fn ... from "miniz.dll"` reaches the import
+// table: lowering records the pairing here, and buildImports reads it
+// afterwards. The compiler process handles one program, so mutating a
+// package-level map costs nothing and threads no extra state through.
+func overrideImport(sym, dll string) { importOverride[sym] = dll }
+
+// knownSystemDLL lists the libraries Windows itself installs, which a
+// program may import without anything being placed beside it. Anything
+// outside this set has to be found before the build, or the executable
+// will refuse to start with no useful message - see missingForeignDLLs
+// in pkg.go, which is what consumes it.
+var knownSystemDLL = map[string]bool{
+	"kernel32.dll": true,
+	"user32.dll":   true,
+	"gdi32.dll":    true,
+	"shell32.dll":  true,
+	"advapi32.dll": true,
+	"winmm.dll":    true,
+	"comdlg32.dll": true,
+	"ole32.dll":    true,
+	"oleaut32.dll": true,
+	"ws2_32.dll":   true,
+	"winhttp.dll":  true,
+	"msvcrt.dll":   true,
+}
+
 // A section as it will appear in the file.
 type peSection struct {
 	name  string
