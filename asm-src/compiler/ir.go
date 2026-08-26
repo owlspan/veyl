@@ -565,6 +565,12 @@ type Func struct {
 	NSlots  int // stack slots for locals and spilled temporaries
 	NLabels int
 
+	// RegTypes is the type of every virtual register, parallel to the
+	// register numbers. The register allocator reads it to decide which
+	// values may sit in a machine register: only non-pointers, because a
+	// pointer the collector cannot see is a pointer it can free.
+	RegTypes []vty
+
 	// MaxCallArgs is the widest call this function makes. The outgoing
 	// argument area has to be big enough for it, and is reserved once in
 	// the prologue rather than pushed per call, which is what keeps rsp
@@ -818,7 +824,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		l.stmt(st)
 	}
 	l.popScope()
-	l.mod.Funcs = append(l.mod.Funcs, l.fn)
+	l.seal()
 
 	l.checkLabels()
 	return l.mod, l.errs
@@ -895,6 +901,19 @@ func (l *lowerer) function(fd *FnDecl) {
 	l.popScope()
 
 	l.endFunction(s.ret)
+	l.seal()
+}
+
+// seal records the types this function's virtual registers were given
+// and files the finished function. The register allocator reads them;
+// nothing after the lowerer re-derives a type it threw away.
+func (l *lowerer) seal() {
+	l.fn.RegTypes = make([]vty, l.fn.NRegs)
+	for r, t := range l.regTy {
+		if r >= 0 && int(r) < len(l.fn.RegTypes) {
+			l.fn.RegTypes[r] = t
+		}
+	}
 	l.mod.Funcs = append(l.mod.Funcs, l.fn)
 }
 
@@ -3058,7 +3077,7 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 	}
 	body(args)
 	l.popScope()
-	l.mod.Funcs = append(l.mod.Funcs, l.fn)
+	l.seal()
 
 	l.fn, l.slotTy, l.regTy = savedFn, savedSlots, savedRegs
 	l.scopes, l.loops, l.buf = savedScopes, savedLoops, savedBuf
