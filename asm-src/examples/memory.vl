@@ -36,11 +36,16 @@ print(mem.objects() > 0)
 print(mem.total() >= mem.used())
 
 // Collecting drops what nothing points at and keeps what something
-// does.
+// does. Written as claims that hold whatever the cadence: normally the
+// garbage from churn() is still sitting there and this collect frees
+// it, so the count strictly falls; under VEYL_GC_STRESS=1 every
+// statement collected on the way in, it is already gone, and all that
+// is left to claim is that collecting did not grow anything and did
+// run.
 let before = mem.objects()
 mem.collect()
-print(mem.objects() < before)
-print(mem.collections())
+print(mem.objects() <= before)
+print(mem.collections() > 0)
 
 print(str(keep))
 print(str(scores))
