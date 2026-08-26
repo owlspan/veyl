@@ -678,11 +678,21 @@ func packSlots(fn *Func) {
 		next = 1
 	}
 
+	// The map yields its keys in an order that changes from build to
+	// build, so the sort below must leave nothing to chance: two slots
+	// coming alive over the same gap are common, and which of them got
+	// which number used to depend on that map order. Ties fall back to
+	// the slot's own number, making one total order and one output.
 	order := make([]int64, 0, len(gmin))
 	for s := range gmin {
 		order = append(order, s)
 	}
-	sort.Slice(order, func(x, y int) bool { return gmin[order[x]] < gmin[order[y]] })
+	sort.Slice(order, func(x, y int) bool {
+		if gmin[order[x]] != gmin[order[y]] {
+			return gmin[order[x]] < gmin[order[y]]
+		}
+		return order[x] < order[y]
+	})
 
 	type lease struct {
 		until int
