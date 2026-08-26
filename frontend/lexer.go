@@ -407,7 +407,9 @@ func (l *Lexer) operator(line, col int) {
 	case '.':
 		switch {
 		case l.match('.'):
-			if l.match('=') {
+			if l.match('.') {
+				l.emit(ELLIPSIS, "...", line, col)
+			} else if l.match('=') {
 				l.emit(DOTDOTEQ, "..=", line, col)
 			} else {
 				l.emit(DOTDOT, "..", line, col)

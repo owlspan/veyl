@@ -125,8 +125,10 @@ const (
 	DOTDOT    = front.DOTDOT
 	DOTDOTEQ  = front.DOTDOTEQ
 	ELSE      = front.ELSE
+	ELLIPSIS  = front.ELLIPSIS
 	EOF       = front.EOF
 	EQ        = front.EQ
+	EXTERN    = front.EXTERN
 	FALSE     = front.FALSE
 	FATARROW  = front.FATARROW
 	FN        = front.FN

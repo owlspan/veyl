@@ -129,7 +129,7 @@ func (p *Parser) synchronize() {
 			return
 		}
 		switch p.cur().Kind {
-		case LET, CONST, IF, WHILE, FOR, FN, RETURN, BREAK, CONTINUE, RBRACE:
+		case LET, CONST, IF, WHILE, FOR, FN, EXTERN, RETURN, BREAK, CONTINUE, RBRACE:
 			return
 		}
 		p.advance()
@@ -152,9 +152,9 @@ func (p *Parser) ParseProgram() *Program {
 			kw := p.advance()
 			pub = true
 			switch p.cur().Kind {
-			case FN, STRUCT, CONST:
+			case FN, STRUCT, CONST, EXTERN:
 			default:
-				p.errorAt(kw, "'pub' can only go before fn, struct or const")
+				p.errorAt(kw, "'pub' can only go before fn, struct, const or extern")
 			}
 		}
 
@@ -165,6 +165,12 @@ func (p *Parser) ParseProgram() *Program {
 			}
 		case p.check(FN):
 			if f := p.parseFn(); f != nil {
+				f.Pub = pub
+				f.File = p.file
+				prog.Funcs = append(prog.Funcs, f)
+			}
+		case p.check(EXTERN):
+			if f := p.parseExtern(); f != nil {
 				f.Pub = pub
 				f.File = p.file
 				prog.Funcs = append(prog.Funcs, f)
@@ -307,6 +313,43 @@ func (p *Parser) parseFn() *FnDecl {
 	return f
 }
 
+// parseExtern reads a native function declaration:
+//
+//	extern fn MessageBoxA(hwnd: int, text: str, cap: str, kind: int) -> int
+//	extern fn mz_extract(zipPath: str, dest: str) -> int from "miniz.dll"
+//
+// There is no body. The declaration states the symbol's ABI, and every
+// call to it compiles straight to that symbol in the named library.
+// The optional `from "<dll>"` tail names the exporting DLL; without it,
+// the backend's own rule decides where the symbol comes from.
+//
+// `from` is matched as an identifier rather than reserved, so it stays
+// usable as an ordinary variable name everywhere else.
+func (p *Parser) parseExtern() *FnDecl {
+	kw := p.advance() // 'extern'
+	if !p.match(FN) {
+		p.errorAt(p.cur(), "'extern' declares a native function, as in: extern fn Beep(freq: int, ms: int) -> bool")
+		p.synchronize()
+		return nil
+	}
+	name := p.expect(IDENT, "a function name")
+	f := p.parseFnSignature(kw, name.Lex)
+	if f == nil {
+		return nil
+	}
+	f.Extern = true
+
+	if p.check(IDENT) && p.cur().Lex == "from" {
+		p.advance()
+		dll := p.expect(STRING, `a library name in quotes, as in: from "miniz.dll"`)
+		if dll.Kind == STRING {
+			f.DLL = dll.Lex
+		}
+	}
+	p.endStmt()
+	return f
+}
+
 // parseFnSignature reads the parameters and return type, having already
 // consumed `fn` and, for a declaration, the name. A function literal
 // takes the same path with an empty name, so the two never drift.
@@ -321,6 +364,19 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 
 	if !p.check(RPAREN) {
 		for {
+			// A trailing `...` marks a variadic parameter list, which only
+			// an extern declaration can carry: printf(fmt: str, ...)
+			if p.check(ELLIPSIS) {
+				e := p.advance()
+				f.Variadic = true
+				if p.match(COMMA) {
+					p.errorAt(e, "'...' must come last in the parameter list")
+					p.skipNewlines()
+					continue
+				}
+				break
+			}
+
 			// `self` is a parameter with no type: the impl block supplies it.
 			if p.check(SELF) {
 				sf := p.advance()
@@ -440,7 +496,7 @@ func (p *Parser) parseStmt() Stmt {
 		p.errorAt(p.cur(), "functions can only be declared at the top level")
 		p.synchronize()
 		return nil
-	case STRUCT, IMPL:
+	case STRUCT, IMPL, EXTERN:
 		p.errorAt(p.cur(), "'%s' can only appear at the top level", p.cur().Lex)
 		p.synchronize()
 		return nil

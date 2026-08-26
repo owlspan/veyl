@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.18.0** - the language as currently implemented.
+**Version 0.19.0** - the language as currently implemented.
 
 Veyl compiles to Go, which compiles to a native executable. A finished
 program is a single self-contained binary with no runtime to install.
@@ -22,10 +22,11 @@ program is a single self-contained binary with no runtime to install.
 8. [Control flow](#control-flow)
 9. [Functions](#functions)
 10. [Builtin library](#builtin-library)
-11. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
-12. [Reserved words](#reserved-words)
-13. [Compiler commands](#compiler-commands)
-14. [Known limitations](#known-limitations)
+11. [Native functions (`extern`)](#native-functions-extern)
+12. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
+13. [Reserved words](#reserved-words)
+14. [Compiler commands](#compiler-commands)
+15. [Known limitations](#known-limitations)
 
 ---
 
@@ -40,7 +41,9 @@ veyl run hello.vl
 ```
 
 Source files use the `.vl` extension. There is no required `main`
-function - statements at the top level of a file run in order.
+function - statements at the top level of a file run in order, and
+declaring a `main` yourself is an error, because the compiler writes
+its own around those statements.
 
 ---
 
@@ -2044,6 +2047,93 @@ operations that need a function.
 
 ---
 
+## Native functions: `extern`
+
+An `extern` declares a function that lives in a DLL instead of in your
+program. The declaration is the whole bridge - nothing to install, no
+wrapper to write - and Windows loads each named library when the
+program starts.
+
+```veyl
+extern fn Beep(freq: int, ms: int) -> bool
+extern fn MessageBoxA(hwnd: int, text: str, cap: str, kind: int) -> int
+
+Beep(440, 200)
+```
+
+Call one like any other function.
+
+### Where the library comes from
+
+A name in PascalCase is assumed to be the Windows API and lands in
+`kernel32.dll`; any other name falls back to `msvcrt.dll`, the C
+runtime. To point somewhere else, add a `from` clause:
+
+```veyl
+extern fn MessageBeep(kind: int) -> bool from "user32.dll"
+extern fn mz_extract(zip: str, dest: str) -> int from "miniz"
+```
+
+The `.dll` suffix is optional. `from` is only a keyword in that spot,
+so an ordinary variable or function called `from` still works.
+
+### Types at the boundary
+
+| Veyl type | Passes as | Comes back as |
+| --- | --- | --- |
+| `int` | a 64-bit word | C `int`, sign-extended |
+| `bool` | 0 or 1 | C `int`, sign-extended |
+| `float` | a 64-bit double | a double |
+| `str` | a pointer to its bytes | `char*`, copied into a fresh string |
+| `ptr` | a raw machine word | the full 64-bit value |
+
+Two rows need explaining.
+
+**`int` versus `ptr` as a return.** A C function returning `int`
+promises only the low 32 bits of the result register. Saying
+`-> int` tells the compiler to sign-extend those; saying `-> ptr`
+takes all 64 bits, which is what handles and pointers need. Guessing
+wrong on a handle leaves garbage in its top half, so pointers get
+their own spelling rather than sharing `int`.
+
+**`str` as a return.** The C side hands back a pointer to memory Veyl
+does not own. The compiler copies the bytes into a fresh string at
+once - nothing to free, and the library cannot take the memory back
+later. This relies on C strings being NUL-terminated, which they are
+by convention.
+
+Lists, maps, structs and `T!` cannot cross, and neither can a
+function, so there are no callbacks into Veyl code. Declare scalars
+only; anything else is an error pointing at the declaration.
+
+### Variadic
+
+`...` marks a C variadic function such as printf. Arguments beyond the
+named ones pass through as themselves, with floats duplicated into
+integer registers because the x64 calling convention requires it:
+
+```veyl
+extern fn printf(fmt: str, ...) -> int
+printf("%d %s\n", 7, "dots")
+```
+
+### Rules
+
+- An extern has no body, cannot be a method, and cannot be used as a
+  value - calling it is the only thing that works.
+- Arity is checked like any function's; a variadic extern takes at
+  least its named arguments.
+- If the program needs a library that is not beside the source, in an
+  installed package, in System32 or on PATH, `veyl build` and
+  `veyl run` refuse before building and name it. Windows would
+  otherwise abort the program at startup with an error number instead
+  of a sentence.
+
+Strings passed to C are safe from the collector: no Veyl code runs
+while C holds them, so nothing can move or free them underneath it.
+
+---
+
 ## `win` - windows, drawing and input
 
 Veyl opens a real window you can draw in. The shape is a **game loop**:
@@ -2191,7 +2281,7 @@ In use:
 
 ```
 let const fn return if else while for in step break continue true false
-struct impl self match nil import pub
+struct impl self match nil import pub extern
 ```
 
 Reserved but not yet implemented - the lexer recognises them, so they
@@ -2312,10 +2402,13 @@ veyl: 2 error(s)
 
 ## Known limitations
 
-Honest list of what v0.18.0 does not do yet.
+Honest list of what v0.19.0 does not do yet.
 
 **The language**
 
+- **`extern` cannot call back.** A native library can take numbers,
+  strings and pointers from you, but it cannot hold a Veyl function to
+  call later, so libraries that work by callback are out of reach.
 - **A missing map key is silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left
   alone because making every map read return `?V` would mean a nil

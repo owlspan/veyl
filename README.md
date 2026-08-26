@@ -95,6 +95,8 @@ pipeline:
 - `net` TCP sockets and an `http` server and client, through WinSock
 - `win`: a window with a game loop, drawing, keyboard and mouse, and
   immediate-mode widgets
+- `extern fn`: declare a function that lives in a DLL and call it -
+  the Windows API, the C runtime, or any library a package ships
 
 Missing against the Go backend: `zip`, and a handful of small builtins
 (`input`, `pause`, `padLeft`, `padRight`, `toFloat`, `isFloat`,
@@ -102,6 +104,10 @@ Missing against the Go backend: `zip`, and a handful of small builtins
 neither a local, a function nor a builtin is caught by the lowerer
 rather than the checker. Everything absent is a compile error naming
 it, never wrong output.
+
+One thing here that the Go backend does not have is `extern fn`. The
+differential suite compares programs both backends can run; the extern
+demos sit in `examples/ffi/` where only they are exercised.
 
 Byte-identical means error messages too, which is why the `os` library
 is written against Win32 rather than the C runtime: Go's message for a
