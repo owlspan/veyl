@@ -119,23 +119,28 @@ $ veyl run examples/floats.vl
 `examples/collatz.vl` is the benchmark - nested loops, 10,000 iterations
 of real integer work - through both backends:
 
-The two assembly columns are the same machine code. Only the linking
+The two assembly columns are the same compiler. Only the linking
 differs: the middle one goes through gcc, the last is the PE this
 compiler writes itself.
 
 | | via Go | asm, via gcc | asm, self-linked |
 | --- | ---: | ---: | ---: |
-| runtime, best of 5 | 67 ms | 81 ms | 81 ms |
-| executable size | 2,524,160 | 123,102 | 2,560 |
+| runtime, best of 7 | 33 ms | 36 ms | 38 ms |
+| executable size | 2,524,160 | 123,102 | 2,048 |
 
-**About 20% slower and a thousand times smaller.** The 123 KB column is
-mostly MinGW's C runtime rather than anything this compiler produced,
-which is what the last column removes.
+**Within about 15% of Go on this little program, and over a thousand
+times smaller.** The 123 KB column is mostly MinGW's C runtime rather
+than anything this compiler produced, which is what the last column
+removes.
 
-Do not read that gap as a finish line. Every value still round-trips
-through a stack slot, and Go's optimiser is doing work nothing here
-does. It will widen on bigger programs before a register allocator
-closes it.
+collatz is too small to say much about code quality - at forty
+milliseconds a run, most of it is process startup - so the honest scale
+numbers come from a bigger loop: fifteen million iterations of
+straight-line integer arithmetic run 1.12 s compiled by the compiler as
+it was before any of the passes landed, 0.60 s with folding,
+dead-code elimination, load forwarding and slot packing alone, and
+0.42 s with the register allocator on top. Across every example
+program, executables average 36% smaller than before the passes.
 
 ## What it does not have
 
@@ -444,17 +449,20 @@ two environments, the block Win32 keeps and the copy the CRT made at
 startup, and `SetEnvironmentVariable` updates only the one `getenv`
 does not read.
 
-**10. A register allocator.** Where the 20% gap starts closing. Do it
-after functions exist - which they now do - because the whole
-difficulty is knowing which values are live across a call, and a
-version written before calls existed would be written twice.
+**10. A register allocator. Done.** It hands r8 through r11 to
+non-pointer integer values whose whole life fits between calls and the
+other barriers, with no label inside the span. Frames stay as slot
+packing made them - every value keeps its slot - but straight-line
+arithmetic stops round-tripping through memory, which is most of the 30%
+the allocator adds to the optimisation stack's runtime win. Off with
+`VEYL_NORA=1`, which reproduces the previous output byte for byte.
 
-It also shrinks stack frames, which are large here because nothing is
-reused: a 60-line program can need 3,000 virtual registers. That is a
-size problem, not a correctness one - a frame bigger than a page has to
-touch every page on the way down, or Windows never moves the guard page
-and the first write below it faults. `reserve()` in `x64.go` does the
-probing, and has to keep doing it however small frames get.
+Stack frames were large here because nothing was reused: a 60-line
+program could need 3,000 virtual registers. That was a size problem, not
+a correctness one - a frame bigger than a page has to touch every page
+on the way down, or Windows never moves the guard page and the first
+write below it faults. `reserve()` in `x64.go` does the probing, and has
+to keep doing it however small frames get.
 
 **11. The collector.** Needs step 1, which is done. Budget a whole
 session minimum; a collector that frees one live object produces a bug
