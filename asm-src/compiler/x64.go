@@ -22,12 +22,15 @@ package main
 //      shorter encoding for us, and the encoder here is checked against
 //      what as produces, so depending on that would be circular.
 //
-// Register strategy is deliberately the dumbest correct one: every
-// virtual register lives in a stack slot, and operands are loaded into
-// rax and rcx around each instruction. That is slow, and it is also
-// obviously right, which matters more while the pipeline is being
-// proven. A real allocator replaces regAddr and the operand loads, and
-// nothing else.
+// Register strategy: every virtual register has a frame slot, and
+// operands are read into rax and rcx around each instruction - which is
+// obviously right, if slow. On top of that, regalloc.go pools a few
+// short-lived non-pointer values into r8, r9, r10 and r11 between two
+// barriers, and loc() below is where that decision meets this file:
+// reads and writes of a pooled value name its machine register instead
+// of its slot. With VEYL_NORA set, or for a function nothing qualified,
+// every loc answers with the slot and the output is what the dumbest
+// correct strategy always produced.
 
 import (
 	"fmt"
@@ -40,6 +43,12 @@ type Emitter struct {
 	b   strings.Builder
 	f   *Func
 	mod *Module
+
+	// homes maps the few virtual registers the allocator pooled to their
+	// machine register. A register missing from the map lives in its
+	// frame slot as before, and a nil map - the pass switched off - is
+	// the every-value-in-a-slot emitter this file started as.
+	homes map[Reg]string
 }
 
 // Windows x64 calling convention.
@@ -92,6 +101,34 @@ func (e *Emitter) slotAddr(slot int64) string {
 func (e *Emitter) regAddr(r Reg) string {
 	off := (int64(r) + int64(e.f.NSlots) + 1) * 8
 	return fmt.Sprintf("qword ptr [rbp-%d]", off)
+}
+
+// loc is where a virtual register lives: a machine register for the few
+// the allocator pooled, its frame slot for everything else. Every read
+// and write of a virtual register goes through here, which is the whole
+// extent of the emitter's awareness that allocation happens.
+func (e *Emitter) loc(r Reg) string {
+	if e.homes != nil {
+		if h, ok := e.homes[r]; ok {
+			return h
+		}
+	}
+	return e.regAddr(r)
+}
+
+// put parks a finished integer result in its home. The move disappears
+// when the home is where the value already sits.
+func (e *Emitter) put(r Reg, from string) {
+	if d := e.loc(r); d != from {
+		e.line("mov %s, %s", d, from)
+	}
+}
+
+// putf is put's floating-point twin.
+func (e *Emitter) putf(r Reg, from string) {
+	if d := e.loc(r); d != from {
+		e.line("movsd %s, %s", d, from)
+	}
 }
 
 func (e *Emitter) outgoing() int {
@@ -349,6 +386,11 @@ func (e *Emitter) reserve(bytes int) {
 
 func (e *Emitter) function(f *Func) {
 	e.f = f
+	if envOff("VEYL_NORA") || envOff("VEYL_NOOPT") {
+		e.homes = nil
+	} else {
+		e.homes = allocateRegs(f)
+	}
 	name := f.Name
 	if name != "main" {
 		name = "__vy_" + name // no chance of colliding with libc
@@ -411,36 +453,42 @@ func (e *Emitter) instr(in Instr) {
 	switch in.Op {
 	case OpConst:
 		e.line("mov rax, %d", in.Imm)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpStr:
 		e.line("lea rax, __str%d[rip]", in.Imm)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpStackPtr:
 		e.line("mov rax, rsp")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpSymAddr:
 		e.line("lea rax, %s[rip]", in.Sym)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpSlotAddr:
 		e.line("lea rax, %s", strings.TrimPrefix(e.slotAddr(in.Imm), "qword ptr "))
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpGlobalAddr:
 		// Static storage, so the address is a link-time constant and the
 		// slot's offset folds into the lea rather than needing an add.
 		e.line("lea rax, __globals[rip+%d]", in.Imm*wordSize)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpLoad:
-		e.line("mov rax, %s", e.slotAddr(in.Imm))
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		if d := e.loc(in.Dst); d == e.regAddr(in.Dst) {
+			e.line("mov rax, %s", e.slotAddr(in.Imm))
+			e.line("mov %s, rax", d)
+		} else {
+			// The value is going to a register anyway; one move reads it
+			// straight there.
+			e.line("mov %s, %s", d, e.slotAddr(in.Imm))
+		}
 
 	case OpStore:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("mov %s, rax", e.slotAddr(in.Imm))
 
 	case OpAdd, OpSub, OpMul, OpBAnd, OpBOr, OpBXor:
@@ -448,10 +496,12 @@ func (e *Emitter) instr(in Instr) {
 			OpAdd: "add", OpSub: "sub", OpMul: "imul",
 			OpBAnd: "and", OpBOr: "or", OpBXor: "xor",
 		}[in.Op]
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("%s rax, rcx", mnemonic)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpShl, OpShr:
 		// The variable shift forms take their count in cl and nowhere
@@ -462,51 +512,57 @@ func (e *Emitter) instr(in Instr) {
 		if in.Op == OpShr {
 			mnemonic = "sar"
 		}
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("%s rax, cl", mnemonic)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpDiv, OpMod:
 		// idiv divides rdx:rax and is the one instruction here with
 		// fixed register operands. cqo sign-extends rax into rdx first;
 		// without it a negative dividend divides by a garbage high half.
 		// Quotient lands in rax, remainder in rdx.
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("cqo")
 		e.line("idiv rcx")
 		if in.Op == OpDiv {
-			e.line("mov %s, rax", e.regAddr(in.Dst))
+			e.put(in.Dst, "rax")
 		} else {
-			e.line("mov %s, rdx", e.regAddr(in.Dst))
+			e.put(in.Dst, "rdx")
 		}
 
 	case OpNeg:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("neg rax")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpFConst:
 		e.line("movsd xmm0, __flt%d[rip]", in.Imm)
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 
 	case OpFAdd, OpFSub, OpFMul, OpFDiv:
 		mnemonic := map[Op]string{
 			OpFAdd: "addsd", OpFSub: "subsd", OpFMul: "mulsd", OpFDiv: "divsd",
 		}[in.Op]
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
-		e.line("movsd xmm1, %s", e.regAddr(in.B))
+		e.line("movsd xmm0, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "xmm1" {
+			e.line("movsd xmm1, %s", b)
+		}
 		e.line("%s xmm0, xmm1", mnemonic)
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 
 	case OpFNeg:
 		// mulsd by -1.0 rather than flipping the sign bit: see the
 		// comment on __neg_one in Emit for why xorpd was not worth it.
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm0, %s", e.loc(in.A))
 		e.line("movsd xmm1, __neg_one[rip]")
 		e.line("mulsd xmm0, xmm1")
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 
 	case OpFEq, OpFNe, OpFLt, OpFLe, OpFGt, OpFGe:
 		// comisd sets the flags the same way an unsigned integer compare
@@ -522,45 +578,45 @@ func (e *Emitter) instr(in Instr) {
 		cc := map[Op]string{
 			OpFEq: "e", OpFNe: "ne", OpFLt: "b", OpFLe: "be", OpFGt: "a", OpFGe: "ae",
 		}[in.Op]
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
-		e.line("movsd xmm1, %s", e.regAddr(in.B))
+		e.line("movsd xmm0, %s", e.loc(in.A))
+		e.line("movsd xmm1, %s", e.loc(in.B))
 		e.line("xor eax, eax")
 		e.line("comisd xmm0, xmm1")
 		e.line("set%s al", cc)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpIntToFloat:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("cvtsi2sd xmm0, rax")
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 
 	case OpFloatToInt:
 		// cvttsd2si: the double-t is truncating rather than
 		// round-to-nearest, which is what Veyl's int() promises and
 		// what int(-3.7) being -3 rather than -4 depends on.
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm0, %s", e.loc(in.A))
 		e.line("cvttsd2si rax, xmm0")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpSqrt:
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm0, %s", e.loc(in.A))
 		e.line("sqrtsd xmm0, xmm0")
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 
 	case OpFMod:
 		// fmod has a fixed double,double prototype rather than a
 		// variadic one, so unlike the printf/snprintf calls elsewhere
 		// in this file its float arguments go in xmm0/xmm1 alone - no
 		// duplication into the integer registers is needed here.
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
-		e.line("movsd xmm1, %s", e.regAddr(in.B))
+		e.line("movsd xmm0, %s", e.loc(in.A))
+		e.line("movsd xmm1, %s", e.loc(in.B))
 		e.line("call fmod")
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 
 	case OpBNot:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("not rax")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpEq, OpNe, OpLt, OpLe, OpGt, OpGe:
 		// cmp sets the flags; setcc turns one flag combination into a
@@ -574,19 +630,21 @@ func (e *Emitter) instr(in Instr) {
 		cc := map[Op]string{
 			OpEq: "e", OpNe: "ne", OpLt: "l", OpLe: "le", OpGt: "g", OpGe: "ge",
 		}[in.Op]
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("xor edx, edx")
 		e.line("cmp rax, rcx")
 		e.line("set%s dl", cc)
-		e.line("mov %s, rdx", e.regAddr(in.Dst))
+		e.put(in.Dst, "rdx")
 
 	case OpNot:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("xor edx, edx")
 		e.line("test rax, rax")
 		e.line("sete dl")
-		e.line("mov %s, rdx", e.regAddr(in.Dst))
+		e.put(in.Dst, "rdx")
 
 	case OpLabel:
 		e.label(fmt.Sprintf(".L%s_%d", e.f.Name, in.Imm))
@@ -595,12 +653,12 @@ func (e *Emitter) instr(in Instr) {
 		e.line("jmp .L%s_%d", e.f.Name, in.Imm)
 
 	case OpJumpIf:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("test rax, rax")
 		e.line("jne .L%s_%d", e.f.Name, in.Imm)
 
 	case OpJumpNot:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("test rax, rax")
 		e.line("je .L%s_%d", e.f.Name, in.Imm)
 
@@ -614,9 +672,9 @@ func (e *Emitter) instr(in Instr) {
 			// step by position rather than counting each kind
 			// separately.
 			if e.f.ParamTypes[in.Imm].k == kFloat {
-				e.line("movsd %s, %s", e.regAddr(in.Dst), xmmArgs[in.Imm])
+				e.putf(in.Dst, xmmArgs[in.Imm])
 			} else {
-				e.line("mov %s, %s", e.regAddr(in.Dst), argRegs[in.Imm])
+				e.put(in.Dst, argRegs[in.Imm])
 			}
 			return
 		}
@@ -631,7 +689,7 @@ func (e *Emitter) instr(in Instr) {
 		// arrive correctly, so a six-argument function returns garbage
 		// while every smaller one looks fine.
 		e.line("mov rax, qword ptr [rbp+%d]", 16+in.Imm*8)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpCall:
 		e.call(in)
@@ -642,9 +700,9 @@ func (e *Emitter) instr(in Instr) {
 	case OpRet:
 		switch {
 		case in.A != NoReg && e.f.Ret.k == kFloat:
-			e.line("movsd xmm0, %s", e.regAddr(in.A))
+			e.line("movsd xmm0, %s", e.loc(in.A))
 		case in.A != NoReg:
-			e.line("mov rax, %s", e.regAddr(in.A))
+			e.line("mov rax, %s", e.loc(in.A))
 		default:
 			e.line("xor eax, eax")
 		}
@@ -654,7 +712,7 @@ func (e *Emitter) instr(in Instr) {
 
 	case OpPrintInt:
 		e.line("lea rcx, __fmt_int[rip]")
-		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("mov rdx, %s", e.loc(in.A))
 		e.line("call printf")
 
 	case OpPrintFloat:
@@ -664,7 +722,7 @@ func (e *Emitter) instr(in Instr) {
 		// as well as xmm1 - the same complication OpFloatToStr already
 		// has to solve once, inside the helper, rather than solving it
 		// again at every call site that wants to print a float.
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm0, %s", e.loc(in.A))
 		e.line("call __vy_floattostr")
 		e.line("lea rcx, __fmt_str[rip]")
 		e.line("mov rdx, rax")
@@ -672,7 +730,7 @@ func (e *Emitter) instr(in Instr) {
 
 	case OpPrintStr:
 		e.line("lea rcx, __fmt_str[rip]")
-		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("mov rdx, %s", e.loc(in.A))
 		e.line("call printf")
 
 	case OpPrintBool:
@@ -680,7 +738,7 @@ func (e *Emitter) instr(in Instr) {
 		// pointers with no jump. The false pointer is loaded first so
 		// cmovne can overwrite it, since cmov cannot take an address as
 		// its source operand.
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("lea rcx, __str_false[rip]")
 		e.line("lea rdx, __str_true[rip]")
 		e.line("test rax, rax")
@@ -690,75 +748,79 @@ func (e *Emitter) instr(in Instr) {
 		e.line("call printf")
 
 	case OpConcat:
-		e.line("mov rcx, %s", e.regAddr(in.A))
-		e.line("mov rdx, %s", e.regAddr(in.B))
+		e.line("mov rcx, %s", e.loc(in.A))
+		e.line("mov rdx, %s", e.loc(in.B))
 		e.line("call __vy_concat")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpStrEq:
-		e.line("mov rcx, %s", e.regAddr(in.A))
-		e.line("mov rdx, %s", e.regAddr(in.B))
+		e.line("mov rcx, %s", e.loc(in.A))
+		e.line("mov rdx, %s", e.loc(in.B))
 		e.line("call __vy_streq")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpStrLen:
-		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("call strlen")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpIntToStr:
-		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("call __vy_inttostr")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpFloatToStr:
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm0, %s", e.loc(in.A))
 		e.line("call __vy_floattostr")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpBoolToStr:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("lea rcx, __str_false[rip]")
 		e.line("lea rdx, __str_true[rip]")
 		e.line("test rax, rax")
 		e.line("cmovne rcx, rdx")
-		e.line("mov %s, rcx", e.regAddr(in.Dst))
+		e.put(in.Dst, "rcx")
 
 	case OpAlloc:
-		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("call malloc")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpIndexAddr:
 		// lea with a scale of 8 is one instruction for base + index*8,
 		// which is the whole reason every element is a word wide.
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("lea rax, [rax+rcx*8]")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpLoadMem:
-		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov rax, %s", e.loc(in.A))
 		e.line("mov rax, qword ptr [rax+%d]", in.Imm)
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpStoreMem:
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("mov qword ptr [rax+%d], rcx", in.Imm)
 
 	case OpWriteStr:
 		e.line("lea rcx, __fmt_str_raw[rip]")
-		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("mov rdx, %s", e.loc(in.A))
 		e.line("call printf")
 
 	case OpWriteInt:
 		e.line("lea rcx, __fmt_int_raw[rip]")
-		e.line("mov rdx, %s", e.regAddr(in.A))
+		e.line("mov rdx, %s", e.loc(in.A))
 		e.line("call printf")
 
 	case OpWriteFloat:
-		e.line("movsd xmm0, %s", e.regAddr(in.A))
+		e.line("movsd xmm0, %s", e.loc(in.A))
 		e.line("call __vy_floattostr")
 		e.line("lea rcx, __fmt_str_raw[rip]")
 		e.line("mov rdx, rax")
@@ -768,26 +830,30 @@ func (e *Emitter) instr(in Instr) {
 		// movzx, not mov: reading a byte into a 64-bit register has to
 		// clear the upper bits explicitly, or the value carries whatever
 		// the last operation left above bit 8.
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("movzx eax, byte ptr [rax+rcx]")
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 
 	case OpStoreByte:
 		// Three operands, so the value comes from the slot named by Imm
 		// rather than from a third register field.
-		e.line("mov rax, %s", e.regAddr(in.A))
-		e.line("mov rcx, %s", e.regAddr(in.B))
+		e.line("mov rax, %s", e.loc(in.A))
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
 		e.line("mov rdx, %s", e.slotAddr(in.Imm))
 		e.line("mov byte ptr [rax+rcx], dl")
 
 	case OpBoundsFail:
-		e.line("mov rcx, %s", e.regAddr(in.A))
-		e.line("mov rdx, %s", e.regAddr(in.B))
+		e.line("mov rcx, %s", e.loc(in.A))
+		e.line("mov rdx, %s", e.loc(in.B))
 		e.line("call __vy_bounds")
 
 	case OpMustFail:
-		e.line("mov rcx, %s", e.regAddr(in.A))
+		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("call __vy_must")
 
 	default:
@@ -797,11 +863,11 @@ func (e *Emitter) instr(in Instr) {
 
 // call places the arguments and jumps.
 //
-// Every argument is read out of its stack slot into the right register
-// or stack position. The register arguments are loaded last, so that
-// reading an argument's slot cannot clobber a register already set up -
-// with everything living in memory that could not happen anyway, but the
-// ordering has to survive a register allocator that changes it.
+// Every argument is read out of wherever it lives - slot or pooled
+// register - into the right position. The stack arguments go first,
+// then the register window, which is what keeps a source read from
+// being walked over by a target written before it; loadWindowArgs has
+// the one remaining ordering subtlety.
 func (e *Emitter) call(in Instr) {
 	// Beyond the fourth argument, everything - float or int - is just
 	// eight raw bytes written to its stack slot. There is exactly one
@@ -810,32 +876,117 @@ func (e *Emitter) call(in Instr) {
 	// honour; a plain integer-register move carries the bits unchanged
 	// either way.
 	for i := len(in.Args) - 1; i >= 4; i-- {
-		e.line("mov rax, %s", e.regAddr(in.Args[i]))
+		e.line("mov rax, %s", e.loc(in.Args[i]))
 		e.line("mov qword ptr [rsp+%d], rax", i*8)
 	}
-	// Within the register window, position decides which file: this
-	// argument's own type, not how many floats or ints came before it.
-	for i := 0; i < len(in.Args) && i < 4; i++ {
-		if in.ArgTypes[i].k == kFloat {
-			e.line("movsd %s, %s", xmmArgs[i], e.regAddr(in.Args[i]))
-			if in.Variadic {
-				// A callee walking a va_list cannot know the argument
-				// was a double, so the convention says put it in both
-				// files and let the callee read whichever it decides on.
-				// Omitting this is quiet in the worst way: printf("%d")
-				// still works and printf("%f") prints garbage.
-				e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
-			}
-		} else {
-			e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
-		}
-	}
+	e.loadWindowArgs(in)
 	if in.Extern {
 		e.line("call %s", in.Sym)
 	} else {
 		e.line("call __vy_%s", in.Sym)
 	}
 	e.callResult(in)
+}
+
+// loadWindowArgs fills rcx, rdx, r8 and r9 with the first four
+// arguments, each from wherever its virtual register lives.
+//
+// Position decides which file an argument uses: its own type, not how
+// many floats or ints came before it. A variadic float goes in both
+// files, because a callee walking a va_list cannot know what it was
+// handed; omitting that is quiet in the worst way, since printf("%d")
+// still works and printf("%f") prints garbage.
+//
+// The ordering matters once an argument already sits in r8 or r9 - the
+// two registers both the pool and the window claim. Writing one can
+// destroy a value another move still wants to read, and with chains
+// like rdx<-r8<-r9 there is no fixed order that works. The moves go
+// through a small scheduler instead: emit any move whose target no
+// remaining move reads, because clobbering an unread register is free.
+// Only an r8/r9 pair each holding what the other wants can deadlock,
+// and xchg settles that.
+func (e *Emitter) loadWindowArgs(in Instr) {
+	n := len(in.Args)
+	if n > 4 {
+		n = 4
+	}
+
+	risky := false
+	for i := 0; i < n; i++ {
+		switch src := e.loc(in.Args[i]); src {
+		case "r8", "r9":
+			risky = true
+		}
+	}
+	if !risky {
+		for i := 0; i < n; i++ {
+			src := e.loc(in.Args[i])
+			if in.ArgTypes[i].k == kFloat {
+				e.line("movsd %s, %s", xmmArgs[i], src)
+				if in.Variadic && src != argRegs[i] {
+					e.line("mov %s, %s", argRegs[i], src)
+				}
+			} else {
+				e.line("mov %s, %s", argRegs[i], src)
+			}
+		}
+		return
+	}
+
+	type move struct{ dst, src string }
+	var pending []move
+	for i := 0; i < n; i++ {
+		src := e.loc(in.Args[i])
+		dst := argRegs[i]
+		if in.ArgTypes[i].k == kFloat {
+			e.line("movsd %s, %s", xmmArgs[i], src)
+			if in.Variadic && src != dst {
+				e.line("mov %s, %s", dst, src)
+			}
+			continue
+		}
+		if src != dst {
+			pending = append(pending, move{dst, src})
+		}
+	}
+	for len(pending) > 0 {
+		ready := -1
+		for i, m := range pending {
+			read := false
+			for j, o := range pending {
+				if j != i && o.src == m.dst {
+					read = true
+					break
+				}
+			}
+			if !read {
+				ready = i
+				break
+			}
+		}
+		if ready < 0 {
+			// Every remaining move writes a register another one is
+			// still waiting to read. rcx and rdx are never sources, so
+			// the only cycle two window registers can form is a swap.
+			e.line("xchg r8, r9")
+			kept := pending[:0]
+			for _, m := range pending {
+				switch m.src {
+				case "r8":
+					m.src = "r9"
+				case "r9":
+					m.src = "r8"
+				}
+				if m.src != m.dst {
+					kept = append(kept, m)
+				}
+			}
+			pending = kept
+			continue
+		}
+		e.line("mov %s, %s", pending[ready].dst, pending[ready].src)
+		pending = append(pending[:ready], pending[ready+1:]...)
+	}
 }
 
 func (e *Emitter) callResult(in Instr) {
@@ -846,40 +997,69 @@ func (e *Emitter) callResult(in Instr) {
 		e.line("movsxd rax, eax")
 	}
 	if in.RetType.k == kFloat {
-		e.line("movsd %s, xmm0", e.regAddr(in.Dst))
+		e.putf(in.Dst, "xmm0")
 	} else {
-		e.line("mov %s, rax", e.regAddr(in.Dst))
+		e.put(in.Dst, "rax")
 	}
 }
 
 // callClosure calls through a function value.
 //
-// The environment travels in r10 and the code address in r11. Both are
-// volatile and neither is an argument register, which is what lets them
-// be loaded before the arguments without the argument loads walking over
-// them - and the arguments have to be loaded last, because they are what
-// the callee actually reads.
+// With allocation off this emits exactly what it always has, so that
+// switching the pass on is the only thing that can move a byte. With it
+// on, two orderings change for reasons the old one cannot survive:
 //
-// r10 is the whole reason a declared function can be a function value
-// with no wrapper: a lifted literal reads it in its prologue, and a
-// plain function ignores it.
+// The function's address is read into rax first, before anything can
+// walk over it: argument setup writes rcx, rdx, r8 and r9, and the
+// value being called may itself live in one of those when it was
+// pooled. The stack arguments then take their scratch from r10 rather
+// than rax, which would destroy the address they exist to serve;
+// argument setup never touches rax.
+//
+// The environment travels in r10 and the entry address in r11, loaded
+// after the register window because an argument may itself sit in
+// either - they are pool registers like any other, and by the time
+// they are overwritten every argument has been read out of them.
+//
+// r10 carrying the environment is the whole reason a declared function
+// can be a function value with no wrapper: a lifted literal reads it
+// in its prologue, and a plain function ignores it.
 func (e *Emitter) callClosure(in Instr) {
-	e.comment("closure: environment then code, before the arguments")
-	e.line("mov rax, %s", e.regAddr(in.A))
-	e.line("mov r10, qword ptr [rax+%d]", cloEnvOff)
-	e.line("mov r11, qword ptr [rax+%d]", cloCodeOff)
+	if e.homes == nil {
+		e.comment("closure: environment then code, before the arguments")
+		e.line("mov rax, %s", e.regAddr(in.A))
+		e.line("mov r10, qword ptr [rax+%d]", cloEnvOff)
+		e.line("mov r11, qword ptr [rax+%d]", cloCodeOff)
+
+		for i := len(in.Args) - 1; i >= 4; i-- {
+			e.line("mov rax, %s", e.regAddr(in.Args[i]))
+			e.line("mov qword ptr [rsp+%d], rax", i*8)
+		}
+		for i := 0; i < len(in.Args) && i < 4; i++ {
+			if in.ArgTypes[i].k == kFloat {
+				e.line("movsd %s, %s", xmmArgs[i], e.regAddr(in.Args[i]))
+			} else {
+				e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
+			}
+		}
+		e.line("call r11")
+		e.callResult(in)
+		return
+	}
+
+	e.comment("closure: code to rax first, then arguments, then env and entry")
+	e.line("mov rax, %s", e.loc(in.A))
 
 	for i := len(in.Args) - 1; i >= 4; i-- {
-		e.line("mov rax, %s", e.regAddr(in.Args[i]))
-		e.line("mov qword ptr [rsp+%d], rax", i*8)
+		// rax holds the function until the end, so the stack arguments
+		// scratch with r10 - read out before env lands there.
+		e.line("mov r10, %s", e.loc(in.Args[i]))
+		e.line("mov qword ptr [rsp+%d], r10", i*8)
 	}
-	for i := 0; i < len(in.Args) && i < 4; i++ {
-		if in.ArgTypes[i].k == kFloat {
-			e.line("movsd %s, %s", xmmArgs[i], e.regAddr(in.Args[i]))
-		} else {
-			e.line("mov %s, %s", argRegs[i], e.regAddr(in.Args[i]))
-		}
-	}
+	e.loadWindowArgs(in)
+
+	e.line("mov r10, qword ptr [rax+%d]", cloEnvOff)
+	e.line("mov r11, qword ptr [rax+%d]", cloCodeOff)
 	e.line("call r11")
 	e.callResult(in)
 }

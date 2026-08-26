@@ -95,7 +95,7 @@ func fold(m *Module, fn *Func) {
 				if c, ok := iconst[in.A]; ok {
 					changed = true
 					if c != 0 {
-						in = Instr{Op: OpJump, Imm: in.Imm}
+						in = Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: in.Imm}
 					} else {
 						continue // known true: never taken
 					}
@@ -104,7 +104,7 @@ func fold(m *Module, fn *Func) {
 				if c, ok := iconst[in.A]; ok {
 					changed = true
 					if c == 0 {
-						in = Instr{Op: OpJump, Imm: in.Imm}
+						in = Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: in.Imm}
 					} else {
 						continue // known false: never taken
 					}
@@ -132,7 +132,11 @@ func foldInstr(m *Module, in Instr, ic map[Reg]int64, fc map[Reg]float64) (Instr
 	b, bok := ic[in.B]
 
 	toInt := func(v int64) (Instr, bool) {
-		return Instr{Op: OpConst, Dst: in.Dst, Imm: v}, true
+		// Unused operands say NoReg, as every hand-written emit site
+		// does: register zero is a real value, and passes that scan
+		// operands must be able to tell an empty slot from it.
+		return Instr{Op: OpConst, Dst: in.Dst, A: NoReg, B: NoReg,
+			Imm: v}, true
 	}
 
 	switch in.Op {
@@ -235,14 +239,14 @@ func foldInstr(m *Module, in Instr, ic map[Reg]int64, fc map[Reg]float64) (Instr
 		}
 	case OpIntToFloat:
 		if aok {
-			return Instr{Op: OpFConst, Dst: in.Dst,
+			return Instr{Op: OpFConst, Dst: in.Dst, A: NoReg, B: NoReg,
 				Imm: m.internFloat(float64(a))}, true
 		}
 	case OpFAdd:
 		if fa, faok := fc[in.A]; faok {
 			if fb, fbok := fc[in.B]; fbok {
 				if r := fa + fb; !isNaNInf(r) && r != 0 {
-					return Instr{Op: OpFConst, Dst: in.Dst,
+					return Instr{Op: OpFConst, Dst: in.Dst, A: NoReg, B: NoReg,
 						Imm: m.internFloat(r)}, true
 				}
 			}
@@ -251,7 +255,7 @@ func foldInstr(m *Module, in Instr, ic map[Reg]int64, fc map[Reg]float64) (Instr
 		if fa, faok := fc[in.A]; faok {
 			if fb, fbok := fc[in.B]; fbok {
 				if r := fa - fb; !isNaNInf(r) && r != 0 {
-					return Instr{Op: OpFConst, Dst: in.Dst,
+					return Instr{Op: OpFConst, Dst: in.Dst, A: NoReg, B: NoReg,
 						Imm: m.internFloat(r)}, true
 				}
 			}
@@ -260,7 +264,7 @@ func foldInstr(m *Module, in Instr, ic map[Reg]int64, fc map[Reg]float64) (Instr
 		if fa, faok := fc[in.A]; faok {
 			if fb, fbok := fc[in.B]; fbok {
 				if r := fa * fb; !isNaNInf(r) && r != 0 {
-					return Instr{Op: OpFConst, Dst: in.Dst,
+					return Instr{Op: OpFConst, Dst: in.Dst, A: NoReg, B: NoReg,
 						Imm: m.internFloat(r)}, true
 				}
 			}
