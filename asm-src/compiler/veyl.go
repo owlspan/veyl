@@ -292,7 +292,7 @@ func report(errs []string) {
 // localises a bug to the half that changed.
 func buildExe(mod *Module, out string) {
 	asmText := Emit(mod)
-	if !envOff("VEYL_NOPEEP") {
+	if !envOff("VEYL_NOPEEP") && !envOff("VEYL_NOOPT") {
 		asmText = peephole(asmText)
 	}
 

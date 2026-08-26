@@ -132,7 +132,7 @@ func writePE(obj *object, out string) error {
 	// Where the read-only data begins inside the merged text, or -1
 	// when the two stay separate sections.
 	rdataAt := -1
-	if !envOff("VEYL_NOMERGE") && len(obj.rdata) > 0 {
+	if !envOff("VEYL_NOMERGE") && !envOff("VEYL_NOOPT") && len(obj.rdata) > 0 {
 		for len(text)%8 != 0 {
 			text = append(text, 0)
 		}
