@@ -223,7 +223,7 @@ asm-src/
   examples/         every one is part of the test suite
   tests/            programs the Go backend cannot run, with their output
   installer/        the Inno Setup script and its build script
-  scripts/          make-installer.bat, saferun.ps1, metrics.ps1
+  scripts/          make-installer.bat and .sh, saferun.ps1, metrics.ps1
 docs/               SYNTAX.md and TUTORIAL.md
 editors/            VS Code, Sublime, Vim and Notepad++ highlighting
 ```
@@ -318,6 +318,8 @@ Double-click it. It builds `asm-src\dist\veyl-<version>-setup.exe`,
 which is about 5 MB because there is no toolchain to bundle. The Go
 backend's installer is roughly 90, most of it a trimmed copy of Go. It
 needs Go and Inno Setup (`winget install JRSoftware.InnoSetup`).
+`scripts/make-installer.sh` does the same on Linux through wine, with
+Inno Setup installed into the wine prefix.
 
 Every release on GitHub carries the same installer, built by
 `.github/workflows/release.yml` on a Windows runner when a `v*` tag is
