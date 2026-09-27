@@ -272,6 +272,15 @@ type StructField struct {
 	Name string
 	Type string // as written
 	T    *Type  // resolved by the checker
+
+	// The rest is for an extern struct only. Type is then a C type
+	// (i32, f32, ptr, another extern struct) and Len is the element
+	// count of an array field, 0 for a single value. At is the offset
+	// the source gave with `at`, or -1; Offset is where the checker put
+	// the field, in bytes from the start.
+	Len    int
+	At     int
+	Offset int
 }
 
 // StructDecl is `struct User { ... }`.
@@ -282,6 +291,14 @@ type StructDecl struct {
 	Pub    bool
 	File   string
 	Pkg    string // see FnDecl.Pkg
+
+	// Extern marks `extern struct`: a C layout laid over memory the
+	// program does not own, rather than a Veyl value. A value of one is
+	// the address of its first byte. Size and Align are filled in by
+	// the checker.
+	Extern bool
+	Size   int
+	Align  int
 }
 
 // ImplBlock is `impl User { fn ... }`. Its methods are hoisted into the

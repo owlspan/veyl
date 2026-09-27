@@ -97,6 +97,9 @@ pipeline:
   immediate-mode widgets
 - `extern fn`: declare a function that lives in a DLL and call it -
   the Windows API, the C runtime, or any library a package ships
+- raw memory: `mem.alloc` and `mem.free`, reads and writes at every
+  width from `u8` to `f64`, and `extern struct`, a C layout laid over
+  an address, with natural alignment or offsets given by hand
 
 - `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
   `padRight`, and the constants `INF` and `NAN`, with comparisons that
@@ -107,8 +110,8 @@ this side, so a name that is neither a local, a function nor a builtin
 is caught by the lowerer rather than the checker. Everything absent is
 a compile error naming it, never wrong output.
 
-Two things here that the Go backend does not have: `extern fn`, and
-the `\xHH` and `\u{...}` string escapes. The differential suite
+What the Go backend does not have: `extern fn`, raw memory and
+`extern struct`, and the `\xHH` and `\u{...}` string escapes. The differential suite
 compares programs both backends can run; the extern demos sit in
 `examples/ffi/`, and programs that need the escapes or feed standard
 input sit in `tests/` with the output they must print beside them.
@@ -214,6 +217,8 @@ asm-src/
     x64.go          IR  -> x86-64, GNU as syntax with Intel operands
     peephole.go     the assembly peephole
     textlib.go      the primitives under input and the text builtins
+    memlib.go       raw memory: alloc, free, reads and writes by width
+    views.go        extern structs, C layouts at an address
     encode*.go      x86-64 text -> machine code
     link.go, pe.go  the linker and the PE writer
     gc*.go          the collector
@@ -497,4 +502,8 @@ all of it off.
   hold a live pointer only in a register.
 - **A growable string buffer**, so building a string by appending stops
   being quadratic.
+- **Callbacks**: a Veyl function handed to native code as a C function
+  pointer, for window procedures, hooks and most engine libraries.
+- **`veyl build --dll`**, with exported functions, for plugins and
+  game mods.
 - **`zip`**, the last library the Go backend has and this one does not.

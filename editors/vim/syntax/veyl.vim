@@ -8,7 +8,7 @@ endif
 syn keyword veylKeyword break const continue defer else false fn for if impl import in
 syn keyword veylKeyword let match nil own pub return self step struct true unsafe while
 
-syn keyword veylType int float str bool bytes void
+syn keyword veylType int float str bool bytes void i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 ptr
 
 syn keyword veylNamespace args bits bytes csv hash http json log mem net os rand
 syn keyword veylNamespace re stats task term time url win zip

@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -60,6 +61,14 @@ func (p *Parser) advance() Token {
 }
 
 func (p *Parser) check(k Kind) bool { return p.cur().Kind == k }
+
+// peekKind is the kind of the token n places ahead, EOF past the end.
+func (p *Parser) peekKind(n int) Kind {
+	if p.i+n >= len(p.toks) {
+		return EOF
+	}
+	return p.toks[p.i+n].Kind
+}
 
 func (p *Parser) match(k Kind) bool {
 	if p.check(k) {
@@ -169,6 +178,13 @@ func (p *Parser) ParseProgram() *Program {
 				f.File = p.file
 				prog.Funcs = append(prog.Funcs, f)
 			}
+		case p.check(EXTERN) && p.peekKind(1) == STRUCT:
+			p.advance() // 'extern'
+			if d := p.parseExternStruct(); d != nil {
+				d.Pub = pub
+				d.File = p.file
+				prog.Structs = append(prog.Structs, d)
+			}
 		case p.check(EXTERN):
 			if f := p.parseExtern(); f != nil {
 				f.Pub = pub
@@ -252,6 +268,67 @@ func (p *Parser) parseStruct() *StructDecl {
 		p.match(COMMA)
 		p.skipNewlines()
 		if p.i == before { // guarantee forward progress
+			p.advance()
+		}
+	}
+	p.expectClose(RBRACE, open, "'}'", "struct")
+	p.endStmt()
+	return d
+}
+
+// parseExternStruct reads a C layout, having consumed `extern`:
+//
+//	extern struct Player {
+//	    health: f32 at 0x100
+//	    pos: Vec3
+//	    name: [16]u8
+//	}
+//
+// Each field is a C type, another extern struct, or an array of either
+// written [N]T. `at` pins a field to an offset; fields after it carry on
+// from there.
+func (p *Parser) parseExternStruct() *StructDecl {
+	kw := p.advance() // 'struct'
+	name := p.expect(IDENT, "a struct name")
+	d := &StructDecl{Span: at(kw), Name: name.Lex, Extern: true}
+
+	open := p.expect(LBRACE, "'{'")
+	p.skipNewlines()
+
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+
+		fn := p.expect(IDENT, "a field name")
+		f := StructField{Span: at(fn), Name: fn.Lex, At: -1}
+		if p.match(COLON) {
+			if p.match(LBRACKET) {
+				n := p.expect(NUMBER, "an array length, as in [16]u8")
+				if v, err := strconv.ParseInt(strings.ReplaceAll(n.Lex, "_", ""), 0, 64); err == nil && v > 0 {
+					f.Len = int(v)
+				} else if n.Kind == NUMBER {
+					p.errorAt(n, "an array length has to be a positive whole number")
+				}
+				p.expect(RBRACKET, "']'")
+			}
+			t := p.expect(IDENT, "a C type such as i32, f32 or ptr")
+			f.Type = t.Lex
+		} else {
+			p.errorAt(fn, "field %q needs a type, like %s: i32", fn.Lex, fn.Lex)
+		}
+		if p.check(IDENT) && p.cur().Lex == "at" {
+			p.advance()
+			n := p.expect(NUMBER, "an offset, as in at 0x10")
+			if v, err := strconv.ParseInt(strings.ReplaceAll(n.Lex, "_", ""), 0, 64); err == nil && v >= 0 {
+				f.At = int(v)
+			} else if n.Kind == NUMBER {
+				p.errorAt(n, "an offset has to be a whole number of bytes")
+			}
+		}
+		d.Fields = append(d.Fields, f)
+
+		p.match(COMMA)
+		p.skipNewlines()
+		if p.i == before {
 			p.advance()
 		}
 	}

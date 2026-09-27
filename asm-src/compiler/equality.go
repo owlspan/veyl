@@ -36,6 +36,10 @@ func (l *lowerer) deepEqual(n Node, a, b Reg, t vty) (Reg, bool) {
 	case kMap:
 		return l.mapEqual(n, a, b, t)
 	case kStruct:
+		if l.isView(t) {
+			// Two views are equal when they look at the same address.
+			return l.compare(OpEq, a, b), true
+		}
 		return l.structEqual(n, a, b, t)
 	}
 	l.errorAt(n, "%s cannot be compared on the assembly backend yet", t)

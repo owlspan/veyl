@@ -58,6 +58,11 @@ type structField struct {
 	name string
 	t    vty
 	off  int64 // bytes from the payload pointer
+
+	// An extern struct field: its width, and whether it is an array,
+	// which reads as its own address. See views.go.
+	kind  int64
+	array bool
 }
 
 // A structLayout is one declared struct. fields stays in declaration
@@ -68,6 +73,10 @@ type structLayout struct {
 	fields []structField
 	bytes  int64
 	nptr   int64
+
+	// view marks an extern struct: a C layout at an address, never
+	// copied, never allocated as a Veyl object. See views.go.
+	view bool
 }
 
 func (s *structLayout) field(name string) (structField, bool) {
@@ -94,6 +103,10 @@ func (l *lowerer) collectStructs(p *Program) {
 	l.structs = map[string]*structLayout{}
 
 	for _, sd := range p.Structs {
+		if sd.Extern {
+			l.structs[sd.Name] = viewLayout(sd)
+			continue
+		}
 		lay := &structLayout{name: sd.Name}
 		ok := true
 
@@ -197,6 +210,12 @@ func (l *lowerer) zeroOf(n Node, t vty, depth int) Reg {
 	case kMap:
 		return l.newMap(t, initialCap)
 	case kStruct:
+		if l.isView(t) {
+			// A view nobody pointed anywhere: the null address.
+			d := l.constant(0)
+			l.regTy[d] = t
+			return d
+		}
 		if depth > 16 {
 			l.errorAt(n, "struct %s contains itself", t.name)
 			return l.junk()
@@ -226,6 +245,9 @@ func (l *lowerer) structLit(x *StructLit) Reg {
 	if !ok {
 		l.errorAt(x, "struct %s is not available here", x.Name)
 		return l.junk()
+	}
+	if lay.view {
+		return l.viewLit(x, lay)
 	}
 
 	obj := l.allocStruct(lay)
@@ -262,6 +284,11 @@ func (l *lowerer) structLit(x *StructLit) Reg {
 // written, but those only ever appear as the callee of a call and are
 // flattened there, so anything reaching here is a real field access.
 func (l *lowerer) fieldRead(x *Field) Reg {
+	if lay := l.viewNamed(x.X); lay != nil {
+		// Player.size, the only thing an extern struct's name has.
+		d := l.constant(lay.bytes)
+		return d
+	}
 	obj := l.expr(x.X)
 	t := l.regTy[obj]
 	if t.k != kStruct || t.res {
@@ -276,6 +303,9 @@ func (l *lowerer) fieldRead(x *Field) Reg {
 	if !has {
 		l.errorAt(x, "struct %s has no field %q", lay.name, x.Name)
 		return l.junk()
+	}
+	if lay.view {
+		return l.viewRead(obj, f)
 	}
 
 	d := l.newReg()
@@ -300,6 +330,10 @@ func (l *lowerer) fieldAssign(st *AssignStmt, target *Field) {
 	f, has := lay.field(target.Name)
 	if !has {
 		l.errorAt(st, "struct %s has no field %q", lay.name, target.Name)
+		return
+	}
+	if lay.view {
+		l.viewAssign(st, obj, f)
 		return
 	}
 
@@ -332,7 +366,9 @@ func (l *lowerer) fieldAssign(st *AssignStmt, target *Field) {
 // does: a struct cannot contain itself by value.
 func (l *lowerer) copyStruct(n Node, v Reg, t vty) Reg {
 	lay, ok := l.layoutOf(n, t)
-	if !ok {
+	if !ok || lay.view {
+		// A view is an address, and copying it is the point: two
+		// names for the same native memory.
 		return v
 	}
 	dup := l.allocStruct(lay)
@@ -380,6 +416,10 @@ func isPlace(e Expr) bool {
 func (l *lowerer) writeStruct(n Node, v Reg, t vty) {
 	lay, ok := l.layoutOf(n, t)
 	if !ok {
+		return
+	}
+	if lay.view {
+		l.writeView(n, v, lay)
 		return
 	}
 	l.writeLit(lay.name + "{")

@@ -74,6 +74,9 @@ var reg64 = []string{"rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
 var reg32 = []string{"eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
 	"r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d"}
 
+var reg16 = []string{"ax", "cx", "dx", "bx", "sp", "bp", "si", "di",
+	"r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w"}
+
 var reg8 = []string{"al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil",
 	"r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b"}
 
@@ -127,7 +130,7 @@ func parseOperand(s string) (operand, error) {
 	for _, p := range []struct {
 		text string
 		bits int
-	}{{"qword ptr ", 64}, {"dword ptr ", 32}, {"byte ptr ", 8}} {
+	}{{"qword ptr ", 64}, {"dword ptr ", 32}, {"word ptr ", 16}, {"byte ptr ", 8}} {
 		if strings.HasPrefix(s, p.text) {
 			size = p.bits
 			s = strings.TrimPrefix(s, p.text)
@@ -170,6 +173,9 @@ func parseOperand(s string) (operand, error) {
 	}
 	if n, ok := regNum(s, reg32); ok {
 		return operand{kind: opReg, reg: n, size: 32}, nil
+	}
+	if n, ok := regNum(s, reg16); ok {
+		return operand{kind: opReg, reg: n, size: 16}, nil
 	}
 	if n, ok := regNum(s, reg8); ok {
 		return operand{kind: opReg, reg: n, size: 8}, nil

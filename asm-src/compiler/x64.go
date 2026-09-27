@@ -850,6 +850,62 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov rdx, rax")
 		e.line("call printf")
 
+	case OpPeek:
+		e.line("mov rax, %s", e.loc(in.A))
+		switch in.Imm {
+		case memU8:
+			e.line("movzx eax, byte ptr [rax]")
+		case memI8:
+			e.line("movsx rax, byte ptr [rax]")
+		case memU16:
+			e.line("movzx eax, word ptr [rax]")
+		case memI16:
+			e.line("movsx rax, word ptr [rax]")
+		case memU32:
+			// A 32-bit move clears the upper half by itself.
+			e.line("mov eax, dword ptr [rax]")
+		case memI32:
+			e.line("movsxd rax, dword ptr [rax]")
+		case memF32:
+			e.line("cvtss2sd xmm0, dword ptr [rax]")
+			e.putf(in.Dst, "xmm0")
+			return
+		case memF64:
+			e.line("movsd xmm0, qword ptr [rax]")
+			e.putf(in.Dst, "xmm0")
+			return
+		default:
+			e.line("mov rax, qword ptr [rax]")
+		}
+		e.put(in.Dst, "rax")
+
+	case OpPoke:
+		e.line("mov rax, %s", e.loc(in.A))
+		switch in.Imm {
+		case memF32:
+			e.line("movsd xmm0, %s", e.loc(in.B))
+			e.line("cvtsd2ss xmm0, xmm0")
+			e.line("movss dword ptr [rax], xmm0")
+			return
+		case memF64:
+			e.line("movsd xmm0, %s", e.loc(in.B))
+			e.line("movsd qword ptr [rax], xmm0")
+			return
+		}
+		if b := e.loc(in.B); b != "rcx" {
+			e.line("mov rcx, %s", b)
+		}
+		switch in.Imm {
+		case memU8, memI8:
+			e.line("mov byte ptr [rax], cl")
+		case memU16, memI16:
+			e.line("mov word ptr [rax], cx")
+		case memU32, memI32:
+			e.line("mov dword ptr [rax], ecx")
+		default:
+			e.line("mov qword ptr [rax], rcx")
+		}
+
 	case OpLoadByte:
 		// movzx, not mov: reading a byte into a 64-bit register has to
 		// clear the upper bits explicitly, or the value carries whatever

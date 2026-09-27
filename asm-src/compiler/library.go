@@ -355,6 +355,32 @@ var sigs = map[string]front.Signature{
 
 	// The memory library. There is a real collector behind collect();
 	// the counters come from the object list it walks.
+	// Raw memory; see memlib.go. An address is an int.
+	"mem.alloc":    {Params: []*Type{Int}, Ret: Int},
+	"mem.resize":   {Params: []*Type{Int, Int}, Ret: Int},
+	"mem.free":     {Params: []*Type{Int}, Ret: Void},
+	"mem.readU8":   {Params: []*Type{Int}, Ret: Int},
+	"mem.readI8":   {Params: []*Type{Int}, Ret: Int},
+	"mem.readU16":  {Params: []*Type{Int}, Ret: Int},
+	"mem.readI16":  {Params: []*Type{Int}, Ret: Int},
+	"mem.readU32":  {Params: []*Type{Int}, Ret: Int},
+	"mem.readI32":  {Params: []*Type{Int}, Ret: Int},
+	"mem.readI64":  {Params: []*Type{Int}, Ret: Int},
+	"mem.readF32":  {Params: []*Type{Int}, Ret: Float},
+	"mem.readF64":  {Params: []*Type{Int}, Ret: Float},
+	"mem.write8":   {Params: []*Type{Int, Int}, Ret: Void},
+	"mem.write16":  {Params: []*Type{Int, Int}, Ret: Void},
+	"mem.write32":  {Params: []*Type{Int, Int}, Ret: Void},
+	"mem.write64":  {Params: []*Type{Int, Int}, Ret: Void},
+	"mem.writeF32": {Params: []*Type{Int, Numeric}, Ret: Void},
+	"mem.writeF64": {Params: []*Type{Int, Numeric}, Ret: Void},
+	"mem.copy":     {Params: []*Type{Int, Int, Int}, Ret: Void},
+	"mem.fill":     {Params: []*Type{Int, Int, Int}, Ret: Void},
+	"mem.str":      {Params: []*Type{Int}, Ret: Str},
+	"mem.strN":     {Params: []*Type{Int, Int}, Ret: Str},
+	"mem.bytes":    {Params: []*Type{Int, Int}, Ret: Bytes},
+	"mem.addr":     {Params: []*Type{Any}, Ret: Int},
+
 	"mem.used":         {Ret: Int},
 	"mem.total":        {Ret: Int},
 	"mem.system":       {Ret: Int},

@@ -274,6 +274,10 @@ func (c *Checker) Check(p *Program) {
 		c.structs[d.Name] = d
 	}
 	for _, d := range p.Structs {
+		if d.Extern {
+			c.layout(d, map[string]bool{})
+			continue
+		}
 		for i := range d.Fields {
 			f := &d.Fields[i]
 			f.T = c.resolveAnnotation(f.Type, f)
@@ -397,12 +401,12 @@ func (c *Checker) checkExternDecl(f *FnDecl) {
 			c.ErrorAt(prm, "extern %s cannot take self", f.Name)
 			continue
 		}
-		if !externScalar(prm.T) {
+		if !externScalar(prm.T) && !c.isExternStruct(prm.T) && prm.T.Kind != KBytes {
 			c.ErrorAt(prm, "extern parameter %q must be int, float, str, bool or ptr - %s cannot cross into native code",
 				prm.Name, prm.T)
 		}
 	}
-	if f.RetT != nil && f.RetT != Void && !externScalar(f.RetT) {
+	if f.RetT != nil && f.RetT != Void && !externScalar(f.RetT) && !c.isExternStruct(f.RetT) {
 		c.ErrorAt(f, "extern return type must be int, float, str, bool or ptr - %s cannot come back from native code",
 			f.RetT)
 	}
@@ -455,6 +459,13 @@ func (c *Checker) stmt(s Stmt) {
 		c.define(st.Name, st.T)
 
 	case *AssignStmt:
+		if _, ok := c.arrayField(st.Target); ok {
+			c.expr(st.Target)
+			c.expr(st.Value)
+			c.ErrorAt(st, "%s is an array, so reading it gives its address and it cannot be "+
+				"assigned - write through the address with mem.write", describeTarget(st.Target))
+			return
+		}
 		want := c.expr(st.Target)
 		valT := c.exprWant(st.Value, want)
 		if want.IsUnknown() {
@@ -871,6 +882,14 @@ func (c *Checker) expr(e Expr) *Type {
 // field types `user.name`. A dotted library path never reaches here -
 // the resolver reports those, because they are only valid as a call.
 func (c *Checker) field(x *Field) *Type {
+	if d := c.externStructNamed(x.X); d != nil {
+		if x.Name == "size" {
+			return Int
+		}
+		c.ErrorAt(x, "%s is an extern struct; %s.size is its size in bytes, and a view of one "+
+			"is made with %s(address)", d.Name, d.Name, d.Name)
+		return Unknown
+	}
 	recv := c.expr(x.X)
 	if recv.IsUnknown() {
 		return Unknown
@@ -915,6 +934,14 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		}
 		if seen[name] {
 			c.ErrorAt(x.Vals[i], "field %q is given twice", name)
+		}
+		if d.Extern {
+			if f := externField(d, name); f != nil && f.Len > 0 {
+				c.expr(x.Vals[i])
+				c.ErrorAt(x.Vals[i], "%s.%s is an array and cannot be given in a literal", x.Name, name)
+				seen[name] = true
+				continue
+			}
 		}
 		seen[name] = true
 
@@ -1464,6 +1491,17 @@ func (c *Checker) call(x *Call) *Type {
 		return x.T
 	}
 
+	// Player(addr) is a view of an extern struct at an address.
+	if d, ok := c.structs[name]; ok && d.Extern {
+		if len(args) != 1 {
+			c.ErrorAt(x, "%s(address) takes one address, got %d arguments", name, len(args))
+		} else if !args[0].IsUnknown() && args[0].Kind != KInt {
+			c.ErrorAt(x.Args[0], "%s(address) needs an int address, got %s", name, args[0])
+		}
+		x.T = StructOf(name)
+		return x.T
+	}
+
 	if b, isBuiltin := c.lib.Signature(name); isBuiltin {
 		if b.Check != nil {
 			// The same rule Accepts applies on the fixed-signature path:
@@ -1695,4 +1733,148 @@ func IsUntypedInt(e Expr) bool {
 		}
 	}
 	return false
+}
+
+// ---- extern structs ----
+
+// cTypes are the field types an extern struct may use: size, and what a
+// read gives back in Veyl. bool is one byte; the Windows BOOL is an i32.
+var cTypes = map[string]struct {
+	size int
+	t    *Type
+}{
+	"i8": {1, Int}, "u8": {1, Int}, "i16": {2, Int}, "u16": {2, Int},
+	"i32": {4, Int}, "u32": {4, Int}, "i64": {8, Int}, "u64": {8, Int},
+	"f32": {4, Float}, "f64": {8, Float}, "ptr": {8, Int}, "bool": {1, Bool},
+}
+
+// CTypeSize is the size of a C field type, or 0 if it is not one.
+func CTypeSize(name string) int { return cTypes[name].size }
+
+// layout places the fields of an extern struct the way a C compiler
+// would: each at the next multiple of its own alignment, the whole
+// padded to a multiple of the largest. A field with `at` goes exactly
+// where it says, which is how a structure read out of another program
+// is described when only some offsets are known, and the fields after
+// it carry on from its end.
+func (c *Checker) layout(d *StructDecl, visiting map[string]bool) {
+	if d.Size > 0 || d.Align > 0 {
+		return
+	}
+	if visiting[d.Name] {
+		c.ErrorAt(d, "%s contains itself - use a ptr field for a link to another one", d.Name)
+		d.Align = 1
+		return
+	}
+	visiting[d.Name] = true
+	defer delete(visiting, d.Name)
+
+	at, align := 0, 1
+	for i := range d.Fields {
+		f := &d.Fields[i]
+		size, fAlign := 0, 1
+		if ct, ok := cTypes[f.Type]; ok {
+			size, fAlign = ct.size, ct.size
+			f.T = ct.t
+		} else if inner, ok := c.structs[f.Type]; ok && inner.Extern {
+			c.layout(inner, visiting)
+			size, fAlign = inner.Size, inner.Align
+			f.T = StructOf(inner.Name)
+		} else {
+			if ok {
+				c.ErrorAt(f, "%s is a Veyl struct and has no C layout - make it an extern struct", f.Type)
+			} else if f.Type != "" {
+				c.ErrorAt(f, "unknown field type %q - an extern struct field is i8, u8, i16, u16, "+
+					"i32, u32, i64, u64, f32, f64, ptr, bool or another extern struct", f.Type)
+			}
+			f.T = Unknown
+			size, fAlign = 1, 1
+		}
+		if fAlign < 1 {
+			fAlign = 1
+		}
+		if f.Len > 0 {
+			// An array reads as the address of its first element.
+			size *= f.Len
+			f.T = Int
+		}
+		if f.At >= 0 {
+			at = f.At
+		} else if at%fAlign != 0 {
+			at += fAlign - at%fAlign
+		}
+		f.Offset = at
+		at += size
+		if fAlign > align {
+			align = fAlign
+		}
+	}
+	if at%align != 0 {
+		at += align - at%align
+	}
+	d.Size, d.Align = at, align
+}
+
+func externField(d *StructDecl, name string) *StructField {
+	for i := range d.Fields {
+		if d.Fields[i].Name == name {
+			return &d.Fields[i]
+		}
+	}
+	return nil
+}
+
+// externStructNamed is the extern struct an expression names as a type,
+// as in Player.size, or nil. A variable of the same name wins.
+func (c *Checker) externStructNamed(e Expr) *StructDecl {
+	id, ok := e.(*Ident)
+	if !ok || c.lookup(id.Name) != nil {
+		return nil
+	}
+	if d, ok := c.structs[id.Name]; ok && d.Extern {
+		return d
+	}
+	return nil
+}
+
+func (c *Checker) isExternStruct(t *Type) bool {
+	if t == nil || t.Kind != KStruct {
+		return false
+	}
+	d, ok := c.structs[t.Name]
+	return ok && d.Extern
+}
+
+// arrayField reports whether an assignment target is an array field of
+// an extern struct, which reads as an address and cannot be assigned.
+func (c *Checker) arrayField(e Expr) (*StructField, bool) {
+	fld, ok := e.(*Field)
+	if !ok {
+		return nil, false
+	}
+	t := c.peekType(fld.X)
+	if !c.isExternStruct(t) {
+		return nil, false
+	}
+	f := externField(c.structs[t.Name], fld.Name)
+	return f, f != nil && f.Len > 0
+}
+
+// peekType is the type of a variable or a field chain without checking
+// it, for the handful of questions asked before an expression is
+// checked. Anything else answers nil.
+func (c *Checker) peekType(e Expr) *Type {
+	switch x := e.(type) {
+	case *Ident:
+		return c.lookup(x.Name)
+	case *Field:
+		t := c.peekType(x.X)
+		if t == nil || t.Kind != KStruct {
+			return nil
+		}
+		if ft, ok := c.fieldType(t.Name, x.Name); ok {
+			return ft
+		}
+	}
+	return nil
 }

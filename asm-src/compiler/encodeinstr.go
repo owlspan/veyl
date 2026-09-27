@@ -121,6 +121,11 @@ func (b *block) modrm(regField int, rm operand) {
 // prefix writes the operand-size and REX prefixes for an instruction
 // whose register field is reg and whose rm operand is rm.
 func (b *block) prefix(size int, reg int, rm operand, mandatory ...byte) {
+	// The operand-size override comes before any mandatory prefix and
+	// before REX, which has to be the last byte ahead of the opcode.
+	if size == 16 {
+		b.put(0x66)
+	}
 	b.put(mandatory...)
 	x, bse := 0, 0
 	switch rm.kind {
@@ -423,6 +428,10 @@ func (b *block) encode(m string, ops []operand) error {
 		return b.encodeMovzx(ops)
 	case "movsxd":
 		return b.encodeMovsxd(ops)
+	case "movsx":
+		return b.encodeMovsx(ops)
+	case "cvtss2sd", "cvtsd2ss", "movss":
+		return b.encodeSingle(m, ops)
 	case "cmovne":
 		return b.encodeCmov(0x45, ops)
 	case "movsd":
@@ -669,8 +678,64 @@ func (b *block) encodeMovzx(ops []operand) error {
 		return fmt.Errorf("movzx wants a register destination")
 	}
 	b.prefix(ops[0].size, ops[0].reg, ops[1])
-	b.put(0x0F, 0xB6)
+	if ops[1].size == 16 {
+		b.put(0x0F, 0xB7)
+	} else {
+		b.put(0x0F, 0xB6)
+	}
 	b.modrm(ops[0].reg, ops[1])
+	return nil
+}
+
+// movsx sign-extends a byte or a word; movsxd is the dword form.
+func (b *block) encodeMovsx(ops []operand) error {
+	if len(ops) != 2 || ops[0].kind != opReg {
+		return fmt.Errorf("movsx wants a register destination")
+	}
+	b.prefix(ops[0].size, ops[0].reg, ops[1])
+	if ops[1].size == 16 {
+		b.put(0x0F, 0xBF)
+	} else {
+		b.put(0x0F, 0xBE)
+	}
+	b.modrm(ops[0].reg, ops[1])
+	return nil
+}
+
+// The single-precision instructions, which are only ever used to cross
+// between a float in memory and the double every Veyl float is:
+// cvtss2sd widens, cvtsd2ss narrows, movss loads or stores four bytes.
+func (b *block) encodeSingle(m string, ops []operand) error {
+	if len(ops) != 2 {
+		return fmt.Errorf("%s wants two operands", m)
+	}
+	dst, src := ops[0], ops[1]
+	switch m {
+	case "cvtss2sd", "cvtsd2ss":
+		if dst.kind != opXmm {
+			return fmt.Errorf("%s wants an xmm destination", m)
+		}
+		pfx := byte(0xF3)
+		if m == "cvtsd2ss" {
+			pfx = 0xF2
+		}
+		b.prefix(32, dst.reg, src, pfx)
+		b.put(0x0F, 0x5A)
+		b.modrm(dst.reg, src)
+		return nil
+	}
+	if dst.kind == opXmm {
+		b.prefix(32, dst.reg, src, 0xF3)
+		b.put(0x0F, 0x10)
+		b.modrm(dst.reg, src)
+		return nil
+	}
+	if src.kind != opXmm {
+		return fmt.Errorf("movss needs an xmm register")
+	}
+	b.prefix(32, src.reg, dst, 0xF3)
+	b.put(0x0F, 0x11)
+	b.modrm(src.reg, dst)
 	return nil
 }
 
