@@ -1512,6 +1512,10 @@ func (l *lowerer) assign(st *AssignStmt) {
 	}
 	slot, known := l.lookup(id.Name)
 	if !known {
+		if g, isGlobal := l.globals[id.Name]; isGlobal {
+			l.assignGlobal(st, g)
+			return
+		}
 		l.errorAt(st, "undefined variable %q", id.Name)
 		return
 	}
@@ -3250,7 +3254,30 @@ func (l *lowerer) globalInit(g *LetStmt) {
 	}
 
 	l.emit(Instr{Op: OpStoreMem, A: l.globalAddr(slot), B: fitted, Imm: 0,
-		Comment: "const " + g.Name})
+		Comment: "global " + g.Name})
+}
+
+// assignGlobal lowers an assignment to a top-level var. The checker has
+// already refused one to a const.
+func (l *lowerer) assignGlobal(st *AssignStmt, slot int64) {
+	target := l.globalTy[slot]
+	v := l.rvalueAs(st.Value, target)
+	if st.Op == ASSIGN && target.k == kFloat && l.regTy[v].k == kInt {
+		v = l.toFloat(v)
+	}
+	if st.Op != ASSIGN {
+		var applied bool
+		v, applied = l.compound(st, st.Op, target, l.readGlobal(slot), v)
+		if !applied {
+			return
+		}
+	}
+	fitted, good := l.coerce(v, target)
+	if !good {
+		l.errorAt(st, "cannot assign %s to a global of type %s", l.regTy[v], target)
+		return
+	}
+	l.emit(Instr{Op: OpStoreMem, A: l.globalAddr(slot), B: fitted, Imm: 0, Comment: "global ="})
 }
 
 // readGlobal loads a global's value.
