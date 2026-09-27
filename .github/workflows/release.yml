@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: veyl
+
+      - uses: actions/checkout@v4
+        with:
+          ref: veylgo
+          path: veylgo
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Build the reference backend
+        working-directory: veylgo/src
+        env:
+          GOTOOLCHAIN: auto
+        run: go build -o veyl.exe ./compiler
+
+      - name: Test
+        working-directory: veyl/asm-src
+        env:
+          VEYL_REFERENCE: ${{ github.workspace }}\veylgo\src\veyl.exe
+        run: |
+          go test ../frontend/...
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Check the tag matches the compiler
+        working-directory: veyl/asm-src
+        run: |
+          $want = "${{ github.ref_name }}".TrimStart('v')
+          $have = ([regex]'const Version = "([^"]+)"').Match((Get-Content compiler\veyl.go -Raw)).Groups[1].Value
+          if ($want -ne $have) { throw "tag says $want, compiler/veyl.go says $have" }
+
+      - name: Install Inno Setup
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build the installer
+        working-directory: veyl/asm-src
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
+
+      - name: Release notes
+        working-directory: veyl
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, "(?ms)^## $([regex]::Escape($v))\b[^\n]*\n(.*?)(?=^## |\z)")
+          if (-not $m.Success) { throw "CHANGELOG.md has no section for $v" }
+          Set-Content -Path notes.md -Value $m.Groups[1].Value.Trim() -Encoding utf8
+
+      - name: Publish
+        working-directory: veyl
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          gh release create "${{ github.ref_name }}" "asm-src\dist\veyl-$v-setup.exe" `
+            --title "Veyl $v" --notes-file notes.md --verify-tag

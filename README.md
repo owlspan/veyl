@@ -204,23 +204,30 @@ must be one instruction whose bytes we could write ourselves, and
 ## Layout
 
 ```
+frontend/           lexer, parser, AST, types and the type checker,
+                    shared with the Go backend on the veylgo branch
 asm-src/
   go.mod            requires ../frontend
   compiler/
+    veyl.go         the driver and the command line
     frontend.go     type aliases onto the shared front end
-    ir.go           AST -> three-address IR over virtual registers
-    x64.go          IR  -> x86-64, GNU as with Intel syntax
     library.go      asmLibrary - the builtin table, for the checker
-    list.go         lists, built in the IR
-    map.go          maps, sorted key and value blocks
-    os.go           files and the environment, on Win32
-    osdir.go        directory listing, making and removing
-    result.go       the error type T!, built in the IR
-    struct.go       struct layout, copying and printing
-    strings.go      the string library, built in the IR
-    veyl.go      the driver
-    diff_test.go
-  examples/
+    ir.go           AST -> three-address IR over virtual registers
+    opt.go          folding, dead code, load forwarding, slot packing
+    regalloc.go     the register allocator
+    x64.go          IR  -> x86-64, GNU as syntax with Intel operands
+    peephole.go     the assembly peephole
+    encode*.go      x86-64 text -> machine code
+    link.go, pe.go  the linker and the PE writer
+    gc*.go          the collector
+    prelude*.go     library code written in Veyl, compiled with the program
+    *.go            one file per built-in library: list, map, os, net,
+                    http, json, task, db, win, and the rest
+  examples/         every one is part of the test suite
+  installer/        the Inno Setup script and its build script
+  scripts/          make-installer.bat, saferun.ps1, metrics.ps1
+docs/               SYNTAX.md and TUTORIAL.md
+editors/            VS Code, Sublime, Vim and Notepad++ highlighting
 ```
 
 The lexer, parser, AST and types live in `../frontend` and are shared
@@ -240,7 +247,7 @@ rather than a checker crash.
 
 So a wrong program is now caught here, with the same message the Go
 backend would give. The remaining gap is the **resolver**, described
-above - still `src`-only.
+above, which only the Go backend has.
 
 ## Commands
 
@@ -259,13 +266,24 @@ the instruction stream is the only way to see it.
 ## Testing
 
 ```
+cd asm-src
 go test ./...
 ```
 
 There are no expected-output files. Every program in `examples/` is run
 through both backends and the output compared byte for byte, with the Go
 backend as the definition of what Veyl means. If they disagree, this one
-is wrong.
+is wrong. The Go backend is on the `veylgo` branch; check it out beside
+this one and build it, and the comparison finds it:
+
+```
+git worktree add ../veylgo veylgo
+cd ../veylgo/src && go build -o veyl.exe ./compiler
+```
+
+Without it that half skips. On Linux the whole suite runs too:
+`veyl run` starts the executable through `wine` when the host is not
+Windows, and the encoder check uses `x86_64-w64-mingw32-as`.
 
 It earned that on the first program ever compiled. The numbers were
 correct and the line endings were not: the C runtime translates `\n` to
@@ -283,7 +301,8 @@ To build a program: nothing. veyl encodes, links and writes the PE
 itself.
 
 To run the tests: Go, for the differential comparison against the other
-backend, and MinGW's `as` and `gcc`. `encode_test.go` checks every byte
+backend, and MinGW's `as` and `gcc` (on Linux, `x86_64-w64-mingw32-as`
+and `wine`). `encode_test.go` checks every byte
 this compiler emits against GNU `as`, and `VEYL_LINK=mingw` takes the
 old route through `gcc` so a program that runs one way and not the
 other localises the bug to the half that changed. Both are found on
@@ -296,13 +315,23 @@ Without them those two checks skip and everything else runs.
 scripts\make-installer.bat
 ```
 
-Double-click it. It builds `dist\veyl-<version>-setup.exe`, which is
-about 5 MB because there is no toolchain to bundle. The Go backend's
-installer is roughly 90, most of it a trimmed copy of Go.
+Double-click it. It builds `asm-src\dist\veyl-<version>-setup.exe`,
+which is about 5 MB because there is no toolchain to bundle. The Go
+backend's installer is roughly 90, most of it a trimmed copy of Go. It
+needs Go and Inno Setup (`winget install JRSoftware.InnoSetup`).
 
-## What comes next
+Every release on GitHub carries the same installer, built by
+`.github/workflows/release.yml` on a Windows runner when a `v*` tag is
+pushed. The version lives in four places - `Version` in
+`asm-src/compiler/veyl.go`, `AppVersion` and `ExtVersion` in
+`installer/veyl.iss`, and `editors/vscode/package.json` - and
+`version_test.go` fails when they disagree.
 
-In dependency order, with the reasoning rather than just the list.
+## How it got here
+
+The order the backend was built in, with the reasoning rather than just
+the list. Everything here is done; what is left is under
+[What comes next](#what-comes-next).
 
 **1. The object header. Done.** Every heap allocation carries one word
 in front of it: `size << 8 | tag`, where the tag says whether the block
@@ -328,9 +357,6 @@ and looks that string up like any other builtin, at any depth:
 `os.file.write` arrives as one name. A namespace is a naming
 convention, not a scope, exactly as on the Go backend.
 
-Implemented so far: `time.now`, `os.env.get`, `os.env.has`. `os.env.set`
-is not, because it returns `Void!`.
-
 Adding another is two edits - a signature in `library.go` and a case in
 `builtin` in `ir.go` - but it is not the Go backend's one-liner. There
 `emit` returns a line of Go and the standard library does the work;
@@ -351,31 +377,6 @@ hash table later.
 
 It did not move parity, which is worth knowing: all seven programs that
 reported a map as their first error had something else behind it.
-
-Neither did `T!` or structs. Parity is still 4 of 24. What did change
-is what the other twenty are waiting on, and the list is worth
-regenerating rather than trusting:
-
-```bash
-cd asm-src
-for f in ../src/tests/ok/*.vl; do
-  ./veyl.exe asm "$f" >/dev/null 2>&1 || echo "$f"
-done
-```
-
-| blocker | n |
-|---|---:|
-| closures and first-class functions | 3 |
-| `re.*` | 2 |
-| unimplemented library functions | 2 |
-| `json.decode` | 1 |
-| `bytes` | 1 |
-| `url.*`, `bits.*`, `args.*` | 1 |
-
-Closures are the biggest single item left, and `tasks` needs structured
-concurrency behind them, so realistically they buy two of the three.
-Everything else on that list is one program each - which is what
-progress looks like from here.
 
 **4. The error type `T!`. Done.** A result is a two-word heap object:
 the failure reason, then the value. The layout does not depend on what
@@ -414,8 +415,7 @@ copies only when the source is a place - a literal or a call result is
 already a fresh object nobody else holds. Getting this wrong would not
 have crashed, it would have been `let b = a` quietly aliasing.
 
-Still missing on structs: `impl` methods, `str()` of one, and a `T!`
-field.
+`impl` methods and `str()` of a struct came afterwards.
 
 **6. A foreign call op. Done.** `OpCall` emitted `call __vy_<Sym>` and
 so could only reach functions this compiler wrote. Anything wanting a
@@ -470,24 +470,29 @@ on the way down, or Windows never moves the guard page and the first
 write below it faults. `reserve()` in `x64.go` does the probing, and has
 to keep doing it however small frames get.
 
-**11. The collector.** Needs step 1, which is done. Budget a whole
-session minimum; a collector that frees one live object produces a bug
-that surfaces somewhere else entirely, hours later.
+**11. The collector. Done.** Mark and sweep, conservative over the
+roots and precise over the heap, because the object header from step 1
+says which words of a block are pointers. It runs only when
+`mem.collect()` asks; see [What it does not have](#what-it-does-not-have)
+for why automatic collection is not on yet.
 
-**12. The byte writer and PE emitter.** What finally removes the MinGW
-dependency. Mechanical by then: `x64.go` is replaced and nothing above
-it changes.
+**12. The byte writer and PE emitter. Done.** `encode.go` turns each
+line of assembly into machine code, checked byte for byte against GNU
+`as`, and `pe.go` writes the executable with its import table. This is
+what removed the MinGW dependency; `x64.go` did not change when it
+landed. `VEYL_LINK=mingw` still takes the old route through `gcc`.
 
-The two papercuts that used to sit here are done: `veyl f.vl` is
-shorthand for `run`, and the linker's real output surfaces instead of
-being swallowed. The one still open is sharing `resolve.go` the way
-`check.go` is shared, so that an undefined name is caught here by a
-resolver rather than late, by the lowerer, and missed entirely when the
-checker has already failed on something else.
+**13. Optimisation.** Constant and branch folding, dead code
+elimination, redundant load elimination, slot packing, an assembly
+peephole and the register allocator from step 10. `VEYL_NOOPT=1` turns
+all of it off.
 
-A note on what this is not for. It will not be faster than the Go
-backend for a long time, and probably starts out several times slower.
-Go's optimiser is doing a great deal of work that nothing here does yet.
-The reasons to build this are binary size, compile speed, dropping the
-bundled toolchain, and unblocking pointers and manual memory. Speed
-comes last, if at all.
+## What comes next
+
+- **A resolver**, so a misspelled name is reported alongside type
+  errors rather than after them.
+- **Automatic collection**, once every allocation site is known not to
+  hold a live pointer only in a register.
+- **A growable string buffer**, so building a string by appending stops
+  being quadratic.
+- **`zip`**, the last library the Go backend has and this one does not.

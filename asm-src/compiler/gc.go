@@ -14,11 +14,12 @@ package main
 // keeps it alive; the benefit is that no other part of the compiler has
 // to be told about collection.
 //
-// What makes that sound here rather than hopeful: **every virtual
-// register lives in a stack slot.** There is no register allocator, so
-// there is no such thing as a pointer that exists only in a machine
-// register and would be missed. The naive allocation strategy that costs
-// twenty percent of the runtime is the same one that makes this safe.
+// What makes that sound here rather than hopeful: **every pointer lives
+// in a stack slot.** The register allocator in regalloc.go only ever
+// takes values that are not pointers, so there is no such thing as a
+// pointer that exists only in a machine register and would be missed.
+// That restriction is load-bearing: TestRegAllocKeepsPointersSlotted is
+// there so it cannot be relaxed by accident.
 //
 // **Tracing is precise** because every object carries a header saying
 // what it is: raw bytes, pointer-free words, all-pointer words, a list

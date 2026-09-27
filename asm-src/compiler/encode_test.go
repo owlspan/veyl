@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -225,6 +226,14 @@ func findToolchainForTest(t *testing.T) (as, cc, binDir string) {
 	t.Helper()
 	if env := os.Getenv("VEYL_MINGW"); env != "" {
 		return filepath.Join(env, "as.exe"), filepath.Join(env, "gcc.exe"), env
+	}
+	// Off Windows the host `as` writes ELF, which is not what this
+	// compares against, so only the MinGW cross assembler will do.
+	if runtime.GOOS != "windows" {
+		if a, err := exec.LookPath("x86_64-w64-mingw32-as"); err == nil {
+			return a, "", filepath.Dir(a)
+		}
+		t.Skip("no x86_64-w64-mingw32-as to compare against")
 	}
 	if a, err := exec.LookPath("as"); err == nil {
 		if c, err := exec.LookPath("gcc"); err == nil {

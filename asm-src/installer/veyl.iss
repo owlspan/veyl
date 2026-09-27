@@ -12,12 +12,12 @@
 
 #define AppName "Veyl"
 #define ShortName "veyl"
-#define AppVersion "0.18.1"
+#define AppVersion "0.19.0"
 #define AppPublisher "Veyl"
 #define AppExeName "veyl.exe"
-; Kept in step with editors/vscode/package.json by hand; the folder
-; name VS Code expects embeds it.
-#define ExtVersion "0.18.1"
+; Has to match editors/vscode/package.json, because the folder name VS
+; Code expects embeds it. build.ps1 checks both against veyl.exe.
+#define ExtVersion "0.19.0"
 
 [Setup]
 AppId={{B7D42A19-3E6C-4F80-A5D3-91C7E20B4F68}
@@ -83,13 +83,15 @@ Name: "desktopicon"; Description: "Put that shortcut on the Desktop too"; \
 [Files]
 Source: "..\veyl.exe";           DestDir: "{app}"; Components: core; Flags: ignoreversion
 Source: "..\..\icons\veyl.ico";     DestDir: "{app}"; Components: core; Flags: ignoreversion
-Source: "..\README.md";             DestDir: "{app}"; Components: core; Flags: ignoreversion
+Source: "..\..\README.md";          DestDir: "{app}"; Components: core; Flags: ignoreversion
 
 Source: "..\..\docs\SYNTAX.md";   DestDir: "{app}"; Components: docs; Flags: ignoreversion
 Source: "..\..\docs\TUTORIAL.md"; DestDir: "{app}"; Components: docs; Flags: ignoreversion
 Source: "..\examples\*.vl";       DestDir: "{app}\examples"; Components: docs; Flags: ignoreversion
 Source: "..\examples\net\*.vl";   DestDir: "{app}\examples\net"; Components: docs; Flags: ignoreversion
 Source: "..\examples\gui\*.vl";   DestDir: "{app}\examples\gui"; Components: docs; Flags: ignoreversion
+Source: "..\examples\mod\*.vl";   DestDir: "{app}\examples\mod"; Components: docs; Flags: ignoreversion
+Source: "..\examples\ffi\*.vl";   DestDir: "{app}\examples\ffi"; Components: docs; Flags: ignoreversion
 
 ; Dropped straight into the extensions folder. VS Code scans that
 ; directory at startup, so there is no marketplace step and nothing to

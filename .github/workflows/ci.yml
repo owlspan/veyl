@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: veyl
+
+      # The reference backend. The differential suite compares every
+      # example against it byte for byte.
+      - uses: actions/checkout@v4
+        with:
+          ref: veylgo
+          path: veylgo
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Build the reference backend
+        working-directory: veylgo/src
+        env:
+          GOTOOLCHAIN: auto
+        run: go build -o veyl.exe ./compiler
+
+      - name: Test the front end
+        working-directory: veyl/frontend
+        run: go test ./...
+
+      - name: Test the compiler
+        working-directory: veyl/asm-src
+        env:
+          VEYL_REFERENCE: ${{ github.workspace }}\veylgo\src\veyl.exe
+        run: go test ./...

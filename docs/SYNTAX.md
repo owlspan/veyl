@@ -2,8 +2,9 @@
 
 **Version 0.19.0** - the language as currently implemented.
 
-Veyl compiles to Go, which compiles to a native executable. A finished
-program is a single self-contained binary with no runtime to install.
+Veyl compiles straight to x86-64 and writes the Windows executable
+itself. A finished program is a single self-contained `.exe` with no
+runtime to install, and building one needs nothing but `veyl.exe`.
 
 > Anything marked **planned** is not implemented yet. If you write it,
 > the compiler will reject it.
@@ -1021,8 +1022,7 @@ print("{floor(3.7)} {ceil(3.2)} {round(2.6)}")
 | `divf(a, b)`    | `float` | true division, even for two ints          |
 
 **Important:** `/` between two `int` values truncates, so `7 / 2` is `3`.
-This is inherited from the backend. Use `divf(7, 2)` for `3.5`, or make
-one side a float.
+Use `divf(7, 2)` for `3.5`, or make one side a float.
 
 ### Randomness
 
@@ -2393,10 +2393,13 @@ Every error names a file, a line and a column, and the compiler reports
 all of them rather than stopping at the first:
 
 ```
-hello.vl:3:11: undefined variable "nmae"
-hello.vl:7:5: "count" is declared but never used
+hello.vl:3:1: "y" is declared as int but the value is str
+hello.vl:4:9: '+' needs numbers, got int and bool
 veyl: 2 error(s)
 ```
+
+One gap: a misspelled name is found by a later stage than the type
+checker, so it is only reported once every type error is fixed.
 
 ---
 
