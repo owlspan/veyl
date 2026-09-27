@@ -127,7 +127,7 @@
           }
         },
         {
-          "match": "\\b(struct|impl)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(struct|impl|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "keyword.declaration.struct.veyl"
@@ -162,7 +162,7 @@
         },
         {
           "name": "keyword.declaration.veyl",
-          "match": "\\b(let|const|fn|struct|impl|pub|import)\\b"
+          "match": "\\b(let|const|var|fn|struct|impl|enum|pub|import|extern|export)\\b"
         },
         {
           "name": "variable.language.self.veyl",

@@ -402,8 +402,9 @@ fn internal() -> int {      // not pub: this file only
 }
 ```
 
-A top-level `const` is a global, visible inside functions. A top-level
-`let` belongs to the program body and is not.
+A top-level `const` or `var` is a global, visible inside functions; a
+`var` can also be changed from them. A top-level `let` belongs to the
+program body and is not.
 
 ---
 

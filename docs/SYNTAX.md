@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.23.0** - the language as currently implemented.
+**Version 0.24.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -18,16 +18,17 @@ runtime to install, and building one needs nothing but `veyl.exe`.
 3. [Statements and lines](#statements-and-lines)
 4. [Variables](#variables)
 5. [Types](#types)
-6. [Operators](#operators)
-7. [Strings and interpolation](#strings-and-interpolation)
-8. [Control flow](#control-flow)
-9. [Functions](#functions)
-10. [Builtin library](#builtin-library)
-11. [Native functions (`extern`)](#native-functions-extern)
-12. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
-13. [Reserved words](#reserved-words)
-14. [Compiler commands](#compiler-commands)
-15. [Known limitations](#known-limitations)
+6. [Enums](#enums)
+7. [Operators](#operators)
+8. [Strings and interpolation](#strings-and-interpolation)
+9. [Control flow](#control-flow)
+10. [Functions](#functions)
+11. [Builtin library](#builtin-library)
+12. [Native functions (`extern`)](#native-functions-extern)
+13. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
+14. [Reserved words](#reserved-words)
+15. [Compiler commands](#compiler-commands)
+16. [Known limitations](#known-limitations)
 
 ---
 
@@ -556,6 +557,53 @@ print(Point{x: 3.0, y: 4.0})    // Point{x: 3, y: 4}
 
 ---
 
+## Enums
+
+An enum is a type with a fixed set of named values:
+
+```veyl
+enum State { Idle, Running, Done }
+
+enum Dir {
+    North
+    East
+    South
+    West
+}
+
+var state = State.Idle
+```
+
+A value is written `State.Idle`. Two values of the same enum compare
+with `==` and `!=`; there is no arithmetic on them, and an enum is never
+mixed with an `int` or with another enum. They print by name:
+
+```veyl
+print(state)                  // Idle
+print("now {Dir.West}")       // now West
+print([Dir.North, Dir.East])  // [North, East]
+```
+
+A `match` on an enum with no `else` has to handle every value. Adding a
+value to the enum later then makes each match that forgot it an error,
+naming what is missing:
+
+```veyl
+fn next(s: State) -> State {
+    match s {
+        State.Idle => return State.Running
+        State.Running => return State.Done
+        State.Done => return State.Idle
+    }
+    return s
+}
+```
+
+`enum` is only a keyword at the top of a file, before a name and a
+brace, so a variable called `enum` still works.
+
+---
+
 ## Operators
 
 Highest precedence first:
@@ -729,8 +777,10 @@ match n % 3 {
 }
 ```
 
-The subject must be an `int`, `float`, `str` or `bool` - match compares
-values, so lists, maps and structs cannot be matched on. Every arm has
+The subject must be an `int`, `float`, `str`, `bool` or an enum - match
+compares values, so lists, maps and structs cannot be matched on. A
+match on an enum without an `else` has to cover every value; see
+[Enums](#enums). Every arm has
 to have the same type as the subject, and repeating a value is an error
 rather than dead code.
 
@@ -1250,33 +1300,36 @@ import cycle is an error rather than a hang.
 
 ### Globals
 
-**A top-level `const` is a genuine global.** It is visible inside
-functions, and across files if it is `pub`.
+A top-level `const` and a top-level `var` are globals: visible inside
+every function, and across files if they are `pub`. A `const` cannot
+change; a `var` can, from anywhere.
 
-A top-level `let` is not: it belongs to the implicit `main`, so
-functions cannot see it. That is the difference between the two at the
-top level, and the compiler explains it when you trip:
+```veyl
+const LIMIT = 100
+var score = 0
+
+fn award(points: int) {
+    score += points           // changes the one global
+}
+
+award(5)
+print(score)                  // 5
+```
+
+A top-level `let` is not a global: it belongs to the program body, and
+functions cannot see it. The compiler says so and points at `var`:
 
 ```veyl
 let count = 10
-const LIMIT = 100
-
-fn check() -> bool {
-    return LIMIT > 0      // fine, LIMIT is global
-}
 
 fn broken() -> bool {
-    return count > 0      // error: "count" belongs to the program body
+    return count > 0          // error: "count" belongs to the program body
 }
 ```
 
-Because globals are initialised before the program body runs, a `const`
-cannot use a `let`:
-
-```veyl
-let name = "ada"
-const GREETING = "hi {name}"   // error: use 'let' instead of 'const' here
-```
+Globals are computed in the order they are written, before the program
+body runs - so a `const` or `var` cannot use a top-level `let`, and one
+that uses another global has to come after it.
 
 ---
 
@@ -2490,6 +2543,10 @@ let const fn return if else while for in step break continue true false
 struct impl self match nil import pub extern
 ```
 
+Keywords only in one place, and ordinary names everywhere else: `var`
+and `enum` at the top of a file, `export` before `fn`, `from` after an
+extern, and `at` in an extern struct field.
+
 Reserved but not yet implemented - the lexer recognises them, so they
 cannot be used as names:
 
@@ -2612,7 +2669,7 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.23.0 does not do yet.
+Honest list of what v0.24.0 does not do yet.
 
 **The language**
 
@@ -2631,9 +2688,9 @@ Honest list of what v0.23.0 does not do yet.
 - **No namespacing on imports.** Everything `pub` in an imported file
   lands in one flat namespace, so two files exporting the same name
   collide. The error names both files.
-- **No global *variables*.** A top-level `const` is global, but a
-  top-level `let` belongs to the program body and functions cannot see
-  it. Pass it in, or make it a `const`.
+- **Enums carry no data.** An enum value is one of its names; a variant
+  cannot hold a payload the way a tagged union does, and a map cannot
+  be keyed by one.
 - **No generics.** A function works on one set of types.
 - **Garbage collected**, with raw memory beside it: `mem.alloc` and
   extern structs give manual memory and pointers, but nothing checks an
