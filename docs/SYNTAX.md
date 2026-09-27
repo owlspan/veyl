@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.21.0** - the language as currently implemented.
+**Version 0.22.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -1877,6 +1877,8 @@ ordinary arithmetic:
 | `mem.strN(p, n)` | `str` | at most `n` bytes, stopping at a NUL |
 | `mem.bytes(p, n)` | `bytes` | `n` bytes at `p`, copied |
 | `mem.addr(v)` | `int` | where a `bytes`, `str` or extern struct lives |
+| `mem.protect(p, n, mode)` | `bool` | make pages `"r"`, `"rw"`, `"rx"`, `"rwx"`, `"x"` or `""` (no access) |
+| `mem.scan(p, n, pattern)` | `int` | first match of a byte pattern such as `"48 8B ?? ?? 89"`, or `-1` |
 
 ```veyl
 let p = mem.alloc(16)
@@ -2165,9 +2167,9 @@ by convention.
 that fills one in. Make it the size you need with `bytes.fill`, pass
 it, and read it afterwards.
 
-Lists, maps, Veyl structs and `T!` cannot cross, and neither can a
-function, so there are no callbacks into Veyl code. Anything else is
-an error pointing at the declaration.
+Lists, maps, Veyl structs and `T!` cannot cross. A function can, as a
+callback - see below. Anything else is an error pointing at the
+declaration.
 
 ### Variadic
 
@@ -2265,6 +2267,71 @@ one that does not stops the program the way it would in C.
 `examples/ffi/memreader.vl` puts this together: it lists running
 programs, finds where one is loaded, and follows a pointer chain
 through its memory.
+
+### Callbacks
+
+A parameter with a function type takes a Veyl function that native
+code will call back:
+
+```veyl
+extern fn qsort(base: ptr, n: int, size: int, cmp: fn(ptr, ptr) -> int)
+
+fn byValue(a: int, b: int) -> int {
+    return mem.readI32(a) - mem.readI32(b)
+}
+
+qsort(buf, count, 4, byValue)
+```
+
+```veyl
+extern fn EnumWindows(each: fn(ptr, ptr) -> bool, data: ptr) -> bool from "user32"
+
+fn onWindow(hwnd: int, data: int) -> bool {
+    return true                     // keep going
+}
+
+EnumWindows(onWindow, 0)
+```
+
+The types in the callback's signature follow the rest of the boundary:
+`int` and `bool` are the C types, 32 bits, and `ptr` is a full 64-bit
+value - so a handle, a pointer, an `LPARAM` or an `LRESULT` is `ptr`. A
+`float` is a double. The Veyl function itself takes plain `int`s.
+
+Only a function declared with `fn`, named directly, can be a callback.
+A closure carries its captured variables somewhere native code does
+not know about. A callback may allocate and may run the collector.
+
+### Building a DLL
+
+`veyl build --dll mod.vl` writes `mod.dll`. `export fn` puts a function
+in its export table under its own name:
+
+```veyl
+print("mod loaded")               // runs once, as the DLL loads
+
+export fn add(a: int, b: int) -> int {
+    return a + b
+}
+```
+
+Anything that loads DLLs can load it - a mod loader, a host program's
+plugin folder, `LoadLibrary` and `GetProcAddress`, or another Veyl
+program:
+
+```veyl
+extern fn add(a: ptr, b: ptr) -> ptr from "mod"
+print(add(40, 2))
+```
+
+For code calling an export, a Veyl `int` is a 64-bit `int64_t`, a
+`float` is a `double`, a `str` is a `const char*`, a `bool` is read as a
+C `BOOL`, and an extern struct is a pointer to it.
+
+The top-level statements run while Windows holds its loader lock, so
+they should set up and return; the work belongs in what the host calls.
+A DLL does not change the host's console, and a failed `must` or an
+`exit` ends the whole host process, as it would in C.
 
 ---
 
@@ -2433,6 +2500,7 @@ defer own unsafe
 | --- | --- |
 | `veyl run f.vl` | compile and run |
 | `veyl build f.vl` | write `f.exe` next to the source |
+| `veyl build --dll f.vl` | write `f.dll`; see [Building a DLL](#building-a-dll) |
 | `veyl asm f.vl` | print the generated assembly |
 | `veyl ir f.vl` | print the intermediate representation |
 | `veyl version` | print the version |
@@ -2539,14 +2607,15 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.21.0 does not do yet.
+Honest list of what v0.22.0 does not do yet.
 
 **The language**
 
-- **`extern` cannot call back.** A native library can take numbers,
-  strings, buffers and structures from you, but it cannot hold a Veyl
-  function to call later, so libraries that work by callback are out
-  of reach.
+- **A callback cannot be a closure.** Native code can call a function
+  declared with `fn`, but not one that captured variables.
+- **No way to call a raw function pointer.** An `extern fn` names a
+  symbol; an address from `GetProcAddress` or a game's memory cannot be
+  called yet.
 - **No fixed-width number types.** `i32`, `f32` and the rest describe
   memory, in extern structs and the `mem` functions; a Veyl variable is
   still an `int` or a `float`.
