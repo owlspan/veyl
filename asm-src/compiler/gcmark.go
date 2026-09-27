@@ -119,8 +119,10 @@ func (l *lowerer) collectBody() {
 	// The stack first: from this function's own rsp to the top of the
 	// thread's stack, every word. Everything above rsp belongs to a
 	// frame that is still live, and every live pointer in this backend
-	// is in a slot in one of those frames - there is no register
-	// allocator, so there is no pointer that lives only in a register.
+	// is in a slot in one of those frames - the register allocator only
+	// takes values that are not pointers, so no pointer lives only in a
+	// register. Native frames in between, a callback's caller, are
+	// scanned too; a word there that is not a known object is ignored.
 	lowOut := l.rawWord()
 	highOut := l.rawWord()
 	l.ccall("GetCurrentThreadStackLimits", []Reg{lowOut, highOut},

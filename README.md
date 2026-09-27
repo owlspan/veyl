@@ -98,8 +98,13 @@ pipeline:
 - `extern fn`: declare a function that lives in a DLL and call it -
   the Windows API, the C runtime, or any library a package ships
 - raw memory: `mem.alloc` and `mem.free`, reads and writes at every
-  width from `u8` to `f64`, and `extern struct`, a C layout laid over
-  an address, with natural alignment or offsets given by hand
+  width from `u8` to `f64`, `mem.protect` and `mem.scan`, and
+  `extern struct`, a C layout laid over an address, with natural
+  alignment or offsets given by hand
+- callbacks: a Veyl function handed to native code as a C function
+  pointer
+- `veyl build --dll`: a DLL whose top level runs on load, exporting
+  every `export fn`
 
 - `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
   `padRight`, and the constants `INF` and `NAN`, with comparisons that
@@ -110,8 +115,9 @@ this side, so a name that is neither a local, a function nor a builtin
 is caught by the lowerer rather than the checker. Everything absent is
 a compile error naming it, never wrong output.
 
-What the Go backend does not have: `extern fn`, raw memory and
-`extern struct`, and the `\xHH` and `\u{...}` string escapes. The differential suite
+What the Go backend does not have: `extern fn` and callbacks, raw
+memory and `extern struct`, DLLs, and the `\xHH` and `\u{...}` string
+escapes. The differential suite
 compares programs both backends can run; the extern demos sit in
 `examples/ffi/`, and programs that need the escapes or feed standard
 input sit in `tests/` with the output they must print beside them.
@@ -219,6 +225,8 @@ asm-src/
     textlib.go      the primitives under input and the text builtins
     memlib.go       raw memory: alloc, free, reads and writes by width
     views.go        extern structs, C layouts at an address
+    callback.go     Veyl functions called from native code
+    dll.go          DLL output: the entry point and the export table
     encode*.go      x86-64 text -> machine code
     link.go, pe.go  the linker and the PE writer
     gc*.go          the collector
@@ -502,8 +510,6 @@ all of it off.
   hold a live pointer only in a register.
 - **A growable string buffer**, so building a string by appending stops
   being quadratic.
-- **Callbacks**: a Veyl function handed to native code as a C function
-  pointer, for window procedures, hooks and most engine libraries.
-- **`veyl build --dll`**, with exported functions, for plugins and
-  game mods.
+- **Calling a raw function pointer**, and closures as callbacks.
+- **Hash maps**, since a sorted map inserts in O(n).
 - **`zip`**, the last library the Go backend has and this one does not.

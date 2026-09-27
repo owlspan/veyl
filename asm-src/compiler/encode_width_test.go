@@ -33,6 +33,16 @@ func TestEncoderWidths(t *testing.T) {
 		"movss dword ptr [rax], xmm0",
 		"movss xmm0, dword ptr [rax]",
 		"movss dword ptr [r10], xmm1",
+		// callback stubs
+		"movsxd rcx, ecx",
+		"movsxd r9, r9d",
+		"test edx, edx",
+		"setne dl",
+		"movzx edx, dl",
+		"movzx r8d, r8b",
+		"movsxd rax, dword ptr [rsp+40]",
+		"mov qword ptr [rsp+48], rax",
+		"mov eax, dword ptr [rsp+56]",
 	}
 	for _, line := range lines {
 		text := ".intel_syntax noprefix\n.text\n" + line + "\n"

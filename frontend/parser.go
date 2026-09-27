@@ -167,6 +167,23 @@ func (p *Parser) ParseProgram() *Program {
 			}
 		}
 
+		// `export fn` puts a function in a DLL's export table. `export`
+		// is only a keyword here, so it stays usable as a name.
+		if !pub && p.check(IDENT) && p.cur().Lex == "export" && p.peekKind(1) == FN {
+			p.advance()
+			if f := p.parseFn(); f != nil {
+				f.Pub = true
+				f.Export = true
+				f.File = p.file
+				prog.Funcs = append(prog.Funcs, f)
+			}
+			p.skipNewlines()
+			if p.i == before {
+				p.advance()
+			}
+			continue
+		}
+
 		switch {
 		case p.check(IMPORT):
 			if d := p.parseImport(); d != nil {

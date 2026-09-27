@@ -193,6 +193,8 @@ var preludeOf = map[string]string{
 	"substr":   "__vy_substr",
 	"charAt":   "__vy_charAt",
 	"chars":    "__vy_chars",
+
+	"mem.scan": "__vy_memScan",
 }
 
 // preludeDefaults supplies the trailing arguments a call may leave off,

@@ -99,3 +99,35 @@ let local = Vec3{x: 1.0, z: 3.0}
 		}
 	}
 }
+
+func TestExportFn(t *testing.T) {
+	src := `
+extern struct Vec2 { x: f32, y: f32 }
+export fn add(a: int, b: int) -> int { return a + b }
+export fn scale(v: Vec2, k: float) { v.x = v.x * k }
+fn export(n: int) -> int { return n }
+let export2 = export(3)
+`
+	lx := NewLexer("t.vl", src)
+	ps := NewParser("t.vl", lx.Scan())
+	prog := ps.ParseProgram()
+	ck := NewChecker("t.vl", EmptyLibrary{})
+	ck.Check(prog)
+	if errs := append(append(lx.Errors, ps.Errors...), ck.Errors...); len(errs) > 0 {
+		t.Fatalf("errors: %v", errs)
+	}
+	var exported []string
+	for _, f := range prog.Funcs {
+		if f.Export {
+			exported = append(exported, f.Name)
+		}
+	}
+	if strings.Join(exported, ",") != "add,scale" {
+		t.Errorf("exported %v, want add and scale", exported)
+	}
+
+	errs := strings.Join(checked(t, "export fn bad(xs: []int) -> int { return 0 }"), "\n")
+	if !strings.Contains(errs, "cannot take []int") {
+		t.Errorf("a list parameter was not refused: %q", errs)
+	}
+}

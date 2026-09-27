@@ -228,11 +228,23 @@ func Emit(m *Module) string {
 
 	e.b.WriteString("\n    .text\n")
 
-	e.start()
+	if m.DLL {
+		e.dllStart()
+	} else {
+		e.start()
+	}
 	e.helpers()
 
 	for _, f := range m.Funcs {
 		e.function(f)
+	}
+	for _, t := range m.Thunks {
+		e.thunk(t)
+	}
+	if m.DLL {
+		for _, x := range m.Exports {
+			e.thunk(x.Thunk)
+		}
 	}
 
 	return e.b.String()
@@ -412,7 +424,7 @@ func (e *Emitter) function(f *Func) {
 		e.line("mov %s, r10", e.slotAddr(0))
 	}
 
-	if f.Name == "main" {
+	if f.Name == "main" && !e.mod.DLL {
 		// Put stdout in binary mode. The C runtime otherwise translates
 		// every \n into \r\n on the way out, so the same program printed
 		// CRLF here and LF through the Go backend. The differential test

@@ -22,5 +22,5 @@
 
 # Golden test input and output are compared byte for byte, and input.in
 # ends its first line with \r\n on purpose.
-tests/*.in  -text
-tests/*.out -text
+tests/**/*.in  -text
+tests/**/*.out -text

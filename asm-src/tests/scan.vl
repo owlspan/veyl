@@ -1,0 +1,22 @@
+// mem.scan finds a byte pattern with ?? wildcards; mem.protect changes
+// what a range of pages may be used for.
+
+let b = mem.alloc(64)
+let i = 0
+while i < 64 {
+    mem.write8(b + i, i * 3)
+    i += 1
+}
+print(mem.scan(b, 64, "0F 12 15") - b)
+print(mem.scan(b, 64, "0f ?? 15 ? 1B") - b)
+print(mem.scan(b, 64, "0F 13"))
+print(mem.scan(b, 64, "") - b)
+print(mem.scan(b + 60, 4, "BA BD") - b)
+print(mem.scan(b + 60, 4, "BD C0"))
+
+// Make the block read-only, then writable again.
+print(mem.protect(b, 64, "r"))
+print(mem.protect(b, 64, "rw"))
+mem.write8(b, 7)
+print(mem.readU8(b))
+print(mem.protect(b, 64, "nonsense"))

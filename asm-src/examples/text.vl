@@ -53,3 +53,26 @@ print(INF > 1e308)
 
 // With no input attached, input reads the end of it and gets "".
 print("[" + input() + "]")
+
+// Strings order byte by byte, so "B" comes before "a".
+let words = ["b", "a", "ab", "", "B", "abc", "abd"]
+for x in words {
+    let line = ""
+    for y in words {
+        let r = 0
+        if x < y {
+            r += 1
+        }
+        if x > y {
+            r += 2
+        }
+        if x <= y {
+            r += 4
+        }
+        if x >= y {
+            r += 8
+        }
+        line = line + str(r)
+    }
+    print(line)
+}

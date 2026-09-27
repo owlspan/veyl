@@ -1,0 +1,26 @@
+// A library: the top level runs once, on load.
+print("mathmod loaded")
+
+export fn add(a: int, b: int) -> int {
+    return a + b
+}
+
+export fn hypotenuse(a: float, b: float) -> float {
+    return sqrt(a * a + b * b)
+}
+
+export fn shout(s: str) -> int {
+    print(upper(s))
+    return len(s)
+}
+
+export fn either(a: bool, b: bool) -> bool {
+    return a || b
+}
+
+extern struct Pair { x: i32, y: i32 }
+export fn swap(p: Pair) {
+    let t = p.x
+    p.x = p.y
+    p.y = t
+}

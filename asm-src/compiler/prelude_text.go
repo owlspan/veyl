@@ -396,6 +396,48 @@ fn __vy_isFloat(s: str) -> bool {
     return true
 }
 
+// mem.scan: the first address in [start, start+size) where the pattern
+// matches, or -1. A pattern is hex bytes separated by spaces, "??" or
+// "?" matching any byte - the form every disassembler and memory tool
+// prints, so one copied from them works as it is.
+fn __vy_memScan(start: int, size: int, pattern: str) -> int {
+    let want: []int = []
+    for part in split(trim(pattern), " ") {
+        if part == "" {
+            continue
+        }
+        if part == "?" || part == "??" {
+            push(want, -1)
+            continue
+        }
+        let b = bits.fromBase(part, 16)
+        if failed(b) || len(part) > 2 {
+            __abortStr("mem.scan: " + part + " in the pattern is not a hex byte or ??")
+        }
+        push(want, valueOr(b, 0))
+    }
+    let m = len(want)
+    if m == 0 {
+        return start
+    }
+    let i = 0
+    while i + m <= size {
+        let j = 0
+        while j < m {
+            let w = want[j]
+            if w >= 0 && mem.readU8(start + i + j) != w {
+                break
+            }
+            j += 1
+        }
+        if j == m {
+            return start + i
+        }
+        i += 1
+    }
+    return -1
+}
+
 fn __vy_floorInt(x: float) -> int {
     return int(__vy_floor(x))
 }

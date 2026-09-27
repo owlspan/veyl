@@ -145,6 +145,41 @@ func (l *lowerer) rawMemBuiltin(c *Call, name string) (Reg, bool) {
 		l.mark(skip)
 		return l.strFromMem(p, l.load(out, vInt)), true
 
+	case "mem.protect":
+		// VirtualProtect, with the protection spelled the way people
+		// say it. Whole pages change: the range is widened to them.
+		if !arity(3) {
+			return l.junk(), true
+		}
+		p, n := l.intArg(c, 0), l.intArg(c, 1)
+		mode := l.expr(c.Args[2])
+		if l.regTy[mode].k != kStr {
+			l.errorAt(c.Args[2], "mem.protect expects a mode such as \"rw\", got %s", l.regTy[mode])
+			return l.junk(), true
+		}
+		flags := l.temp(vInt)
+		l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: flags})
+		for _, m := range []struct {
+			text string
+			page int64
+		}{{"", 1}, {"r", 2}, {"rw", 4}, {"x", 0x10}, {"rx", 0x20}, {"rwx", 0x40}} {
+			next := l.newLabel()
+			l.emit(Instr{Op: OpJumpNot, A: l.strEq(mode, l.strLit(m.text)), Dst: NoReg, Imm: next})
+			l.emit(Instr{Op: OpStore, A: l.constant(m.page), Dst: NoReg, Imm: flags})
+			l.mark(next)
+		}
+		out := l.temp(vBool)
+		l.emit(Instr{Op: OpStore, A: l.boolConst(false), Dst: NoReg, Imm: out})
+		bad := l.newLabel()
+		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, l.load(flags, vInt), l.constant(0)),
+			Dst: NoReg, Imm: bad})
+		old := l.ptrSlot()
+		ok := l.ccall("VirtualProtect", []Reg{p, n, l.load(flags, vInt), old},
+			[]vty{vInt, vInt, vInt, vInt}, vInt, true, false)
+		l.emit(Instr{Op: OpStore, A: l.compare(OpNe, ok, l.constant(0)), Dst: NoReg, Imm: out})
+		l.mark(bad)
+		return l.load(out, vBool), true
+
 	case "mem.bytes":
 		if !arity(2) {
 			return l.junk(), true
