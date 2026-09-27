@@ -376,7 +376,7 @@ func deadOK(op Op) bool {
 		OpIntToFloat, OpFloatToInt, OpSqrt, OpFMod,
 		OpBAnd, OpBOr, OpBXor, OpBNot, OpShl, OpShr,
 		OpEq, OpNe, OpLt, OpLe, OpGt, OpGe, OpNot,
-		OpIndexAddr, OpLoadByte,
+		OpIndexAddr, OpLoadByte, OpPeek,
 		OpStackPtr, OpGlobalAddr, OpSymAddr, OpSlotAddr:
 		return true
 	}

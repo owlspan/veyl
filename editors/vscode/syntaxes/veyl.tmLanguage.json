@@ -183,7 +183,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.veyl",
-          "match": "\\b(int|float|str|bool)\\b"
+          "match": "\\b(int|float|str|bool|bytes|i8|u8|i16|u16|i32|u32|i64|u64|f32|f64|ptr)\\b"
         },
         {
           "comment": "A capitalised name after a colon, arrow, [] or ? is a struct type. Written with captures rather than a lookbehind: Oniguruma rejects a lookbehind whose alternatives differ in length, and one regex it refuses stops the entire grammar from loading.",

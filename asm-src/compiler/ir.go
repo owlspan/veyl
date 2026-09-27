@@ -491,6 +491,27 @@ const (
 	// unlike OpCall there is no symbol: what runs is not known until the
 	// value is in hand.
 	OpCallClosure
+
+	// Raw memory at a width. Imm is one of the mem* kinds below, which
+	// says how many bytes, whether a narrow integer is sign-extended,
+	// and whether the value is a float. Dst is an int or a float to
+	// match. Appended, not inserted: opNames is positional.
+	OpPeek // Dst = the value at address A
+	OpPoke // the value B is written at address A
+)
+
+// The widths OpPeek and OpPoke move. A narrow store keeps the low bits,
+// so a poke never needs the signed kinds, but it accepts them.
+const (
+	memU8 = iota + 1
+	memI8
+	memU16
+	memI16
+	memU32
+	memI32
+	memI64
+	memF32
+	memF64
 )
 
 var opNames = [...]string{
@@ -508,7 +529,7 @@ var opNames = [...]string{
 	"writestr", "writeint", "writefloat", "boundsfail",
 	"loadbyte", "storebyte",
 	"mustfail", "globaladdr", "stackptr", "symaddr", "slotaddr",
-	"callclosure",
+	"callclosure", "peek", "poke",
 }
 
 func (o Op) String() string {
@@ -666,6 +687,12 @@ func (l *lowerer) collectExtern(fd *FnDecl) {
 	es := externSig{sym: fd.Name, dll: fd.DLL, variadic: fd.Variadic}
 	for _, pa := range fd.Params {
 		t, good := typeOfName(pa.Type)
+		// A bytes buffer and an extern struct both cross as the address
+		// of their first byte.
+		if good && (t.k == kBytes || l.isView(t)) {
+			es.params = append(es.params, t)
+			continue
+		}
 		if !good || !scalarVty(t) {
 			l.errorAt(fd, "parameter %q has type %q, which cannot cross into native code",
 				pa.Name, pa.Type)
@@ -674,6 +701,11 @@ func (l *lowerer) collectExtern(fd *FnDecl) {
 		es.params = append(es.params, t)
 	}
 	ret, good := typeOfName(fd.Ret)
+	if good && l.isView(ret) {
+		es.ret = ret
+		l.externFns[es.sym] = es
+		return
+	}
 	if !good || !scalarVty(ret) {
 		l.errorAt(fd, "return type %q cannot come back from native code", fd.Ret)
 		return
@@ -1709,6 +1741,18 @@ func (l *lowerer) call(c *Call) Reg {
 		return l.callExtern(c, name, es)
 	}
 
+	// Player(addr): a view at an address, which costs nothing - the
+	// address already is the value.
+	if lay, isView := l.structs[name]; isView && lay.view && len(c.Args) == 1 {
+		if _, local := l.lookup(name); !local {
+			v := l.intArg(c, 0)
+			d := l.newReg()
+			l.regTy[d] = vStructOf(name)
+			l.emit(Instr{Op: OpAdd, Dst: d, A: v, B: l.constant(0)})
+			return d
+		}
+	}
+
 	if s, isUser := l.sigs[name]; isUser {
 		if len(c.Args) != len(s.params) {
 			l.errorAt(c, "%s takes %d argument(s), got %d",
@@ -2134,6 +2178,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 	}
 
 	if r, handled := l.memBuiltin(c, name); handled {
+		return r
+	}
+
+	if r, handled := l.rawMemBuiltin(c, name); handled {
 		return r
 	}
 
