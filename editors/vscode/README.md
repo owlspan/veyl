@@ -1,8 +1,11 @@
 # Veyl for VS Code
 
 Syntax highlighting for `.vl` files: keywords, types, strings with
-interpolation, the dotted libraries, all 90 bare builtins, and the
-`?`/`!` type markers.
+interpolation, the dotted libraries, the bare builtins, and the `?`/`!`
+type markers.
+
+The Windows installer puts this in place for you if the VS Code
+component is ticked. The steps below are for doing it by hand.
 
 ---
 
@@ -14,17 +17,18 @@ directory and restart VS Code:
 **Windows**
 
 ```
-xcopy /E /I "editors\vscode" "%USERPROFILE%\.vscode\extensions\veyl-lang-0.10.0"
+xcopy /E /I "editors\vscode" "%USERPROFILE%\.vscode\extensions\veyl.veyl-lang-0.19.0"
 ```
 
 **macOS and Linux**
 
 ```
-cp -r editors/vscode ~/.vscode/extensions/veyl-lang-0.10.0
+cp -r editors/vscode ~/.vscode/extensions/veyl.veyl-lang-0.19.0
 ```
 
-The folder name matters: VS Code expects `name-version` matching
-`package.json`. Restart VS Code, open a `.vl` file, and the language
+The folder name matters: VS Code expects `publisher.name-version`
+matching `package.json`, and a folder it does not recognise can end up
+ignored with no error to say why. Restart VS Code, open a `.vl` file, and the language
 indicator in the status bar should read **Veyl**.
 
 If it does not, run **Developer: Inspect Editor Tokens and Scopes** from
@@ -37,12 +41,10 @@ start with `source.veyl`.
 
 **Does:** highlighting, comment toggling, bracket matching and
 auto-closing, 4-space indentation, and it strips trailing whitespace and
-adds a final newline on save - matching what `veyl fmt` produces, so
-saving and formatting do not fight each other.
+adds a final newline on save.
 
-**Does not:** completion, go-to-definition, inline errors, or running
-the formatter on save. Those need a language server, which does not
-exist. Run `veyl fmt file.vl` by hand.
+**Does not:** completion, go-to-definition or inline errors. Those need
+a language server, which does not exist yet.
 
 Reserved-but-unimplemented words - `defer`, `own`, `unsafe` - are
 highlighted as errors on purpose. The compiler will refuse them, and
@@ -53,12 +55,7 @@ finding that out from the editor beats finding out from a build.
 ## Keeping the builtin list honest
 
 The grammar hard-codes the builtin names, and a hard-coded list drifts.
-The compiler can print the real one:
-
-```
-veyl builtins
-```
-
-Bare names come first, then the dotted library paths. After adding a
+The real list is the `sigs` table in `asm-src/compiler/library.go`
+plus the prelude names in `asm-src/compiler/prelude.go`. After adding a
 builtin, update the `builtins` and `libraries` patterns in
-`syntaxes/veyl.tmLanguage.json` from that output.
+`syntaxes/veyl.tmLanguage.json` to match.

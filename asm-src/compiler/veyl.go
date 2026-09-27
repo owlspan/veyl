@@ -206,7 +206,7 @@ func main() {
 		}
 		buildExe(mod, out)
 		copyDLLsBeside(out, packageDLLs(filepath.Dir(path)))
-		run := exec.Command(out)
+		run := programCmd(out, args[2:])
 		run.Stdout, run.Stderr, run.Stdin = os.Stdout, os.Stderr, os.Stdin
 		if err := run.Run(); err != nil {
 			if exit, ok := err.(*exec.ExitError); ok {
@@ -218,6 +218,22 @@ func main() {
 		fmt.Fprintf(os.Stderr, "veyl: unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
 	}
+}
+
+// programCmd is the command that runs a compiled program, with the
+// arguments that followed the .vl file on veyl's own command line.
+//
+// The output is always a Windows executable. On any other host it goes
+// through wine when wine is installed, which is what lets the test suite
+// run on a Linux machine; without wine it is attempted directly and the
+// failure names the file.
+func programCmd(exe string, args []string) *exec.Cmd {
+	if runtime.GOOS != "windows" {
+		if wine, err := exec.LookPath("wine"); err == nil {
+			return exec.Command(wine, append([]string{exe}, args...)...)
+		}
+	}
+	return exec.Command(exe, args...)
 }
 
 // compile runs the front end and lowers to IR, reporting every error it

@@ -5,7 +5,7 @@ Python, JavaScript, a bit of C - and just want to know how Veyl does
 it.
 
 For the full rules see [SYNTAX.md](SYNTAX.md). For how the compiler
-works see [ARCHITECTURE.md](ARCHITECTURE.md).
+works see the [README](../README.md).
 
 ---
 
@@ -29,7 +29,7 @@ works see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Put this in `hello.vl`:
 
-```qz
+```veyl
 print("Hello, world!")
 ```
 
@@ -42,14 +42,14 @@ No `main`, no imports, no semicolons. Top-level statements run in order.
 `veyl build hello.vl` gives you `hello.exe` instead - one file, no
 runtime to install, nothing to ship alongside it.
 
-> Veyl compiles through Go, so **Go has to be installed**. Your
-> finished `.exe` does not need it; only building does.
+> Nothing else has to be installed. `veyl` writes the `.exe` itself,
+> with no assembler, linker or C compiler behind it.
 
 ---
 
 ## Values
 
-```qz
+```veyl
 let count = 0            // can change
 const LIMIT = 10         // cannot
 let name: str = "ada"    // say the type if you want to
@@ -57,7 +57,7 @@ let name: str = "ada"    // say the type if you want to
 
 Six types you will use constantly:
 
-```qz
+```veyl
 let n     = 42            // int
 let ratio = 2.5           // float
 let word  = "hello"       // str
@@ -69,21 +69,21 @@ let ages  = {"ada": 36}   // {str: int}
 **Veyl never converts between types for you.** This is the rule that
 surprises people first:
 
-```qz
+```veyl
 let n = 5
 print("count: " + n)        // error: cannot add str and int
 ```
 
 Two ways to fix it, and the second is nicer:
 
-```qz
+```veyl
 print("count: " + str(n))
 print("count: {n}")         // anything in {} is inserted
 ```
 
 That `{}` works with any expression:
 
-```qz
+```veyl
 print("{n} squared is {n * n}")
 print("shouting: {upper(word)}")
 ```
@@ -91,7 +91,7 @@ print("shouting: {upper(word)}")
 One exception to the no-conversion rule: a plain number *literal* will
 become a float where one is needed. A variable will not.
 
-```qz
+```veyl
 let radius = 2.5
 let area = PI * radius * radius   // fine
 let wide = radius * 2             // fine, 2 becomes 2.0
@@ -104,7 +104,7 @@ let ok   = radius * float(two)    // fine
 **Text with backslashes goes in backticks**, where nothing is escaped
 and nothing is interpolated:
 
-```qz
+```veyl
 const PATTERN = `\d{4}-\d{2}-\d{2}`
 ```
 
@@ -114,7 +114,7 @@ const PATTERN = `\d{4}-\d{2}-\d{2}`
 
 No parentheses around conditions. Braces always.
 
-```qz
+```veyl
 if score >= 90 {
     print("A")
 } else if score >= 80 {
@@ -126,7 +126,7 @@ if score >= 90 {
 
 The condition has to be a `bool`. `if 5` is an error, not a shortcut.
 
-```qz
+```veyl
 for i in 0..5 { }             // 0 1 2 3 4
 for i in 1..=5 { }            // 1 2 3 4 5
 for i in 10..0 step -2 { }    // 10 8 6 4 2
@@ -143,7 +143,7 @@ while running {
 `match` when you are choosing between values. Arms do not fall through,
 so there is no `break` to forget:
 
-```qz
+```veyl
 match code {
     200      => print("ok")
     301, 302 => print("redirect")
@@ -158,7 +158,7 @@ match code {
 Parameter types are required. The return type comes after `->`, and is
 left off when there isn't one.
 
-```qz
+```veyl
 fn add(a: int, b: int) -> int {
     return a + b
 }
@@ -174,7 +174,7 @@ compiler checks.
 
 Functions are values, so they can be passed around and written inline:
 
-```qz
+```veyl
 let double = fn(n: int) -> int { return n * 2 }
 
 fn twice(f: fn(int) -> int, start: int) -> int {
@@ -188,7 +188,7 @@ print(twice(double, 3))     // 12
 
 ## Lists and maps
 
-```qz
+```veyl
 let nums = [3, 1, 2]
 push(nums, 4)
 print(nums[0], len(nums), sort(nums))
@@ -198,7 +198,7 @@ print(nums[0], len(nums), sort(nums))
 alone; everything that changes it - `push`, `pop`, `insert`, `clear` -
 says so by taking the list as its first argument.
 
-```qz
+```veyl
 let ages = {"ada": 36}
 ages["alan"] = 41
 ages["ada"] += 1
@@ -210,7 +210,7 @@ print(keys(ages))           // sorted
 A missing key reads as the zero value - `0`, `""`, `false` - which is
 what makes counting a one-liner:
 
-```qz
+```veyl
 let counts: {str: int} = {}
 for word in split("a b a", " ") {
     counts[word] += 1       // no need to check first
@@ -222,14 +222,14 @@ which gives you nothing rather than a zero.
 
 An **empty literal has no element type**, so it needs an annotation:
 
-```qz
+```veyl
 let xs: []int = []
 let m: {str: int} = {}
 ```
 
 And the family that takes a function:
 
-```qz
+```veyl
 print(map(nums, fn(n: int) -> int { return n * n }))
 print(filter(nums, fn(n: int) -> bool { return n > 1 }))
 print(reduce(nums, 0, fn(acc: int, n: int) -> int { return acc + n }))
@@ -240,7 +240,7 @@ print(sortBy(nums, fn(a: int, b: int) -> bool { return a > b }))
 
 ## Structs
 
-```qz
+```veyl
 struct Point {
     x: float
     y: float
@@ -266,7 +266,7 @@ Fields you leave out take their zero value, so `Point{}` is the origin.
 
 **Assigning a struct copies it.** The two are independent afterwards:
 
-```qz
+```veyl
 let a = Point{x: 1.0, y: 1.0}
 let b = a
 b.x = 99.0
@@ -282,14 +282,14 @@ A method is the exception - it acts on the original, which is what lets
 
 A plain type can **never** be nil. `?T` is the one that can.
 
-```qz
+```veyl
 let note: ?str = nil
 ```
 
 You cannot use it until you have proved it is there, and checking it
 narrows the type inside the block:
 
-```qz
+```veyl
 if note != nil {
     print(upper(note))      // note is a plain str in here
 }
@@ -307,13 +307,13 @@ nil-dereference crash.
 `T!` is either a `T` or a reason it is missing. Anything in the library
 that can fail returns one:
 
-```qz
+```veyl
 let text = os.file.read("notes.txt")    // str!, not str
 ```
 
 Four ways to deal with it:
 
-```qz
+```veyl
 must(text)                  // the value, or stop with the reason
 valueOr(text, "")           // the value, or a fallback
 isOk(text)                  // check first
@@ -323,7 +323,7 @@ errorOf(text)               // the reason, "" if it worked
 And the fifth, which is why the type is worth having. Inside a function
 that can itself fail, `?` unwraps or hands the failure upward:
 
-```qz
+```veyl
 fn wordCount(path: str) -> int! {
     let text = os.file.read(path)?
     return len(split(trim(text), " "))
@@ -333,7 +333,7 @@ fn wordCount(path: str) -> int! {
 That single character is the whole `if err != nil` dance. Write your own
 failures with `fail`:
 
-```qz
+```veyl
 fn parsePort(text: str) -> int! {
     if !isInt(text) {
         return fail("{text} is not a number")
@@ -348,7 +348,7 @@ fn parsePort(text: str) -> int! {
 
 No imports, ever. The library is grouped under dotted names:
 
-```qz
+```veyl
 os.file.write("notes.txt", "hello")
 let page = valueOr(http.get("https://example.com"), "")
 let stamp = time.stamp()
@@ -362,7 +362,7 @@ print(re.findAll(`\d+`, "a1 b22 c333"))
 
 Doing several things at once is `map` with a different name:
 
-```qz
+```veyl
 let pages = task.map(urls, fn(u: str) -> str {
     return valueOr(http.get(u), "")
 })
@@ -382,14 +382,14 @@ veyl run examples\wordfreq.vl SYNTAX.md 10
 
 ## Several files
 
-```qz
+```veyl
 import "helpers.vl"
 ```
 
 The path is relative to the file that writes it. A declaration is
 private unless marked `pub`:
 
-```qz
+```veyl
 // helpers.vl
 pub const TAU = 6.283185307179586
 
@@ -410,19 +410,14 @@ A top-level `const` is a global, visible inside functions. A top-level
 ## Where to go next
 
 ```
-veyl fmt yourfile.vl      tidy the formatting
-veyl emit yourfile.vl     see the Go it generates
-veyl builtins             list everything available
+veyl ir yourfile.vl       the intermediate representation
+veyl asm yourfile.vl      the x86-64 it generates
 ```
 
-`emit` is the best debugging tool here. When something behaves oddly,
+`ir` is the best debugging tool here. When something behaves oddly,
 read what it actually compiled to.
 
-The compiler warns about things that are legal but probably wrong -
-a variable you never read, code that can never run - after your program
-compiles, so warnings never bury a real error.
-
 - **[SYNTAX.md](SYNTAX.md)** - every rule, every builtin
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - how the compiler is built
+- **[README](../README.md)** - how the compiler is built
 - **`examples\`** - programs that run
 - **`editors\vscode\`** - syntax highlighting

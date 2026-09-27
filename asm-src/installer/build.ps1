@@ -40,6 +40,12 @@ try {
         throw "version mismatch: veyl.exe says $want, veyl.iss says $have. " +
               "Update AppVersion in installer\veyl.iss."
     }
+    $ext = ([regex]'#define ExtVersion "([^"]+)"').Match((Get-Content $iss -Raw)).Groups[1].Value
+    $pkg = (Get-Content (Join-Path $repo '..\editors\vscode\package.json') -Raw | ConvertFrom-Json).version
+    if ($ext -ne $want -or $pkg -ne $want) {
+        throw "version mismatch: veyl.exe says $want, ExtVersion in veyl.iss says $ext, " +
+              "editors\vscode\package.json says $pkg. All three have to agree."
+    }
 
     # Prove it compiles something. PATH is stripped to System32 first so
     # this cannot accidentally succeed by finding a Go, an assembler or
