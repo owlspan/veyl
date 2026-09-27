@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.20.0** - the language as currently implemented.
+**Version 0.21.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -1841,10 +1841,9 @@ print("took {time.millis() - started} ms")
 
 ---
 
-### `mem` - what the program is using
+### `mem` - memory
 
-Veyl is garbage collected, so these report and nudge rather than
-allocate and free. Manual memory needs the C backend and does not exist.
+Veyl collects its own values. These report on that, and nudge it:
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -1855,6 +1854,43 @@ allocate and free. Manual memory needs the C backend and does not exist.
 | `mem.collections()` | `int` | how many times the collector has run |
 | `mem.collect()` | - | run the collector now |
 | `mem.goroutines()` | `int` | concurrent tasks in flight |
+
+And these work on raw memory, outside the collector. An address is an
+`int`, the same as a `ptr` on an extern, so pointer arithmetic is
+ordinary arithmetic:
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `mem.alloc(n)` | `int` | `n` zeroed bytes the collector never touches |
+| `mem.resize(p, n)` | `int` | grow or shrink a block; `0` allocates one |
+| `mem.free(p)` | - | give a block back; `0` does nothing |
+| `mem.readU8(p)` `mem.readI8(p)` | `int` | one byte, unsigned or signed |
+| `mem.readU16(p)` `mem.readI16(p)` | `int` | two bytes |
+| `mem.readU32(p)` `mem.readI32(p)` | `int` | four bytes |
+| `mem.readI64(p)` | `int` | eight bytes |
+| `mem.readF32(p)` `mem.readF64(p)` | `float` | a C float or double |
+| `mem.write8(p, v)` ... `mem.write64(p, v)` | - | the low bytes of `v` |
+| `mem.writeF32(p, x)` `mem.writeF64(p, x)` | - | a float at that width |
+| `mem.copy(dst, src, n)` | - | `n` bytes; the ranges may overlap |
+| `mem.fill(p, byte, n)` | - | `n` copies of one byte |
+| `mem.str(p)` | `str` | the NUL-terminated text at `p`, copied |
+| `mem.strN(p, n)` | `str` | at most `n` bytes, stopping at a NUL |
+| `mem.bytes(p, n)` | `bytes` | `n` bytes at `p`, copied |
+| `mem.addr(v)` | `int` | where a `bytes`, `str` or extern struct lives |
+
+```veyl
+let p = mem.alloc(16)
+mem.write32(p, -5)
+print(mem.readU32(p))          // 4294967291
+print(mem.readI32(p))          // -5
+mem.writeF32(p + 4, 0.1)
+print(mem.readF32(p + 4))      // 0.10000000149011612
+mem.free(p)
+```
+
+A block from `mem.alloc` is yours to free. Nothing checks that an
+address is valid: reading or writing one that is not stops the
+program, as it would in C.
 
 ### `bytes` - raw binary
 
@@ -2107,6 +2143,8 @@ so an ordinary variable or function called `from` still works.
 | `float` | a 64-bit double | a double |
 | `str` | a pointer to its bytes | `char*`, copied into a fresh string |
 | `ptr` | a raw machine word | the full 64-bit value |
+| `bytes` | a pointer to its first byte | - |
+| an extern struct | its address | its address, as a view |
 
 Two rows need explaining.
 
@@ -2123,9 +2161,13 @@ once - nothing to free, and the library cannot take the memory back
 later. This relies on C strings being NUL-terminated, which they are
 by convention.
 
-Lists, maps, structs and `T!` cannot cross, and neither can a
-function, so there are no callbacks into Veyl code. Declare scalars
-only; anything else is an error pointing at the declaration.
+**`bytes` as a parameter** is how a buffer is handed to a function
+that fills one in. Make it the size you need with `bytes.fill`, pass
+it, and read it afterwards.
+
+Lists, maps, Veyl structs and `T!` cannot cross, and neither can a
+function, so there are no callbacks into Veyl code. Anything else is
+an error pointing at the declaration.
 
 ### Variadic
 
@@ -2152,6 +2194,77 @@ printf("%d %s\n", 7, "dots")
 
 Strings passed to C are safe from the collector: no Veyl code runs
 while C holds them, so nothing can move or free them underneath it.
+
+### `extern struct` - C layouts
+
+An `extern struct` describes bytes laid out the way C lays them out: a
+Win32 structure, a block from `mem.alloc`, a structure in another
+program read into a buffer. A value of one is a **view**: the address
+of its first byte. Reading a field loads it from memory at its own
+width; writing one stores it there.
+
+```veyl
+extern struct Vec3 { x: f32, y: f32, z: f32 }
+
+extern struct Player {
+    hp: i32
+    alive: bool
+    pos: Vec3
+    name: [16]u8
+    ammo: u16 at 0x40
+}
+```
+
+| Field type | Reads as |
+| --- | --- |
+| `i8` `u8` `i16` `u16` `i32` `u32` `i64` `u64` | `int`, sign- or zero-extended |
+| `f32` `f64` | `float` |
+| `ptr` | `int`, all 64 bits |
+| `bool` | `bool`, one byte, anything but 0 is true |
+| another extern struct | a view of it, inside this one |
+| `[N]T` | `int`: the address of the first element |
+
+Fields go where a C compiler would put them: each at the next multiple
+of its own size, the whole padded to its largest field. `at` pins a
+field to an exact offset instead, and the fields after it carry on from
+its end - which is how a structure is described when only a few of its
+offsets are known.
+
+```veyl
+let raw = mem.alloc(Player.size)    // Player.size is 68
+let p = Player(raw)                 // a view at an address
+p.hp = 100
+p.hp -= 25                          // compound assignment works
+p.pos.x = 1.5                       // a nested struct is a view too
+print(mem.str(p.name))              // an array reads as its address
+print(p)                            // Player{hp: 75, alive: false, ...}
+mem.free(raw)
+```
+
+A literal allocates zeroed memory the collector owns, for the common
+case of filling in a structure and passing it to Windows:
+
+```veyl
+extern struct SYSTEMTIME { year: u16, month: u16, weekday: u16, day: u16,
+                           hour: u16, minute: u16, second: u16, ms: u16 }
+extern fn GetSystemTime(t: SYSTEMTIME)
+
+let now = SYSTEMTIME{}
+GetSystemTime(now)
+print(now.year)
+```
+
+Assigning a view copies the address, never the bytes: two names for
+the same memory, which is the point. `==` compares addresses.
+`mem.addr(v)` gives the address as an `int`. Methods work on extern
+structs the same as on any other.
+
+Nothing checks that a view points somewhere valid. Reading a field of
+one that does not stops the program the way it would in C.
+
+`examples/ffi/memreader.vl` puts this together: it lists running
+programs, finds where one is loaded, and follows a pointer chain
+through its memory.
 
 ---
 
@@ -2426,13 +2539,17 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.20.0 does not do yet.
+Honest list of what v0.21.0 does not do yet.
 
 **The language**
 
 - **`extern` cannot call back.** A native library can take numbers,
-  strings and pointers from you, but it cannot hold a Veyl function to
-  call later, so libraries that work by callback are out of reach.
+  strings, buffers and structures from you, but it cannot hold a Veyl
+  function to call later, so libraries that work by callback are out
+  of reach.
+- **No fixed-width number types.** `i32`, `f32` and the rest describe
+  memory, in extern structs and the `mem` functions; a Veyl variable is
+  still an `int` or a `float`.
 - **A missing map key is silent.** `m["absent"]` returns the zero
   value. `has()` and `find()` distinguish it; the bare index was left
   alone because making every map read return `?V` would mean a nil
@@ -2444,8 +2561,9 @@ Honest list of what v0.20.0 does not do yet.
   top-level `let` belongs to the program body and functions cannot see
   it. Pass it in, or make it a `const`.
 - **No generics.** A function works on one set of types.
-- **Garbage collected**, and manual memory, pointers and `unsafe` are
-  not available.
+- **Garbage collected**, with raw memory beside it: `mem.alloc` and
+  extern structs give manual memory and pointers, but nothing checks an
+  address, and `unsafe` is still reserved.
 
 **The library**
 
