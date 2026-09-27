@@ -385,6 +385,10 @@ func (l *lowerer) writeValue(n Node, v Reg, t vty) {
 		l.mod.needs("floattostr")
 		l.emitFloat(v)
 	default:
+		if isEnum(t) {
+			l.emitStr(l.enumName(v))
+			return
+		}
 		l.emitInt(v)
 	}
 }

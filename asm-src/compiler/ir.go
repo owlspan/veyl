@@ -208,6 +208,9 @@ func (t vty) String() string {
 	}
 	switch t.k {
 	case kInt:
+		if t.name != "" {
+			return t.name
+		}
 		return "int"
 	case kFloat:
 		return "float"
@@ -282,7 +285,12 @@ func vtyOf(t *Type) (vty, bool) {
 	case KStr:
 		return vStr, true
 	case KStruct:
+		if _, isEnum := enumVariants[t.Name]; isEnum {
+			return vEnumOf(t.Name), true
+		}
 		return vStructOf(t.Name), true
+	case KEnum:
+		return vEnumOf(t.Name), true
 
 	case KBytes:
 		return vBytes, true
@@ -852,6 +860,10 @@ type loopTarget struct {
 // errors rather than aborting, matching the rest of the pipeline: one
 // mistake should not hide the next one.
 func Lower(p *Program, file string) (*Module, []string) {
+	enumVariants = map[string][]string{}
+	for _, e := range p.Enums {
+		enumVariants[e.Name] = e.Variants
+	}
 	l := &lowerer{
 		mod:       &Module{Helpers: map[string]bool{}, Externs: map[string]bool{}},
 		file:      file,
@@ -1947,6 +1959,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			return l.junk()
 		}
 		a := l.expr(c.Args[0])
+		if isEnum(l.regTy[a]) {
+			a = l.enumName(a)
+		}
 		switch l.regTy[a].k {
 		case kStruct:
 			l.mod.needs("write")
@@ -1977,6 +1992,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			return l.junk()
 		}
 		a := l.expr(c.Args[0])
+		if isEnum(l.regTy[a]) {
+			a = l.enumName(a)
+		}
 		switch l.regTy[a].k {
 		case kStr:
 			l.emit(Instr{Op: OpWriteStr, A: a, Dst: NoReg, Comment: "write"})
@@ -2339,6 +2357,9 @@ func (l *lowerer) pick(cond, whenTrue, whenFalse Reg, t vty) Reg {
 func (l *lowerer) toStr(v Reg, at Node) Reg {
 	if l.regTy[v].null {
 		return l.strOfNull(at, v, l.regTy[v])
+	}
+	if isEnum(l.regTy[v]) {
+		return l.enumName(v)
 	}
 	switch l.regTy[v].k {
 	case kStr:

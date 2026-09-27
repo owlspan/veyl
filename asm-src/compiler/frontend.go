@@ -59,6 +59,7 @@ type (
 	Stmt         = front.Stmt
 	StrLit       = front.StrLit
 	StructDecl   = front.StructDecl
+	EnumDecl     = front.EnumDecl
 	StructField  = front.StructField
 	StructLit    = front.StructLit
 	Token        = front.Token
@@ -90,6 +91,7 @@ var (
 	Qual         = front.Qual
 	ResultOf     = front.ResultOf
 	StructOf     = front.StructOf
+	EnumOf       = front.EnumOf
 	Any          = front.Any
 	Bool         = front.Bool
 	Bytes        = front.Bytes
@@ -156,6 +158,7 @@ const (
 	KResult   = front.KResult
 	KStr      = front.KStr
 	KStruct   = front.KStruct
+	KEnum     = front.KEnum
 	KUnknown  = front.KUnknown
 	KVoid     = front.KVoid
 	LBRACE    = front.LBRACE

@@ -27,6 +27,11 @@ const (
 	KFunc
 	KNullable
 
+	// KEnum is a value of a declared enum: one of a fixed set of named
+	// variants, compared by identity and printed by name. Name is the
+	// enum's.
+	KEnum
+
 	// KResult is `T!` - either a T, or a reason it is missing.
 	KResult
 
@@ -73,6 +78,9 @@ func (t *Type) IsFunc() bool { return t != nil && t.Kind == KFunc }
 // when their names are, so this carries no field list - the declaration
 // table in the checker is the single source of truth for those.
 func StructOf(name string) *Type { return &Type{Kind: KStruct, Name: name} }
+
+// EnumOf is a value of the enum with this name.
+func EnumOf(name string) *Type { return &Type{Kind: KEnum, Name: name} }
 
 // The scalar types are singletons; nothing ever mutates a Type.
 var (
@@ -160,7 +168,7 @@ func (t *Type) String() string {
 		return "[]" + t.Elem.String()
 	case KMap:
 		return "{" + t.Key.String() + ": " + t.Elem.String() + "}"
-	case KStruct:
+	case KStruct, KEnum:
 		return t.Name
 	case KFunc:
 		parts := make([]string, len(t.Params))
@@ -204,7 +212,7 @@ func (t *Type) Equal(u *Type) bool {
 		return t.Elem.Equal(u.Elem)
 	case KMap:
 		return t.Key.Equal(u.Key) && t.Elem.Equal(u.Elem)
-	case KStruct:
+	case KStruct, KEnum:
 		return t.Name == u.Name
 	case KNullable, KResult:
 		return t.Elem.Equal(u.Elem)

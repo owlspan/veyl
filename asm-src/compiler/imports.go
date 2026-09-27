@@ -98,6 +98,7 @@ func (l *importLoader) resolve(prog *Program, from string) {
 		prog.Structs = append(prog.Structs, sub.Structs...)
 		prog.Funcs = append(prog.Funcs, sub.Funcs...)
 		prog.Globals = append(prog.Globals, sub.Globals...)
+		prog.Enums = append(prog.Enums, sub.Enums...)
 	}
 }
 
@@ -170,5 +171,8 @@ func stampImportedFile(prog *Program, abs string) {
 	}
 	for _, g := range prog.Globals {
 		g.File = abs
+	}
+	for _, e := range prog.Enums {
+		e.File = abs
 	}
 }

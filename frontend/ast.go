@@ -38,13 +38,24 @@ type Stmt interface {
 type Program struct {
 	Structs []*StructDecl
 	Funcs   []*FnDecl
-	Globals []*LetStmt // top-level const, visible everywhere
-	Main    []Stmt     // top-level statements of the main file only
+	Globals []*LetStmt // top-level const and var, visible everywhere
+	Enums   []*EnumDecl
+	Main    []Stmt // top-level statements of the main file only
 	Imports []*ImportDecl
 
 	// MainFile is the absolute path of the file the compiler was invoked
 	// on, as opposed to anything it pulled in.
 	MainFile string
+}
+
+// EnumDecl is `enum State { Idle, Running, Done }`. A variant is
+// written State.Idle, and its value is its position in the list.
+type EnumDecl struct {
+	Span
+	Name     string
+	Variants []string
+	Pub      bool
+	File     string
 }
 
 // ImportDecl is `import "helpers.vl"`. The path is relative to the file
