@@ -38,6 +38,11 @@ import (
 	"strings"
 )
 
+// lowerForDLL is set when the program being compiled is a DLL, which
+// changes one thing in lowering: nothing collects automatically, since
+// the host may call exports on threads the collector cannot see.
+var lowerForDLL bool
+
 // dllBase is where a DLL asks to be loaded, the conventional spot for a
 // 64-bit one. It moves elsewhere freely when this is taken.
 const dllBase = 0x180000000

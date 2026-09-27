@@ -177,6 +177,7 @@ func main() {
 		os.Exit(2)
 	}
 
+	lowerForDLL = dll
 	path, err := filepath.Abs(args[1])
 	if err != nil {
 		fail("%v", err)

@@ -40,3 +40,13 @@ jobs:
         env:
           VEYL_REFERENCE: ${{ github.workspace }}\veylgo\src\veyl.exe
         run: go test ./...
+
+      # The same programs with the collector running at almost every
+      # statement, so a collection that frees something live fails here
+      # rather than somewhere else, later.
+      - name: Test with eager collection
+        working-directory: veyl/asm-src
+        env:
+          VEYL_REFERENCE: ${{ github.workspace }}\veylgo\src\veyl.exe
+          VEYL_GC: eager
+        run: go test -count=1 -run "TestBackendsAgree|TestGolden|TestDLL" ./compiler
