@@ -69,6 +69,10 @@ const (
 
 // The window block. One allocation holding everything about a window,
 // handed to Veyl as an int so a window is a handle like a socket is.
+//
+// It comes from calloc, not the collected heap. A handle is an int, and
+// the collector does not look inside ints - a window kept in a struct
+// field or a list would otherwise be freed while still open.
 const (
 	winHwndAt   = 0
 	winDCAt     = 8
@@ -93,6 +97,7 @@ var user32Syms = []string{
 	"UpdateWindow", "GetDC", "ReleaseDC", "IsWindow", "LoadCursorA",
 	"GetClientRect", "FillRect", "SetWindowTextA", "GetAsyncKeyState",
 	"AdjustWindowRect", "SetWindowLongPtrA", "GetWindowLongPtrA", "SetWindowPos",
+	"LoadImageA",
 }
 
 var gdi32Syms = []string{
@@ -100,6 +105,7 @@ var gdi32Syms = []string{
 	"BitBlt", "CreateSolidBrush", "DeleteObject", "DeleteDC",
 	"TextOutA", "SetTextColor", "SetBkMode", "Rectangle", "Ellipse",
 	"MoveToEx", "LineTo", "CreatePen", "GetStockObject",
+	"GetPixel", "GetObjectA", "StretchBlt", "CreateDIBSection", "GetTextExtentPoint32A",
 }
 
 func (l *lowerer) winBuiltin(c *Call, name string) (Reg, bool) {
@@ -358,8 +364,7 @@ func (l *lowerer) winOpen(title, width, height Reg) Reg {
 		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, hwnd, l.constant(0)),
 			Dst: NoReg, Imm: bad})
 
-		w := l.allocObj(l.constant(winBlockLen), tagBytes)
-		l.zeroBlock(w, winBlockLen)
+		w := l.winBlock()
 		l.emit(Instr{Op: OpStoreMem, A: w, B: hwnd, Imm: winHwndAt})
 		l.emit(Instr{Op: OpStoreMem, A: w, B: a[1], Imm: winWidthAt})
 		l.emit(Instr{Op: OpStoreMem, A: w, B: a[2], Imm: winHeightAt})
@@ -625,4 +630,12 @@ func (l *lowerer) winEllipse(w, x, y, r, color Reg) {
 	l.ccall("SelectObject", []Reg{dc, oldP}, []vty{vInt, vInt}, vInt, false, false)
 	l.ccall("DeleteObject", []Reg{brush}, []vty{vInt}, vInt, true, false)
 	l.ccall("DeleteObject", []Reg{pen}, []vty{vInt}, vInt, true, false)
+}
+
+// winBlock allocates a zeroed window block outside the collector.
+func (l *lowerer) winBlock() Reg {
+	w := l.ccall("calloc", []Reg{l.constant(1), l.constant(winBlockLen)},
+		[]vty{vInt, vInt}, vInt, false, false)
+	l.regTy[w] = vInt
+	return w
 }
