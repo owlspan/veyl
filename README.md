@@ -93,8 +93,9 @@ pipeline:
 - a mark-and-sweep collector, conservative over roots
 
 - `net` TCP sockets and an `http` server and client, through WinSock
-- `win`: a window with a game loop, drawing, keyboard and mouse, and
-  immediate-mode widgets
+- `win`: a window with a game loop, drawing, keyboard and mouse,
+  immediate-mode widgets, `.bmp` images with a colour key, text
+  measurement, and off-screen canvases; `sound` plays a WAV
 - `extern fn`: declare a function that lives in a DLL and call it -
   the Windows API, the C runtime, or any library a package ships
 - raw memory: `mem.alloc` and `mem.free`, reads and writes at every
@@ -225,6 +226,7 @@ asm-src/
     textlib.go      the primitives under input and the text builtins
     memlib.go       raw memory: alloc, free, reads and writes by width
     views.go        extern structs, C layouts at an address
+    winmedia.go     images, canvases, text measurement and sound
     callback.go     Veyl functions called from native code
     dll.go          DLL output: the entry point and the export table
     encode*.go      x86-64 text -> machine code

@@ -12,7 +12,7 @@ syn keyword veylKeyword var enum extern export
 syn keyword veylType int float str bool bytes void i8 u8 i16 u16 i32 u32 i64 u64 f32 f64 ptr
 
 syn keyword veylNamespace args bits bytes csv hash http json log mem net os rand
-syn keyword veylNamespace re stats task term time url win zip
+syn keyword veylNamespace re sound stats task term time url win zip
 
 syn keyword veylBuiltin E INF NAN PI abs acos all any asin atan atan2 beep
 syn keyword veylBuiltin cbrt ceil charAt chars clamp clear contains cos count divf each endsWith
