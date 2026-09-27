@@ -827,6 +827,13 @@ type lowerer struct {
 	// VEYL_GC=off asks for the old behaviour.
 	autoGC bool
 
+	// mainLets are the names the top-level statements declare with let,
+	// and initGlobal is set while a const or var is being computed:
+	// between them, an undefined name can be explained rather than only
+	// reported.
+	mainLets   map[string]bool
+	initGlobal bool
+
 	// Declared structs, by name. Filled before anything is lowered,
 	// because a function signature can name one.
 	structs map[string]*structLayout
@@ -879,6 +886,12 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// Struct layouts before signatures, because a parameter or a return
 	// type can name one and the signature needs its vty.
 	l.collectStructs(p)
+	l.mainLets = map[string]bool{}
+	for _, st := range p.Main {
+		if let, ok := st.(*LetStmt); ok && !let.Const {
+			l.mainLets[let.Name] = true
+		}
+	}
 
 	// Signatures next, so a function can call one declared below it.
 	// The Go backend guarantees order-independent declaration and this
@@ -1528,7 +1541,7 @@ func (l *lowerer) assign(st *AssignStmt) {
 			l.assignGlobal(st, g)
 			return
 		}
-		l.errorAt(st, "undefined variable %q", id.Name)
+		l.undefined(st, id.Name)
 		return
 	}
 	v := l.rvalue(st.Value)
@@ -2521,7 +2534,7 @@ func (l *lowerer) expr(e Expr) Reg {
 					Imm: l.mod.internFloat(v), Comment: x.Name})
 				return d
 			}
-			l.errorAt(x, "undefined variable %q", x.Name)
+			l.undefined(x, x.Name)
 			return l.junk()
 		}
 		d := l.loadLocal(slot)
@@ -3264,6 +3277,8 @@ func (l *lowerer) globalInit(g *LetStmt) {
 	if !ok {
 		return
 	}
+	l.initGlobal = true
+	defer func() { l.initGlobal = false }()
 
 	want := l.globalTy[slot]
 	val := l.rvalueAs(g.Value, want)
@@ -3378,4 +3393,20 @@ func (l *lowerer) callHelper(name string, args []Reg, argTypes []vty, ret vty) R
 	l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
 		ArgTypes: argTypes, RetType: ret, Sym: name, Comment: name + "()"})
 	return d
+}
+
+// undefined reports a name that is not in scope, and says why when the
+// reason is one of the two a program most often trips on: a function
+// reaching for a top-level let, and a const or var computed from one.
+func (l *lowerer) undefined(n Node, name string) {
+	switch {
+	case l.mainLets[name] && l.initGlobal:
+		l.errorAt(n, "%q is a let in the program body, which runs after every const and var "+
+			"is computed - make it a const or a var too", name)
+	case l.mainLets[name] && l.fn != nil && l.fn.Name != "main":
+		l.errorAt(n, "%q belongs to the program body, so functions cannot see it - "+
+			"declare it with var instead of let to share it", name)
+	default:
+		l.errorAt(n, "undefined variable %q", name)
+	}
 }
