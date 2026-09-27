@@ -94,7 +94,7 @@ fn __vy_toBase(n: int, base: int) -> str {
     let out = ""
     while x != 0 {
         let d = x % base
-        out = substr(digits, d, d + 1) + out
+        out = __substrB(digits, d, d + 1) + out
         x = x / base
     }
     if neg { return "-" + out }
@@ -105,7 +105,7 @@ fn __vy_digitValue(c: str, base: int) -> int {
     let digits = __vy_baseDigits()
     let i = 0
     while i < base {
-        if substr(digits, i, i + 1) == lower(c) { return i }
+        if __substrB(digits, i, i + 1) == lower(c) { return i }
         i = i + 1
     }
     return -1
@@ -125,16 +125,16 @@ fn __vy_fromBase(s: str, base: int) -> int! {
 
     let i = 0
     let neg = false
-    if charAt(t, 0) == "-" {
+    if __charAtB(t, 0) == "-" {
         neg = true
         i = 1
     }
-    if charAt(t, 0) == "+" { i = 1 }
+    if __charAtB(t, 0) == "+" { i = 1 }
     if i >= len(t) { return fail(bad) }
 
     let n = 0
     while i < len(t) {
-        let d = __vy_digitValue(charAt(t, i), base)
+        let d = __vy_digitValue(__charAtB(t, i), base)
         if d < 0 { return fail(bad) }
         n = n * base + d
         i = i + 1
@@ -161,7 +161,7 @@ fn __vy_osArgs() -> []str {
 
     let i = 0
     while i < len(raw) {
-        let c = charAt(raw, i)
+        let c = __charAtB(raw, i)
         if c == "\"" {
             inQuotes = !inQuotes
             started = true
@@ -207,7 +207,7 @@ fn __vy_argsValue(name: str, fallback: str) -> str {
             return fallback
         }
         if startsWith(a, "--" + name + "=") {
-            return substr(a, len(name) + 3, len(a))
+            return __substrB(a, len(name) + 3, len(a))
         }
         i = i + 1
     }
@@ -242,10 +242,10 @@ const preludeURL = `
 fn __vy_schemeOf(raw: str) -> str {
     let i = 0
     while i < len(raw) {
-        let c = charAt(raw, i)
+        let c = __charAtB(raw, i)
         if c == ":" {
             if i == 0 { return "" }
-            return lower(substr(raw, 0, i))
+            return lower(__substrB(raw, 0, i))
         }
         if c == "/" || c == "?" || c == "#" { return "" }
         i = i + 1
@@ -259,23 +259,23 @@ fn __vy_urlAuthority(raw: str) -> str {
     let at = 0
     if len(scheme) > 0 { at = len(scheme) + 1 }
     if at + 2 > len(raw) { return "" }
-    if substr(raw, at, at + 2) != "//" { return "" }
+    if __substrB(raw, at, at + 2) != "//" { return "" }
     at = at + 2
 
     let i = at
     while i < len(raw) {
-        let c = charAt(raw, i)
-        if c == "/" || c == "?" || c == "#" { return substr(raw, at, i) }
+        let c = __charAtB(raw, i)
+        if c == "/" || c == "?" || c == "#" { return __substrB(raw, at, i) }
         i = i + 1
     }
-    return substr(raw, at, len(raw))
+    return __substrB(raw, at, len(raw))
 }
 
 // Userinfo is stripped, as Hostname() strips it.
 fn __vy_urlHostPort(raw: str) -> str {
     let a = __vy_urlAuthority(raw)
     let at = indexOf(a, "@")
-    if at >= 0 { return substr(a, at + 1, len(a)) }
+    if at >= 0 { return __substrB(a, at + 1, len(a)) }
     return a
 }
 
@@ -283,15 +283,15 @@ fn __vy_hostOf(raw: str) -> str {
     let hp = __vy_urlHostPort(raw)
     let colon = __vy_lastColon(hp)
     if colon < 0 { return hp }
-    if !__vy_allDigits(substr(hp, colon + 1, len(hp))) { return hp }
-    return substr(hp, 0, colon)
+    if !__vy_allDigits(__substrB(hp, colon + 1, len(hp))) { return hp }
+    return __substrB(hp, 0, colon)
 }
 
 fn __vy_portOf(raw: str) -> str {
     let hp = __vy_urlHostPort(raw)
     let colon = __vy_lastColon(hp)
     if colon < 0 { return "" }
-    let tail = substr(hp, colon + 1, len(hp))
+    let tail = __substrB(hp, colon + 1, len(hp))
     if !__vy_allDigits(tail) { return "" }
     return tail
 }
@@ -299,7 +299,7 @@ fn __vy_portOf(raw: str) -> str {
 fn __vy_lastColon(s: str) -> int {
     let i = len(s) - 1
     while i >= 0 {
-        if charAt(s, i) == ":" { return i }
+        if __charAtB(s, i) == ":" { return i }
         i = i - 1
     }
     return -1
@@ -309,7 +309,7 @@ fn __vy_allDigits(s: str) -> bool {
     if len(s) == 0 { return false }
     let i = 0
     while i < len(s) {
-        if __vy_digitOf(charAt(s, i)) < 0 { return false }
+        if __vy_digitOf(__charAtB(s, i)) < 0 { return false }
         i = i + 1
     }
     return true
@@ -319,31 +319,31 @@ fn __vy_pathOf(raw: str) -> str {
     let scheme = __vy_schemeOf(raw)
     let at = 0
     if len(scheme) > 0 { at = len(scheme) + 1 }
-    if at + 2 <= len(raw) && substr(raw, at, at + 2) == "//" {
+    if at + 2 <= len(raw) && __substrB(raw, at, at + 2) == "//" {
         at = at + 2 + len(__vy_urlAuthority(raw))
     }
     let i = at
     while i < len(raw) {
-        let c = charAt(raw, i)
-        if c == "?" || c == "#" { return __vy_unescape(substr(raw, at, i)) }
+        let c = __charAtB(raw, i)
+        if c == "?" || c == "#" { return __vy_unescape(__substrB(raw, at, i)) }
         i = i + 1
     }
-    return __vy_unescape(substr(raw, at, len(raw)))
+    return __vy_unescape(__substrB(raw, at, len(raw)))
 }
 
 fn __vy_urlRawQuery(raw: str) -> str {
     let q = indexOf(raw, "?")
     if q < 0 { return "" }
     let h = indexOf(raw, "#")
-    if h >= 0 && h > q { return substr(raw, q + 1, h) }
+    if h >= 0 && h > q { return __substrB(raw, q + 1, h) }
     if h >= 0 { return "" }
-    return substr(raw, q + 1, len(raw))
+    return __substrB(raw, q + 1, len(raw))
 }
 
 fn __vy_fragmentOf(raw: str) -> str {
     let h = indexOf(raw, "#")
     if h < 0 { return "" }
-    return __vy_unescape(substr(raw, h + 1, len(raw)))
+    return __vy_unescape(__substrB(raw, h + 1, len(raw)))
 }
 
 // Percent-decoding, with + meaning a space inside a query. Anything that
@@ -353,10 +353,10 @@ fn __vy_unescape(s: str) -> str {
     let out = ""
     let i = 0
     while i < len(s) {
-        let c = charAt(s, i)
+        let c = __charAtB(s, i)
         if c == "%" && i + 2 < len(s) {
-            let hi = __vy_hexVal(charAt(s, i + 1))
-            let lo = __vy_hexVal(charAt(s, i + 2))
+            let hi = __vy_hexVal(__charAtB(s, i + 1))
+            let lo = __vy_hexVal(__charAtB(s, i + 2))
             if hi >= 0 && lo >= 0 {
                 out = out + __chr(hi * 16 + lo)
                 i = i + 3
@@ -382,7 +382,7 @@ fn __vy_hexVal(c: str) -> int {
     let i = 0
     let low = lower(c)
     while i < 16 {
-        if substr(digits, i, i + 1) == low { return i }
+        if __substrB(digits, i, i + 1) == low { return i }
         i = i + 1
     }
     return -1
@@ -426,8 +426,8 @@ fn __vy_urlQuery(raw: str) -> {str: str}! {
             let k = p
             let v = ""
             if eq >= 0 {
-                k = substr(p, 0, eq)
-                v = substr(p, eq + 1, len(p))
+                k = __substrB(p, 0, eq)
+                v = __substrB(p, eq + 1, len(p))
             }
             let key = __vy_unescapeQuery(k)
             // Repeated keys keep the first value, which is what the Go
@@ -453,7 +453,7 @@ fn __vy_urlJoin(base: str, ref: str) -> str! {
     if startsWith(ref, "#") { return base + ref }
     if startsWith(ref, "?") {
         let cut = indexOf(base, "?")
-        if cut >= 0 { return substr(base, 0, cut) + ref }
+        if cut >= 0 { return __substrB(base, 0, cut) + ref }
         return base + ref
     }
 
@@ -461,8 +461,8 @@ fn __vy_urlJoin(base: str, ref: str) -> str! {
     let suffix = ""
     let mark = __vy_firstOf(tail, "?#")
     if mark >= 0 {
-        suffix = substr(tail, mark, len(tail))
-        tail = substr(tail, 0, mark)
+        suffix = __substrB(tail, mark, len(tail))
+        tail = __substrB(tail, 0, mark)
     }
 
     let merged = tail
@@ -470,7 +470,7 @@ fn __vy_urlJoin(base: str, ref: str) -> str! {
         let bp = __vy_pathOf(base)
         let slash = __vy_lastSlash(bp)
         let dir = "/"
-        if slash >= 0 { dir = substr(bp, 0, slash + 1) }
+        if slash >= 0 { dir = __substrB(bp, 0, slash + 1) }
         merged = dir + tail
     }
     return root + __vy_removeDots(merged) + suffix
@@ -479,7 +479,7 @@ fn __vy_urlJoin(base: str, ref: str) -> str! {
 fn __vy_firstOf(s: str, set: str) -> int {
     let i = 0
     while i < len(s) {
-        if contains(set, charAt(s, i)) { return i }
+        if contains(set, __charAtB(s, i)) { return i }
         i = i + 1
     }
     return -1
@@ -488,7 +488,7 @@ fn __vy_firstOf(s: str, set: str) -> int {
 fn __vy_lastSlash(s: str) -> int {
     let i = len(s) - 1
     while i >= 0 {
-        if charAt(s, i) == "/" { return i }
+        if __charAtB(s, i) == "/" { return i }
         i = i - 1
     }
     return -1
@@ -550,8 +550,8 @@ fn __vy_pathClean(p: str) -> str {
     // Keep a drive letter or a leading separator, so cleaning does not
     // turn an absolute path into a relative one.
     if len(p) >= 2 && __strAt(p, 1) == 58 {
-        prefix = substr(p, 0, 2)
-        rest = substr(p, 2, len(p))
+        prefix = __substrB(p, 0, 2)
+        rest = __substrB(p, 2, len(p))
     }
     if len(rest) > 0 && (__strAt(rest, 0) == 47 || __strAt(rest, 0) == 92) {
         rooted = true
@@ -580,7 +580,7 @@ fn __vy_pathClean(p: str) -> str {
             }
             cur = ""
         } else {
-            cur = cur + charAt(rest, i)
+            cur = cur + __charAtB(rest, i)
         }
         i = i + 1
     }

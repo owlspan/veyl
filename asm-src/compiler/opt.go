@@ -450,7 +450,7 @@ func forwardLoads(fn *Func) {
 		case OpStore:
 			slotVal[in.Imm] = in.A
 		case OpLoad:
-			if v, ok := slotVal[in.Imm]; ok && !escaped[in.Imm] {
+			if v, ok := slotVal[in.Imm]; ok && !escaped[in.Imm] && sameClass(fn, v, in.Dst) {
 				sameAs[in.Dst] = v
 				continue // the load dies; later uses read v instead
 			}
@@ -459,6 +459,26 @@ func forwardLoads(fn *Func) {
 		out = append(out, in)
 	}
 	fn.Code = out
+}
+
+// sameClass reports whether two registers live in the same register
+// file. A store of an int and a load of the same slot as a float is how
+// __bits and __frombits reinterpret a value, and that load is the
+// conversion: forwarding it would hand an integer register to an
+// instruction that reads an xmm one. Through a stack slot that happened
+// to work, since memory has no register file, and it stopped working the
+// day the register allocator gave the int a machine register.
+//
+// IR built by hand in a test carries no types at all, and is all one
+// class.
+func sameClass(fn *Func, a, b Reg) bool {
+	if len(fn.RegTypes) == 0 {
+		return true
+	}
+	if int(a) >= len(fn.RegTypes) || int(b) >= len(fn.RegTypes) || a < 0 || b < 0 {
+		return false
+	}
+	return (fn.RegTypes[a].k == kFloat) == (fn.RegTypes[b].k == kFloat)
 }
 
 // ---- slot packing ----

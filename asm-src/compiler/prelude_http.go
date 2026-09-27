@@ -78,7 +78,7 @@ fn __vy_httpFormat(r: Response) -> str {
 fn __vy_httpSplitTarget(target: str) -> []str {
     let q = indexOf(target, "?")
     if q < 0 { return [target, ""] }
-    return [substr(target, 0, q), substr(target, q + 1, len(target))]
+    return [__substrB(target, 0, q), __substrB(target, q + 1, len(target))]
 }
 
 fn __vy_httpParse(raw: str) -> Request {
@@ -93,8 +93,8 @@ fn __vy_httpParse(raw: str) -> Request {
         bodyAt = len(raw)
     }
 
-    let head = substr(raw, 0, headEnd)
-    req.body = substr(raw, bodyAt, len(raw))
+    let head = __substrB(raw, 0, headEnd)
+    req.body = __substrB(raw, bodyAt, len(raw))
 
     let rows = split(head, "\r\n")
     if len(rows) == 0 { return req }
@@ -117,8 +117,8 @@ fn __vy_httpParse(raw: str) -> Request {
         let row = rows[i]
         let colon = indexOf(row, ":")
         if colon > 0 {
-            let name = lower(trim(substr(row, 0, colon)))
-            let value = trim(substr(row, colon + 1, len(row)))
+            let name = lower(trim(__substrB(row, 0, colon)))
+            let value = trim(__substrB(row, colon + 1, len(row)))
             req.headers[name] = value
         }
         i = i + 1
@@ -148,7 +148,7 @@ fn __vy_httpRead(conn: int) -> str! {
     }
 
     let sep = indexOf(raw, "\r\n\r\n")
-    let head = substr(raw, 0, sep)
+    let head = __substrB(raw, 0, sep)
     let want = __vy_httpLength(head)
     let have = len(raw) - (sep + 4)
 
@@ -168,9 +168,9 @@ fn __vy_httpLength(head: str) -> int {
     while i < len(rows) {
         let colon = indexOf(rows[i], ":")
         if colon > 0 {
-            let name = lower(trim(substr(rows[i], 0, colon)))
+            let name = lower(trim(__substrB(rows[i], 0, colon)))
             if name == "content-length" {
-                let v = trim(substr(rows[i], colon + 1, len(rows[i])))
+                let v = trim(__substrB(rows[i], colon + 1, len(rows[i])))
                 if isInt(v) { return toInt(v) }
             }
         }
@@ -210,12 +210,12 @@ fn __vy_httpRequest(method: str, url: str, body: str) -> str! {
     let port = 80
 
     if startsWith(rest, "https://") {
-        rest = substr(rest, 8, len(rest))
+        rest = __substrB(rest, 8, len(rest))
         secure = true
         port = 443
     } else {
         if startsWith(rest, "http://") {
-            rest = substr(rest, 7, len(rest))
+            rest = __substrB(rest, 7, len(rest))
         }
     }
 
@@ -223,15 +223,15 @@ fn __vy_httpRequest(method: str, url: str, body: str) -> str! {
     let hostport = rest
     let path = "/"
     if slash >= 0 {
-        hostport = substr(rest, 0, slash)
-        path = substr(rest, slash, len(rest))
+        hostport = __substrB(rest, 0, slash)
+        path = __substrB(rest, slash, len(rest))
     }
 
     let host = hostport
     let colon = indexOf(hostport, ":")
     if colon >= 0 {
-        host = substr(hostport, 0, colon)
-        let p = substr(hostport, colon + 1, len(hostport))
+        host = __substrB(hostport, 0, colon)
+        let p = __substrB(hostport, colon + 1, len(hostport))
         if isInt(p) { port = toInt(p) }
     }
 

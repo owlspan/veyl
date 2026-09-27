@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -428,17 +429,19 @@ func fail(format string, args ...any) {
 // sortByPosition puts errors in source order. Windows paths carry a
 // colon of their own, so the line and column are taken from the end
 // rather than by splitting on the first colon.
+var positionRE = regexp.MustCompile(`:(\d+):(\d+): `)
+
 func sortByPosition(errs []string) {
+	// The first ":line:col:" is the position. Searching from the front
+	// rather than splitting on the last colons matters twice over: a
+	// Windows path has a colon of its own, and so do plenty of messages.
 	key := func(s string) (int, int) {
-		parts := strings.Split(s, ":")
-		if len(parts) < 3 {
+		m := positionRE.FindStringSubmatch(s)
+		if m == nil {
 			return 0, 0
 		}
-		col, err1 := strconv.Atoi(strings.TrimSpace(parts[len(parts)-2]))
-		line, err2 := strconv.Atoi(strings.TrimSpace(parts[len(parts)-3]))
-		if err1 != nil || err2 != nil {
-			return 0, 0
-		}
+		line, _ := strconv.Atoi(m[1])
+		col, _ := strconv.Atoi(m[2])
 		return line, col
 	}
 	sort.SliceStable(errs, func(i, j int) bool {

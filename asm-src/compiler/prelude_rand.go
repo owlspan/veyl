@@ -184,7 +184,7 @@ fn __vy_randHex(n: int) -> str {
     let i = 0
     while i < n {
         let d = __vy_rngIntn(16)
-        out = out + substr(digits, d, d + 1)
+        out = out + __substrB(digits, d, d + 1)
         i = i + 1
     }
     return out
@@ -216,7 +216,7 @@ fn __vy_hexByte(b: int) -> str {
     let digits = "0123456789abcdef"
     let hi = (b >> 4) & 15
     let lo = b & 15
-    return substr(digits, hi, hi + 1) + substr(digits, lo, lo + 1)
+    return __substrB(digits, hi, hi + 1) + __substrB(digits, lo, lo + 1)
 }
 `
 

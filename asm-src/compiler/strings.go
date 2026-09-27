@@ -271,7 +271,7 @@ func (l *lowerer) stringBuiltin(c *Call, name string) (Reg, bool) {
 			return l.shiftIf(b, 'A', 'Z', 32)
 		}), true
 
-	case "substr":
+	case "__substrB":
 		if !need(3) {
 			return l.junk(), true
 		}
@@ -318,7 +318,7 @@ func (l *lowerer) stringBuiltin(c *Call, name string) (Reg, bool) {
 		l.emit(Instr{Op: OpStrEq, Dst: d, A: tail, B: suffix})
 		return d, true
 
-	case "charAt":
+	case "__charAtB":
 		if !need(2) {
 			return l.junk(), true
 		}

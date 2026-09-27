@@ -68,7 +68,7 @@ fn __vy_goLayout(f: str) -> str {
         let k = 0
         while k < len(from) && !matched {
             let pat = from[k]
-            if i + len(pat) <= len(f) && substr(f, i, i + len(pat)) == pat {
+            if i + len(pat) <= len(f) && __substrB(f, i, i + len(pat)) == pat {
                 out = out + to[k]
                 i = i + len(pat)
                 matched = true
@@ -76,7 +76,7 @@ fn __vy_goLayout(f: str) -> str {
             k = k + 1
         }
         if !matched {
-            out = out + charAt(f, i)
+            out = out + __charAtB(f, i)
             i = i + 1
         }
     }
@@ -98,9 +98,9 @@ fn __vy_renderChunk(chunk: str, t: int) -> str {
         return __vy_pad2(y)
     }
     if chunk == "January" { return __vy_monthName(__vy_tm_mon(t)) }
-    if chunk == "Jan" { return substr(__vy_monthName(__vy_tm_mon(t)), 0, 3) }
+    if chunk == "Jan" { return __substrB(__vy_monthName(__vy_tm_mon(t)), 0, 3) }
     if chunk == "Monday" { return __vy_dayName(__vy_tm_wday(t)) }
-    if chunk == "Mon" { return substr(__vy_dayName(__vy_tm_wday(t)), 0, 3) }
+    if chunk == "Mon" { return __substrB(__vy_dayName(__vy_tm_wday(t)), 0, 3) }
     if chunk == "01" { return __vy_pad2(__vy_tm_mon(t)) }
     if chunk == "1" { return str(__vy_tm_mon(t)) }
     if chunk == "02" { return __vy_pad2(__vy_tm_mday(t)) }
@@ -169,7 +169,7 @@ fn __vy_timeFormat(t: int, f: str) -> str {
         let k = 0
         while k < len(chunks) && !matched {
             let pat = chunks[k]
-            if i + len(pat) <= len(layout) && substr(layout, i, i + len(pat)) == pat {
+            if i + len(pat) <= len(layout) && __substrB(layout, i, i + len(pat)) == pat {
                 out = out + __vy_renderChunk(pat, t)
                 i = i + len(pat)
                 matched = true
@@ -177,7 +177,7 @@ fn __vy_timeFormat(t: int, f: str) -> str {
             k = k + 1
         }
         if !matched {
-            out = out + charAt(layout, i)
+            out = out + __charAtB(layout, i)
             i = i + 1
         }
     }
@@ -207,7 +207,7 @@ fn __vy_timeParse(text: str, f: str) -> int {
         let k = 0
         while k < len(chunks) && !matched {
             let pat = chunks[k]
-            if li + len(pat) <= len(layout) && substr(layout, li, li + len(pat)) == pat {
+            if li + len(pat) <= len(layout) && __substrB(layout, li, li + len(pat)) == pat {
                 matched = true
                 li = li + len(pat)
 
@@ -256,7 +256,7 @@ fn __vy_timeParse(text: str, f: str) -> int {
         }
         if !matched {
             if ti >= len(text) { return -1 }
-            if charAt(text, ti) != charAt(layout, li) { return -1 }
+            if __charAtB(text, ti) != __charAtB(layout, li) { return -1 }
             li = li + 1
             ti = ti + 1
         }
@@ -279,7 +279,7 @@ fn __vy_takeDigits(text: str, at: int, least: int, most: int) -> int {
     let count = 0
     let going = true
     while going && count < most && at + count < len(text) {
-        let d = __vy_digitOf(charAt(text, at + count))
+        let d = __vy_digitOf(__charAtB(text, at + count))
         if d < 0 {
             going = false
         } else {
@@ -297,7 +297,7 @@ fn __vy_digitOf(c: str) -> int {
     let digits = "0123456789"
     let i = 0
     while i < 10 {
-        if substr(digits, i, i + 1) == c { return i }
+        if __substrB(digits, i, i + 1) == c { return i }
         i = i + 1
     }
     return -1
@@ -309,7 +309,7 @@ fn __vy_digitOf(c: str) -> int {
 fn __vy_takeNumeric(text: str, at: int, pat: str) -> int {
     if pat == "PM" || pat == "pm" {
         if at + 2 > len(text) { return -1 }
-        let two = upper(substr(text, at, at + 2))
+        let two = upper(__substrB(text, at, at + 2))
         if two == "AM" { return 2000 }
         if two == "PM" { return 2001 }
         return -1
@@ -328,12 +328,12 @@ fn __vy_takeNumeric(text: str, at: int, pat: str) -> int {
 }
 
 fn __vy_monthTextAt(m: int, pat: str) -> str {
-    if pat == "Jan" { return substr(__vy_monthName(m), 0, 3) }
+    if pat == "Jan" { return __substrB(__vy_monthName(m), 0, 3) }
     return __vy_monthName(m)
 }
 
 fn __vy_dayTextAt(d: int, pat: str) -> str {
-    if pat == "Mon" { return substr(__vy_dayName(d), 0, 3) }
+    if pat == "Mon" { return __substrB(__vy_dayName(d), 0, 3) }
     return __vy_dayName(d)
 }
 
@@ -341,7 +341,7 @@ fn __vy_takeMonthName(text: str, at: int, pat: str) -> int {
     let m = 1
     while m <= 12 {
         let want = __vy_monthTextAt(m, pat)
-        if at + len(want) <= len(text) && substr(text, at, at + len(want)) == want {
+        if at + len(want) <= len(text) && __substrB(text, at, at + len(want)) == want {
             return m
         }
         m = m + 1
@@ -353,7 +353,7 @@ fn __vy_takeDayName(text: str, at: int, pat: str) -> int {
     let d = 0
     while d <= 6 {
         let want = __vy_dayTextAt(d, pat)
-        if at + len(want) <= len(text) && substr(text, at, at + len(want)) == want {
+        if at + len(want) <= len(text) && __substrB(text, at, at + len(want)) == want {
             return d
         }
         d = d + 1

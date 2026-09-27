@@ -521,7 +521,7 @@ fn __vy_reFind(pat: str, text: str) -> str {
     if len(prog) == 0 { __vy_reBadPattern(pat) }
     let caps = __vy_reCaps(prog)
     if __vy_reSearch(prog, pat, text, 0, caps) < 0 { return "" }
-    return substr(text, caps[0], caps[1])
+    return __substrB(text, caps[0], caps[1])
 }
 
 fn __vy_reFindAll(pat: str, text: str) -> []str {
@@ -540,7 +540,7 @@ fn __vy_reFindAll(pat: str, text: str) -> []str {
         // Go drops an empty match sitting where the last one ended, so
         // drop it here too or the two backends disagree.
         if !empty || s != prevEnd {
-            push(out, substr(text, s, e))
+            push(out, __substrB(text, s, e))
         }
         prevEnd = e
         // An empty match still has to move, or this never ends.
@@ -565,7 +565,7 @@ fn __vy_reGroups(pat: str, text: str) -> []str {
         if caps[g * 2] < 0 {
             push(out, "")
         } else {
-            push(out, substr(text, caps[g * 2], caps[g * 2 + 1]))
+            push(out, __substrB(text, caps[g * 2], caps[g * 2 + 1]))
         }
         g = g + 1
     }
@@ -587,7 +587,7 @@ fn __vy_reSplit(pat: str, text: str) -> []str {
     let prevEnd = -1
     while at <= len(text) {
         if __vy_reSearch(prog, pat, text, at, caps) < 0 {
-            push(out, substr(text, beg, len(text)))
+            push(out, __substrB(text, beg, len(text)))
             return out
         }
         let s = caps[0]
@@ -596,7 +596,7 @@ fn __vy_reSplit(pat: str, text: str) -> []str {
         if !empty || s != prevEnd {
             // a separator ending at 0 makes no leading piece
             if e != 0 {
-                push(out, substr(text, beg, s))
+                push(out, __substrB(text, beg, s))
             }
             beg = e
         }
@@ -607,7 +607,7 @@ fn __vy_reSplit(pat: str, text: str) -> []str {
             at = e
         }
     }
-    push(out, substr(text, beg, len(text)))
+    push(out, __substrB(text, beg, len(text)))
     return out
 }
 
@@ -621,11 +621,11 @@ fn __vy_reReplace(pat: str, text: str, repl: str) -> str {
     let at = 0
     while at <= len(text) {
         if __vy_reSearch(prog, pat, text, at, caps) < 0 {
-            return out + substr(text, lastEnd, len(text))
+            return out + __substrB(text, lastEnd, len(text))
         }
         let s = caps[0]
         let e = caps[1]
-        out = out + substr(text, lastEnd, s)
+        out = out + __substrB(text, lastEnd, s)
         // no replacement for an empty match right after another one
         if e > lastEnd || s == 0 {
             out = out + __vy_reExpand(repl, text, caps)
@@ -638,7 +638,7 @@ fn __vy_reReplace(pat: str, text: str, repl: str) -> str {
             at = e
         }
     }
-    return out + substr(text, lastEnd, len(text))
+    return out + __substrB(text, lastEnd, len(text))
 }
 
 // $1 and ${1} in a replacement, and $$ for a literal dollar.
@@ -648,7 +648,7 @@ fn __vy_reExpand(repl: str, text: str, caps: []int) -> str {
     while i < len(repl) {
         let c = __strAt(repl, i)
         if c != 36 {
-            out = out + charAt(repl, i)
+            out = out + __charAtB(repl, i)
             i = i + 1
         } else {
             if i + 1 < len(repl) && __strAt(repl, i + 1) == 36 {
@@ -673,7 +673,7 @@ fn __vy_reExpand(repl: str, text: str, caps: []int) -> str {
                     i = i + 1
                 } else {
                     if n * 2 + 1 < len(caps) && caps[n * 2] >= 0 {
-                        out = out + substr(text, caps[n * 2], caps[n * 2 + 1])
+                        out = out + __substrB(text, caps[n * 2], caps[n * 2 + 1])
                     }
                     i = j
                 }
@@ -689,7 +689,7 @@ fn __vy_reEscape(s: str) -> str {
     let out = ""
     let i = 0
     while i < len(s) {
-        let c = charAt(s, i)
+        let c = __charAtB(s, i)
         if contains(special, c) { out = out + "\\" }
         out = out + c
         i = i + 1

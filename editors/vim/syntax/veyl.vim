@@ -29,7 +29,7 @@ syn match   veylNumber   "\v<[0-9][0-9_]*(\.[0-9][0-9_]*)?>"
 
 syn region  veylString   start=/"/ skip=/\\./ end=/"/ contains=veylEscape,veylInterp
 syn region  veylRawStr   start=/`/ end=/`/
-syn match   veylEscape   /\\./ contained
+syn match   veylEscape   /\\\(x\x\x\|u{\x\{1,6}}\|.\)/ contained
 syn region  veylInterp   start=/{/ end=/}/ contained contains=ALLBUT,veylInterp
 
 syn match   veylComment  "//.*$"

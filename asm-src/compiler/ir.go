@@ -616,8 +616,9 @@ func (m *Module) intern(s string) int64 {
 // internFloat is intern's counterpart for float literals, so the same
 // bit pattern is not written into .rdata twice.
 func (m *Module) internFloat(v float64) int64 {
+	// By bit pattern: == would merge -0.0 into 0.0 and never match a NaN.
 	for i, existing := range m.Floats {
-		if existing == v {
+		if math.Float64bits(existing) == math.Float64bits(v) {
 			return int64(i)
 		}
 	}
@@ -2078,6 +2079,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.textBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.resultBuiltin(c, name); handled {
 		return r
 	}
@@ -2277,11 +2282,12 @@ func (l *lowerer) toStr(v Reg, at Node) Reg {
 	return l.junk()
 }
 
-// floatConsts are the builtin float constants. NAN is absent on
-// purpose; see the note in library.go's ConstType.
+// floatConsts are the builtin float constants.
 var floatConsts = map[string]float64{
-	"PI": math.Pi,
-	"E":  math.E,
+	"PI":  math.Pi,
+	"E":   math.E,
+	"INF": math.Inf(1),
+	"NAN": math.NaN(),
 }
 
 // junk is a defined-but-meaningless register, returned after an error so

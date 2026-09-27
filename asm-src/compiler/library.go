@@ -40,10 +40,12 @@ var sigs = map[string]front.Signature{
 	"float": {Params: []*Type{Numeric}, Ret: Float},
 	"divf":  {Params: []*Type{Numeric, Numeric}, Ret: Float},
 	"sqrt":  {Params: []*Type{Numeric}, Ret: Float},
-	"floor": {Params: []*Type{Numeric}, Ret: Float},
-	"ceil":  {Params: []*Type{Numeric}, Ret: Float},
-	"round": {Params: []*Type{Numeric}, Ret: Float},
-	"trunc": {Params: []*Type{Numeric}, Ret: Float},
+	// Whole numbers come back as an int, as on the Go backend, so
+	// `let n: int = floor(x)` needs no conversion.
+	"floor": {Params: []*Type{Numeric}, Ret: Int},
+	"ceil":  {Params: []*Type{Numeric}, Ret: Int},
+	"round": {Params: []*Type{Numeric}, Ret: Int},
+	"trunc": {Params: []*Type{Numeric}, Ret: Int},
 	"mod":   {Params: []*Type{Numeric, Numeric}, Ret: Float},
 
 	// The rest of the math library. Most of these are one msvcrt call;
@@ -102,6 +104,18 @@ var sigs = map[string]front.Signature{
 	"lines":      {Params: []*Type{Str}, Ret: ListOf(Str)},
 	"trim":       {Params: []*Type{Str}, Ret: Str},
 	"isInt":      {Params: []*Type{Str}, Ret: Bool},
+	"isFloat":    {Params: []*Type{Str}, Ret: Bool},
+	"count":      {Params: []*Type{Str, Str}, Ret: Int},
+	"pause":      {Ret: Void},
+
+	// Private to the prelude: the byte-indexed originals of substr and
+	// charAt, which the prelude's own parsers use, and the primitives
+	// under the text builtins. See textlib.go.
+	"__substrB":  {Params: []*Type{Str, Int, Int}, Ret: Str},
+	"__charAtB":  {Params: []*Type{Str, Int}, Ret: Str},
+	"__strByte":  {Params: []*Type{Str, Int}, Ret: Int},
+	"__readByte": {Params: []*Type{Bytes}, Ret: Int},
+	"__strtod":   {Params: []*Type{Str}, Ret: Float},
 
 	// The namespaced library. A dotted name is looked up here exactly
 	// like a plain one - the checker flattens `time.now` to that string
@@ -430,6 +444,14 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 		return front.Signature{Check: checkPathJoin}, true
 	case "toInt":
 		return front.Signature{Check: checkToInt}, true
+	case "toFloat":
+		return front.Signature{Check: checkOptional("toFloat", []*Type{Str, Numeric}, 1, Float)}, true
+	case "input":
+		return front.Signature{Check: checkOptional("input", []*Type{Str}, 0, Str)}, true
+	case "padLeft":
+		return front.Signature{Check: checkOptional("padLeft", []*Type{Str, Int, Str}, 2, Str)}, true
+	case "padRight":
+		return front.Signature{Check: checkOptional("padRight", []*Type{Str, Int, Str}, 2, Str)}, true
 	case "first", "last", "pop":
 		return front.Signature{Check: checkElemOf}, true
 	case "sum":
@@ -479,24 +501,12 @@ func (asmLibrary) Signature(name string) (front.Signature, bool) {
 	return s, ok
 }
 
-// ConstType reports the float constants this backend can honour.
-//
-// NAN and INF are deliberately absent, for two different reasons, and
-// both are real gaps rather than oversights.
-//
-// NAN: the float comparisons here lower to comisd, which reports an
-// unordered pair as both below and equal. A NaN would therefore compare
-// wrong rather than fail loudly, which is the worse of the two.
-//
-// INF: this build links the legacy msvcrt, whose printf writes infinity
-// as "1.#INF" where Go writes "+Inf". Printing one would silently
-// disagree with the Go backend, and the whole guarantee of this backend
-// is that when both compile a program they produce the same bytes.
-//
-// Leaving both out keeps each a compile error naming what is missing.
+// ConstType reports the builtin float constants. NAN and INF were left
+// out until the float comparisons were NaN-correct and the printer wrote
+// Go's +Inf, -Inf and NaN rather than msvcrt's 1.#INF.
 func (asmLibrary) ConstType(name string) (*Type, bool) {
 	switch name {
-	case "PI", "E":
+	case "PI", "E", "INF", "NAN":
 		return Float, true
 	}
 	return nil, false
@@ -678,6 +688,39 @@ func checkToInt(c *Checker, x *Call, args []*Type) *Type {
 		c.ErrorAt(x.Args[1], "toInt expects int for argument 2, got %s", args[1])
 	}
 	return Int
+}
+
+// checkOptional checks a builtin whose trailing parameters may be left
+// off: the first `required` of params must be given, the rest may be.
+// What an omitted one defaults to is the lowerer's business - see
+// preludeDefaults.
+func checkOptional(name string, params []*Type, required int, ret *Type) func(*Checker, *Call, []*Type) *Type {
+	return func(c *Checker, x *Call, args []*Type) *Type {
+		if len(args) < required || len(args) > len(params) {
+			if required == len(params)-1 {
+				c.ErrorAt(x, "%s takes %d or %d arguments, got %d", name, required, len(params), len(args))
+			} else {
+				c.ErrorAt(x, "%s takes %d to %d arguments, got %d", name, required, len(params), len(args))
+			}
+			return ret
+		}
+		for i, a := range args {
+			want := params[i]
+			if a.IsUnknown() {
+				continue
+			}
+			if want == Numeric {
+				if a.Kind != KInt && a.Kind != KFloat {
+					c.ErrorAt(x.Args[i], "%s expects a number for argument %d, got %s", name, i+1, a)
+				}
+				continue
+			}
+			if !a.Equal(want) {
+				c.ErrorAt(x.Args[i], "%s expects %s for argument %d, got %s", name, want, i+1, a)
+			}
+		}
+		return ret
+	}
 }
 
 // checkFind is has() that hands back the value: a ?V, so that absent and

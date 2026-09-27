@@ -282,3 +282,30 @@ func TestLexSkipsByteOrderMark(t *testing.T) {
 		t.Error("a BOM in the middle of a file should still be an error")
 	}
 }
+
+func TestLexEscapes(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{`"\x41\x62"`, "Ab"},
+		{`"\xff"`, "\xff"},
+		{`"\u{41}"`, "A"},
+		{`"\u{e9}"`, "\xc3\xa9"},
+		{`"\u{1F600}"`, "\xf0\x9f\x98\x80"},
+		{`"\u{10FFFF}"`, "\xf4\x8f\xbf\xbf"},
+		// A brace from an escape is literal text, so it is doubled for
+		// the parser, which reads "{{" back as one brace.
+		{`"\u{7B}\x7d"`, "{{}}"},
+	}
+	for _, c := range cases {
+		toks, errs := scan(t, c.src)
+		if len(errs) > 0 || len(toks) != 1 || toks[0].Lex != c.want {
+			t.Errorf("%s: got %q %v, want %q", c.src, toks, errs, c.want)
+		}
+	}
+
+	for _, bad := range []string{`"\x4"`, `"\xZZ"`, `"\u41"`, `"\u{}"`, `"\u{D800}"`,
+		`"\u{110000}"`, `"\u{0000041}"`, `"\u{41"`} {
+		if _, errs := scan(t, bad); len(errs) == 0 {
+			t.Errorf("%s: accepted, want an error", bad)
+		}
+	}
+}

@@ -15,8 +15,8 @@ fn __vy_bytesHex(b: bytes) -> str {
     let i = 0
     while i < len(b) {
         let v = __byteAt(b, i)
-        out = out + substr(digits, (v >> 4) & 15, ((v >> 4) & 15) + 1)
-        out = out + substr(digits, v & 15, (v & 15) + 1)
+        out = out + __substrB(digits, (v >> 4) & 15, ((v >> 4) & 15) + 1)
+        out = out + __substrB(digits, v & 15, (v & 15) + 1)
         i = i + 1
     }
     return out
@@ -27,7 +27,7 @@ fn __vy_hexVal2(c: str) -> int {
     let low = lower(c)
     let i = 0
     while i < 16 {
-        if substr(digits, i, i + 1) == low { return i }
+        if __substrB(digits, i, i + 1) == low { return i }
         i = i + 1
     }
     return -1
@@ -40,8 +40,8 @@ fn __vy_bytesFromHex(s: str) -> bytes! {
     let out = __bytesMake(len(t) / 2)
     let i = 0
     while i < len(t) {
-        let hi = __vy_hexVal2(substr(t, i, i + 1))
-        let lo = __vy_hexVal2(substr(t, i + 1, i + 2))
+        let hi = __vy_hexVal2(__substrB(t, i, i + 1))
+        let lo = __vy_hexVal2(__substrB(t, i + 1, i + 2))
         if hi < 0 || lo < 0 { return fail("not hexadecimal: " + t) }
         __bytePut(out, i / 2, hi * 16 + lo)
         i = i + 2
@@ -84,14 +84,14 @@ fn __vy_bytesBase64(b: bytes) -> str {
 }
 
 fn __vy_b64Char(alpha: str, v: int) -> str {
-    return substr(alpha, v, v + 1)
+    return __substrB(alpha, v, v + 1)
 }
 
 fn __vy_b64Val(c: str) -> int {
     let alpha = __vy_b64Alphabet()
     let i = 0
     while i < 64 {
-        if substr(alpha, i, i + 1) == c { return i }
+        if __substrB(alpha, i, i + 1) == c { return i }
         i = i + 1
     }
     return -1
@@ -104,8 +104,8 @@ fn __vy_bytesFromBase64(s: str) -> bytes! {
 
     // Padding decides how many bytes the last group carries.
     let pad = 0
-    if charAt(t, len(t) - 1) == "=" { pad = 1 }
-    if len(t) > 1 && charAt(t, len(t) - 2) == "=" { pad = 2 }
+    if __charAtB(t, len(t) - 1) == "=" { pad = 1 }
+    if len(t) > 1 && __charAtB(t, len(t) - 2) == "=" { pad = 2 }
 
     let out = __bytesMake((len(t) / 4) * 3 - pad)
     let at = 0
@@ -114,7 +114,7 @@ fn __vy_bytesFromBase64(s: str) -> bytes! {
         let n = 0
         let k = 0
         while k < 4 {
-            let c = charAt(t, i + k)
+            let c = __charAtB(t, i + k)
             let v = 0
             if c != "=" {
                 v = __vy_b64Val(c)
