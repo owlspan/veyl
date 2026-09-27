@@ -340,19 +340,48 @@ func (l *lowerer) listJoin(c *Call, list Reg, t vty, sep Reg) Reg {
 		return l.junk()
 	}
 
-	acc := l.temp(vStr)
-	l.emit(Instr{Op: OpStore, A: l.emptyStr(), Dst: NoReg, Imm: acc})
+	// Anything but strings is rendered first, once per element, into a
+	// list of strings, so the join below only ever sees text.
+	strs := list
+	if t.elemType().k != kStr || t.elemType().null {
+		strs = l.newList(vListOf(vStr), initialCap)
+		l.eachElement(list, t, func(i, v Reg) {
+			l.listPush(strs, l.toStr(v, c))
+		})
+	}
+	st := vListOf(vStr)
 
-	l.eachElement(list, t, func(i, v Reg) {
-		skip := l.newLabel()
+	// Two passes: add up the length, then copy each piece into place.
+	// Joining by concatenation, as this used to, copied everything so
+	// far again for every element - quadratic in the result.
+	sepLen := l.strLen(sep)
+	total := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: total})
+	l.eachElement(strs, st, func(i, v Reg) {
+		n := l.arith(OpAdd, l.load(total, vInt), l.strLen(v))
 		first := l.compare(OpEq, i, l.constant(0))
-		l.emit(Instr{Op: OpJumpIf, A: first, Dst: NoReg, Imm: skip})
-		l.emit(Instr{Op: OpStore, A: l.concat(l.load(acc, vStr), sep), Dst: NoReg, Imm: acc})
-		l.mark(skip)
-		l.emit(Instr{Op: OpStore, A: l.concat(l.load(acc, vStr), l.toStr(v, c)),
-			Dst: NoReg, Imm: acc})
+		withSep := l.pick(first, n, l.arith(OpAdd, n, sepLen), vInt)
+		l.emit(Instr{Op: OpStore, A: withSep, Dst: NoReg, Imm: total})
 	})
-	return l.load(acc, vStr)
+
+	out := l.strAlloc(l.load(total, vInt))
+	outSlot := l.temp(vStr)
+	l.emit(Instr{Op: OpStore, A: out, Dst: NoReg, Imm: outSlot})
+	at := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: at})
+	l.eachElement(strs, st, func(i, v Reg) {
+		skip := l.newLabel()
+		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, i, l.constant(0)), Dst: NoReg, Imm: skip})
+		l.copyBytesAt(l.load(outSlot, vStr), l.load(at, vInt), sep, sepLen)
+		l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, l.load(at, vInt), sepLen), Dst: NoReg, Imm: at})
+		l.mark(skip)
+		n := l.strLen(v)
+		l.copyBytesAt(l.load(outSlot, vStr), l.load(at, vInt), v, n)
+		l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, l.load(at, vInt), n), Dst: NoReg, Imm: at})
+	})
+	res := l.load(outSlot, vStr)
+	l.storeByte(res, l.load(at, vInt), l.constant(0))
+	return res
 }
 
 // listInsert opens a gap at i and writes v into it. An index past the
