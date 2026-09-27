@@ -18,9 +18,10 @@ package main
 //
 // # Why sorted rather than hashed
 //
-// The entries are kept sorted by key, and a lookup is a linear scan.
-// That is O(n) where a hash table is O(1), and it is a deliberate first
-// version.
+// The entries are kept sorted by key, and a lookup is a binary search:
+// O(log n), where a hash table would be O(1). An insert or a removal
+// moves the entries after it with one memmove, which is O(n) but a
+// single pass over memory rather than a loop of loads and stores.
 //
 // The reason is the Go backend. It sorts keys when it prints or
 // iterates a map, so that output is stable, and the differential test
@@ -92,67 +93,74 @@ func (l *lowerer) keyCmp(a, b Reg, kk vkind) Reg {
 	return l.arith(OpSub, a, b)
 }
 
-// mapScan walks the entries in order and stops at the first key that is
-// not less than the wanted one. It writes that index into idxSlot and
-// whether it matched into hitSlot.
-//
-// One scan answers both questions a map ever asks: where a key is, and
-// where it would go. mapGet needs the first, mapSet needs both, and
-// doing it once means the sorted order is maintained in one place.
-func (l *lowerer) mapScan(m, key Reg, t vty, idxSlot, hitSlot int64) {
-	length := l.field(m, mapLenOff, vInt)
-	keys := l.field(m, mapKeysOff, vInt)
+// keyLess is a < b on keys. Integer keys compare directly: subtracting
+// them, as a three-way comparison would, overflows for two keys far
+// enough apart and puts them in the wrong order.
+func (l *lowerer) keyLess(a, b Reg, kk vkind) Reg {
+	if kk == kStr {
+		return l.compare(OpLt, l.keyCmp(a, b, kk), l.constant(0))
+	}
+	return l.compare(OpLt, a, b)
+}
 
-	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: idxSlot})
-	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: hitSlot})
-
-	top := l.newLabel()
-	done := l.newLabel()
-	l.mark(top)
-
-	i := l.newReg()
-	l.regTy[i] = vInt
-	l.emit(Instr{Op: OpLoad, Dst: i, A: NoReg, B: NoReg, Imm: idxSlot})
-
-	more := l.compare(OpLt, i, length)
-	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: done})
-
+// keyAt loads key i.
+func (l *lowerer) keyAt(keys, i Reg, t vty) Reg {
 	addr := l.newReg()
 	l.regTy[addr] = vInt
 	l.emit(Instr{Op: OpIndexAddr, Dst: addr, A: keys, B: i})
 	held := l.newReg()
 	l.regTy[held] = l.mapKeyReg(t)
 	l.emit(Instr{Op: OpLoadMem, Dst: held, A: addr, B: NoReg, Imm: 0})
+	return held
+}
 
-	// cmp = held - wanted. Negative means this entry sorts first and the
-	// scan continues; zero is a hit; positive is where the key belongs.
-	cmp := l.keyCmp(held, key, t.key)
+// mapScan finds the first entry whose key is not less than the wanted
+// one, by binary search over the sorted keys. It writes that index into
+// idxSlot and whether it matched into hitSlot.
+//
+// One search answers both questions a map ever asks: where a key is,
+// and where it would go. mapGet needs the first, mapSet needs both, and
+// doing it once means the sorted order is maintained in one place.
+func (l *lowerer) mapScan(m, key Reg, t vty, idxSlot, hitSlot int64) {
+	length := l.field(m, mapLenOff, vInt)
+	keys := l.field(m, mapKeysOff, vInt)
 
-	past := l.compare(OpGe, cmp, l.constant(0))
-	l.emit(Instr{Op: OpJumpIf, A: past, Dst: NoReg, Imm: done, Comment: "at or past"})
+	hiSlot := l.temp(vInt)
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: idxSlot})
+	l.emit(Instr{Op: OpStore, A: length, Dst: NoReg, Imm: hiSlot})
+	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: hitSlot})
 
-	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, i, l.constant(1)), Dst: NoReg, Imm: idxSlot})
+	top := l.newLabel()
+	done := l.newLabel()
+	l.mark(top)
+
+	lo := l.load(idxSlot, vInt)
+	hi := l.load(hiSlot, vInt)
+	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpLt, lo, hi), Dst: NoReg, Imm: done})
+
+	// Both ends are small and non-negative, so the sum cannot overflow
+	// and the shift halves it.
+	mid := l.arith(OpShr, l.arith(OpAdd, lo, hi), l.constant(1))
+	below := l.keyLess(l.keyAt(keys, mid, t), key, t.key)
+	goHigh := l.newLabel()
+	l.emit(Instr{Op: OpJumpIf, A: below, Dst: NoReg, Imm: goHigh})
+	l.emit(Instr{Op: OpStore, A: mid, Dst: NoReg, Imm: hiSlot})
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
+	l.mark(goHigh)
+	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, mid, l.constant(1)), Dst: NoReg, Imm: idxSlot})
 	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
 
 	l.mark(done)
 
-	// Landing here means either the scan ran out, or it stopped on an
-	// entry that is >= the wanted key. Only the second can be a hit, and
-	// only when the comparison was exactly zero.
+	// The search stops on the first entry >= the wanted key, or past
+	// the end. Only the first can be a hit, and only if it is equal.
 	after := l.newLabel()
-	j := l.newReg()
-	l.regTy[j] = vInt
-	l.emit(Instr{Op: OpLoad, Dst: j, A: NoReg, B: NoReg, Imm: idxSlot})
-	inRange := l.compare(OpLt, j, length)
-	l.emit(Instr{Op: OpJumpNot, A: inRange, Dst: NoReg, Imm: after})
-
-	addr2 := l.newReg()
-	l.regTy[addr2] = vInt
-	l.emit(Instr{Op: OpIndexAddr, Dst: addr2, A: keys, B: j})
-	held2 := l.newReg()
-	l.regTy[held2] = l.mapKeyReg(t)
-	l.emit(Instr{Op: OpLoadMem, Dst: held2, A: addr2, B: NoReg, Imm: 0})
-	eq := l.compare(OpEq, l.keyCmp(held2, key, t.key), l.constant(0))
+	j := l.load(idxSlot, vInt)
+	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpLt, j, length), Dst: NoReg, Imm: after})
+	eq := l.compare(OpEq, l.keyCmp(l.keyAt(keys, j, t), key, t.key), l.constant(0))
+	if t.key != kStr {
+		eq = l.compare(OpEq, l.keyAt(keys, j, t), key)
+	}
 	l.emit(Instr{Op: OpJumpNot, A: eq, Dst: NoReg, Imm: after})
 	l.emit(Instr{Op: OpStore, A: l.constant(1), Dst: NoReg, Imm: hitSlot})
 
@@ -303,50 +311,18 @@ func (l *lowerer) copyWords(from, to, n Reg) {
 }
 
 // mapShiftRight opens a one-slot gap at idxSlot by moving every entry
-// from the end down to it one place right. Back to front, so nothing is
-// overwritten before it has been read.
+// from there to the end one place right, with memmove, which copes
+// with the two ranges overlapping.
 func (l *lowerer) mapShiftRight(m Reg, idxSlot int64) {
 	length := l.field(m, mapLenOff, vInt)
-	keys := l.field(m, mapKeysOff, vInt)
-	vals := l.field(m, mapValsOff, vInt)
-
-	jSlot := l.temp(vInt)
-	l.emit(Instr{Op: OpStore, A: length, Dst: NoReg, Imm: jSlot})
-
-	top := l.newLabel()
-	done := l.newLabel()
-	l.mark(top)
-
-	j := l.newReg()
-	l.regTy[j] = vInt
-	l.emit(Instr{Op: OpLoad, Dst: j, A: NoReg, B: NoReg, Imm: jSlot})
-	at := l.newReg()
-	l.regTy[at] = vInt
-	l.emit(Instr{Op: OpLoad, Dst: at, A: NoReg, B: NoReg, Imm: idxSlot})
-	more := l.compare(OpGt, j, at)
-	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: done})
-
-	prev := l.arith(OpSub, j, l.constant(1))
-	l.moveSlot(keys, prev, j)
-	l.moveSlot(vals, prev, j)
-
-	l.emit(Instr{Op: OpStore, A: prev, Dst: NoReg, Imm: jSlot})
-	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
-	l.mark(done)
-}
-
-// moveSlot copies one word within a block, from index a to index b.
-func (l *lowerer) moveSlot(block, a, b Reg) {
-	src := l.newReg()
-	l.regTy[src] = vInt
-	l.emit(Instr{Op: OpIndexAddr, Dst: src, A: block, B: a})
-	v := l.newReg()
-	l.regTy[v] = vInt
-	l.emit(Instr{Op: OpLoadMem, Dst: v, A: src, B: NoReg, Imm: 0})
-	dst := l.newReg()
-	l.regTy[dst] = vInt
-	l.emit(Instr{Op: OpIndexAddr, Dst: dst, A: block, B: b})
-	l.emit(Instr{Op: OpStoreMem, A: dst, B: v, Imm: 0})
+	at := l.load(idxSlot, vInt)
+	count := l.arith(OpMul, l.arith(OpSub, length, at), l.constant(wordSize))
+	for _, off := range []int64{mapKeysOff, mapValsOff} {
+		block := l.field(m, off, vInt)
+		from := l.arith(OpAdd, block, l.arith(OpMul, at, l.constant(wordSize)))
+		l.ccall("memmove", []Reg{l.arith(OpAdd, from, l.constant(wordSize)), from, count},
+			[]vty{vInt, vInt, vInt}, vInt, false, false)
+	}
 }
 
 // printMap writes a map the way the Go backend does:
@@ -471,49 +447,22 @@ func (l *lowerer) mapRemove(m, key Reg, t vty) {
 	found := l.compare(OpNe, hit, l.constant(0))
 	l.emit(Instr{Op: OpJumpNot, A: found, Dst: NoReg, Imm: done})
 
-	keys := l.field(m, mapKeysOff, vInt)
-	vals := l.field(m, mapValsOff, vInt)
 	length := l.field(m, mapLenOff, vInt)
 
-	// Shift everything after the hole one place left, front to back.
-	iSlot := l.temp(vInt)
-	l.emit(Instr{Op: OpStore, A: l.load(idxSlot, vInt), Dst: NoReg, Imm: iSlot})
-
-	top := l.newLabel()
-	shifted := l.newLabel()
-	l.mark(top)
-
-	i := l.load(iSlot, vInt)
-	last := l.arith(OpSub, length, l.constant(1))
-	more := l.compare(OpLt, i, last)
-	l.emit(Instr{Op: OpJumpNot, A: more, Dst: NoReg, Imm: shifted})
-
-	next := l.arith(OpAdd, i, l.constant(1))
-	l.copyCell(keys, next, i)
-	l.copyCell(vals, next, i)
-
-	l.emit(Instr{Op: OpStore, A: next, Dst: NoReg, Imm: iSlot})
-	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
-
-	l.mark(shifted)
+	// Close the hole: everything after it moves one place left.
+	at := l.load(idxSlot, vInt)
+	count := l.arith(OpMul, l.arith(OpSub, l.arith(OpSub, length, at), l.constant(1)),
+		l.constant(wordSize))
+	for _, off := range []int64{mapKeysOff, mapValsOff} {
+		block := l.field(m, off, vInt)
+		to := l.arith(OpAdd, block, l.arith(OpMul, at, l.constant(wordSize)))
+		l.ccall("memmove", []Reg{to, l.arith(OpAdd, to, l.constant(wordSize)), count},
+			[]vty{vInt, vInt, vInt}, vInt, false, false)
+	}
 	l.emit(Instr{Op: OpStoreMem, A: m, B: l.arith(OpSub, length, l.constant(1)),
 		Imm: mapLenOff})
 
 	l.mark(done)
-}
-
-// copyCell moves one word within a block.
-func (l *lowerer) copyCell(block, from, to Reg) {
-	src := l.newReg()
-	l.regTy[src] = vInt
-	l.emit(Instr{Op: OpIndexAddr, Dst: src, A: block, B: from})
-	v := l.newReg()
-	l.regTy[v] = vInt
-	l.emit(Instr{Op: OpLoadMem, Dst: v, A: src, B: NoReg, Imm: 0})
-	dst := l.newReg()
-	l.regTy[dst] = vInt
-	l.emit(Instr{Op: OpIndexAddr, Dst: dst, A: block, B: to})
-	l.emit(Instr{Op: OpStoreMem, A: dst, B: v, Imm: 0})
 }
 
 // mapBuiltin lowers keys, values, remove and clear.

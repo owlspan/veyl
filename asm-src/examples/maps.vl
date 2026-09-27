@@ -92,3 +92,12 @@ remove(scores, "was never here")
 print(len(scores))
 clear(scores)
 print(str(scores))
+
+// Keys at both ends of the int range still sort correctly: comparing
+// them by subtraction would overflow and put them the wrong way round.
+let far: {int: str} = {}
+far[9223372036854775807] = "max"
+far[-9223372036854775807] = "min"
+far[0] = "zero"
+print(far)
+print(keys(far))
