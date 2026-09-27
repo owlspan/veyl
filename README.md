@@ -322,8 +322,9 @@ needs Go and Inno Setup (`winget install JRSoftware.InnoSetup`).
 Inno Setup installed into the wine prefix.
 
 Every release on GitHub carries the same installer, built by
-`.github/workflows/release.yml` on a Windows runner when a `v*` tag is
-pushed. The version lives in four places - `Version` in
+`.github/workflows/release.yml` on a Windows runner. A push to `veyl`
+that bumps the version releases it, tag included; so does pushing a
+`v*` tag by hand. The version lives in four places - `Version` in
 `asm-src/compiler/veyl.go`, `AppVersion` and `ExtVersion` in
 `installer/veyl.iss`, and `editors/vscode/package.json` - and
 `version_test.go` fails when they disagree.
