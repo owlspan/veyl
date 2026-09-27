@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.24.0** - the language as currently implemented.
+**Version 0.25.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -2010,6 +2010,18 @@ The data survives right up until something touches it, and then it is
 quietly wrong. A separate type makes that impossible rather than merely
 unlikely.
 
+### `sound` - playing a WAV
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `sound.play(path)` | `bool` | start a `.wav` playing in the background |
+| `sound.loop(path)` | `bool` | the same, repeating until stopped |
+| `sound.stop()` | | stop whatever is playing |
+
+Both return `false` when the file is missing or cannot be played. One
+sound plays at a time: starting another stops the first, which suits
+music or an alert but not a game's overlapping effects.
+
 ### `rand` - randomness
 
 | Function | Returns | Description |
@@ -2525,14 +2537,73 @@ The size you pass to `win.open` is the **drawing area**, not the window
 including its title bar, so `win.open("x", 640, 400)` gives you exactly
 640 by 400 pixels to draw in.
 
+### Images
+
+Images are `.bmp` files, drawn into the back buffer like everything
+else.
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `win.image(path)` | `int!` | load a `.bmp`; the result is an image handle |
+| `win.imageWidth(img)` `win.imageHeight(img)` | `int` | its size in pixels |
+| `win.draw(w, img, x, y)` | | draw it at its own size |
+| `win.drawScaled(w, img, x, y, width, height)` | | draw it stretched to a size |
+| `win.drawKeyed(w, img, x, y, colour)` | | draw it with every pixel of one colour left out |
+| `win.freeImage(img)` | | release it |
+
+`drawKeyed` is how a sprite gets a transparent background: paint the
+background one colour nobody uses - magenta, `win.rgb(255, 0, 255)`, is
+the tradition - and name that colour when drawing.
+
+```veyl
+let player = must(win.image("player.bmp"))
+while win.poll(w) {
+    win.clear(w, bg)
+    win.drawKeyed(w, player, x, y, win.rgb(255, 0, 255))
+    win.present(w)
+    sleep(16)
+}
+```
+
+### Measuring text
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `win.textWidth(w, s)` | `int` | how wide `s` is when drawn, in pixels |
+| `win.textHeight(w)` | `int` | the height of a line of text |
+
+```veyl
+let label = "game over"
+let x = (win.width(w) - win.textWidth(w, label)) / 2
+win.text(w, x, 200, label, white)          // centred
+```
+
+### Canvases
+
+`win.canvas(width, height)` is a back buffer with no window: every
+drawing function works on it, nothing appears on screen, and
+`win.pixel(c, x, y)` reads a colour back - `-1` outside it. It is for
+drawing off-screen, and for checking what was drawn:
+
+```veyl
+let c = win.canvas(64, 64)
+win.clear(c, win.rgb(0, 0, 0))
+win.circle(c, 32, 32, 10, win.rgb(255, 255, 255))
+print(win.pixel(c, 32, 32) == win.rgb(255, 255, 255))   // true
+```
+
+`win.pixel` works on a window too, on what has been drawn since the
+last `present`.
+
 ### What it does not do yet
 
-No images, no sound, no text measurement, and one font. Text is drawn
-with the system font at a fixed size, so centring a label means
-guessing at its width. There is one window per program.
+Images are `.bmp` only - no PNG or JPEG - and have no alpha channel
+beyond one colour key. One font, at the system size. One window per
+program.
 
 Working examples are in `examples/gui/`: `pong.vl` is a playable game
-in about 130 lines, `widgets.vl` exercises the widget set.
+in about 130 lines, `widgets.vl` exercises the widget set, and
+`sprites.vl` draws images and centres text.
 
 ## Reserved words
 
@@ -2669,7 +2740,7 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.24.0 does not do yet.
+Honest list of what v0.25.0 does not do yet.
 
 **The language**
 
