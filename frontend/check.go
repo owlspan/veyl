@@ -339,6 +339,9 @@ func (c *Checker) Check(p *Program) {
 		} else {
 			f.RetT = c.resolveAnnotation(f.Ret, f)
 		}
+		if f.Export {
+			c.checkExportDecl(f)
+		}
 		if f.Extern {
 			c.checkExternDecl(f)
 		} else if f.Variadic {
@@ -399,6 +402,10 @@ func (c *Checker) checkExternDecl(f *FnDecl) {
 		prm := &f.Params[i]
 		if prm.Name == "self" {
 			c.ErrorAt(prm, "extern %s cannot take self", f.Name)
+			continue
+		}
+		if prm.T != nil && prm.T.Kind == KFunc {
+			c.checkCallbackType(prm, f.Name)
 			continue
 		}
 		if !externScalar(prm.T) && !c.isExternStruct(prm.T) && prm.T.Kind != KBytes {
@@ -1877,4 +1884,42 @@ func (c *Checker) peekType(e Expr) *Type {
 		}
 	}
 	return nil
+}
+
+// checkCallbackType checks a function-typed extern parameter: the
+// native code will call back into Veyl through it, so everything in its
+// signature has to be something C can pass and take back.
+func (c *Checker) checkCallbackType(prm *Param, fn string) {
+	ok := func(t *Type) bool { return externScalar(t) || c.isExternStruct(t) }
+	for _, p := range prm.T.Params {
+		if !ok(p) {
+			c.ErrorAt(prm, "a callback given to %s can only take int, float, str, bool, ptr or "+
+				"an extern struct - %s cannot come from native code", fn, p)
+			return
+		}
+	}
+	if r := prm.T.Elem; r != nil && r != Void && !ok(r) {
+		c.ErrorAt(prm, "a callback given to %s can only return int, float, bool, ptr or an "+
+			"extern struct, not %s", fn, r)
+	}
+}
+
+// checkExportDecl checks an `export fn`: native code calls it, so its
+// parameters and result have to be things C can pass and take back.
+func (c *Checker) checkExportDecl(f *FnDecl) {
+	if f.Recv != "" {
+		c.ErrorAt(f, "a method cannot be exported - export a plain fn that calls it")
+		return
+	}
+	ok := func(t *Type) bool { return externScalar(t) || c.isExternStruct(t) }
+	for i := range f.Params {
+		if prm := &f.Params[i]; !ok(prm.T) {
+			c.ErrorAt(prm, "exported %s cannot take %s - native code can only pass int, float, "+
+				"str, bool, ptr or an extern struct", f.Name, prm.T)
+		}
+	}
+	if f.RetT != nil && f.RetT != Void && !ok(f.RetT) {
+		c.ErrorAt(f, "exported %s cannot return %s - native code can only take back int, "+
+			"float, bool, ptr or an extern struct", f.Name, f.RetT)
+	}
 }

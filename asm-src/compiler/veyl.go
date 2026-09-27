@@ -38,6 +38,8 @@ const usage = `veyl ` + Version + ` - the Veyl compiler
 usage:
   veyl run   <file.vl>    compile and run
   veyl build <file.vl>    compile to an executable next to the source
+  veyl build --dll <file.vl>
+                          compile to a DLL; export fn marks what it exports
   veyl asm   <file.vl>    print the generated assembly
   veyl ir    <file.vl>    print the intermediate representation
   veyl version            print the version
@@ -163,6 +165,13 @@ func main() {
 		cmd = "run"
 	}
 
+	// `veyl build --dll f.vl` makes a library instead of a program.
+	dll := false
+	if cmd == "build" && len(args) > 1 && args[1] == "--dll" {
+		dll = true
+		args = append([]string{args[0]}, args[2:]...)
+	}
+
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "veyl: %s needs a file\n", cmd)
 		os.Exit(2)
@@ -186,6 +195,10 @@ func main() {
 		fmt.Print(Emit(mod))
 	case "build":
 		out := strings.TrimSuffix(path, filepath.Ext(path)) + ".exe"
+		if dll {
+			out = strings.TrimSuffix(out, ".exe") + ".dll"
+			mod.DLL = true
+		}
 		if err := missingForeignDLLs(filepath.Dir(path), mod); err != nil {
 			fail("%v", err)
 		}
@@ -315,13 +328,17 @@ func buildExe(mod *Module, out string) {
 			fail("the generated assembly could not be encoded. This is a "+
 				"compiler bug, not a mistake in your program.\n%v", err)
 		}
-		if err := writePE(obj, out); err != nil {
+		opt := peOptions{dll: mod.DLL, name: filepath.Base(out), exports: mod.Exports}
+		if err := writePE(obj, out, opt); err != nil {
 			fail("the executable could not be written. This is a compiler "+
 				"bug, not a mistake in your program.\n%v", err)
 		}
 		return
 	}
 
+	if mod.DLL {
+		fail("VEYL_LINK=mingw cannot build a DLL; unset it to use the built-in linker")
+	}
 	buildExeWithMinGW(asmText, out)
 }
 

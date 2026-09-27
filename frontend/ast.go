@@ -357,6 +357,10 @@ type FnDecl struct {
 	// more arguments than there are named parameters, and tells the
 	// emitter to set AL per the Windows x64 variadic rule.
 	Variadic bool
+
+	// Export marks `export fn`: in a DLL build the function is in the
+	// export table under its own name, callable from native code.
+	Export bool
 }
 
 // ---- statements ----

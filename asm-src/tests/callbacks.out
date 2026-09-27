@@ -1,0 +1,6 @@
+[-250, -7, 0, 3, 8, 19, 42, 1000]
+[1000, 42, 19, 8, 3, 0, -7, -250]
+true
+true
+["apple", "banana", "cherry", "fig", "kiwi", "pear"]
+["this", "list", "must", "survive"]

@@ -145,7 +145,7 @@ func TestRdataMerge(t *testing.T) {
 	write := func(t *testing.T, obj *object) []byte {
 		t.Helper()
 		out := filepath.Join(t.TempDir(), "out.exe")
-		if err := writePE(obj, out); err != nil {
+		if err := writePE(obj, out, peOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		bs, err := os.ReadFile(out)

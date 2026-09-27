@@ -139,6 +139,8 @@ const (
 	scnExecute = 0x20000000
 	scnRead    = 0x40000000
 	scnWrite   = 0x80000000
+	// The loader may drop the section once the image is in place.
+	scnDiscardable = 0x02000000
 )
 
 // writePE lays the object out and writes an executable.
@@ -153,7 +155,14 @@ const (
 // because float loads read pooled doubles straight out of it.
 // Disabled with VEYL_NOMERGE=1, which puts .rdata back in its own
 // section exactly as before.
-func writePE(obj *object, out string) error {
+// peOptions is what differs between an executable and a DLL.
+type peOptions struct {
+	dll     bool
+	name    string   // the DLL's file name, as its export table records it
+	exports []Export // what the export table lists
+}
+
+func writePE(obj *object, out string, opt peOptions) error {
 	text := append([]byte(nil), obj.text...)
 
 	// Where the read-only data begins inside the merged text, or -1
@@ -176,7 +185,23 @@ func writePE(obj *object, out string) error {
 
 	idata, slots, iatRVA, iatSize := buildImports(obj.externs, idataRVA)
 
-	bssRVA := alignUp(idataRVA+len(idata), sectionAlignment)
+	// A DLL's export table and its relocation block come next, each in
+	// a section of its own.
+	next := alignUp(idataRVA+len(idata), sectionAlignment)
+	var edata, reloc []byte
+	edataRVA, relocRVA := 0, 0
+	if opt.dll {
+		edataRVA = next
+		var err error
+		edata, err = buildExports(obj, opt, edataRVA, textRVA)
+		if err != nil {
+			return err
+		}
+		relocRVA = alignUp(edataRVA+len(edata), sectionAlignment)
+		reloc = emptyRelocations(textRVA)
+		next = alignUp(relocRVA+len(reloc), sectionAlignment)
+	}
+	bssRVA := next
 
 	// Where each section begins, so a symbol's offset becomes an RVA.
 	base := map[secID]int{
@@ -213,9 +238,13 @@ func writePE(obj *object, out string) error {
 		binary.LittleEndian.PutUint32(text[r.at:r.at+4], uint32(int32(delta)))
 	}
 
-	entry, ok := resolve(entrySymbol)
+	entrySym := entrySymbol
+	if opt.dll {
+		entrySym = dllEntrySymbol
+	}
+	entry, ok := resolve(entrySym)
 	if !ok {
-		return fmt.Errorf("the program has no %s", entrySymbol)
+		return fmt.Errorf("the program has no %s", entrySym)
 	}
 
 	sections := []peSection{
@@ -229,12 +258,31 @@ func writePE(obj *object, out string) error {
 	}
 	sections = append(sections,
 		peSection{".idata", idataRVA, len(idata), idata, scnData | scnRead | scnWrite})
+	img := imageInfo{entry: entry, importRVA: idataRVA, importSize: len(idata),
+		iatRVA: iatRVA, iatSize: iatSize, dll: opt.dll}
+	if opt.dll {
+		sections = append(sections,
+			peSection{".edata", edataRVA, len(edata), edata, scnData | scnRead},
+			peSection{".reloc", relocRVA, len(reloc), reloc, scnData | scnRead | scnDiscardable})
+		img.exportRVA, img.exportSize = edataRVA, len(edata)
+		img.relocRVA, img.relocSize = relocRVA, len(reloc)
+	}
 	if obj.bssLen > 0 {
 		sections = append(sections,
 			peSection{".bss", bssRVA, obj.bssLen, nil, scnBSS | scnRead | scnWrite})
 	}
 
-	return writeImage(out, sections, entry, idataRVA, len(idata), iatRVA, iatSize)
+	return writeImage(out, sections, img)
+}
+
+// imageInfo is what the headers point at.
+type imageInfo struct {
+	entry                 int
+	importRVA, importSize int
+	iatRVA, iatSize       int
+	exportRVA, exportSize int
+	relocRVA, relocSize   int
+	dll                   bool
 }
 
 // buildImports produces the import section: one descriptor per library,
@@ -320,7 +368,7 @@ func buildImports(externs []string, rva int) (blob []byte, slots map[string]int,
 }
 
 // writeImage assembles the headers and the section bodies into a file.
-func writeImage(out string, sections []peSection, entry, importRVA, importSize, iatRVA, iatSize int) error {
+func writeImage(out string, sections []peSection, img imageInfo) error {
 	headerSize := alignUp(0x40+4+20+240+len(sections)*40, fileAlignment)
 
 	// File offsets. A section with no initialised data occupies none.
@@ -372,8 +420,13 @@ func writeImage(out string, sections []peSection, entry, importRVA, importSize, 
 	binary.LittleEndian.PutUint16(buf[p+0:], 0x8664) // x86-64
 	binary.LittleEndian.PutUint16(buf[p+2:], uint16(len(sections)))
 	binary.LittleEndian.PutUint16(buf[p+16:], 240) // optional header size
-	// EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE | RELOCS_STRIPPED.
-	binary.LittleEndian.PutUint16(buf[p+18:], 0x0002|0x0020|0x0001)
+	// EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE | RELOCS_STRIPPED. A DLL
+	// swaps the last for the DLL flag: it has to be movable.
+	if img.dll {
+		binary.LittleEndian.PutUint16(buf[p+18:], 0x0002|0x0020|0x2000)
+	} else {
+		binary.LittleEndian.PutUint16(buf[p+18:], 0x0002|0x0020|0x0001)
+	}
 	p += 20
 
 	// The optional header, which is not optional.
@@ -383,9 +436,13 @@ func writeImage(out string, sections []peSection, entry, importRVA, importSize, 
 	binary.LittleEndian.PutUint32(buf[o+4:], uint32(codeSize))
 	binary.LittleEndian.PutUint32(buf[o+8:], uint32(initSize))
 	binary.LittleEndian.PutUint32(buf[o+12:], uint32(uninitSize))
-	binary.LittleEndian.PutUint32(buf[o+16:], uint32(entry))
+	binary.LittleEndian.PutUint32(buf[o+16:], uint32(img.entry))
 	binary.LittleEndian.PutUint32(buf[o+20:], uint32(sections[0].rva))
-	binary.LittleEndian.PutUint64(buf[o+24:], imageBase)
+	if img.dll {
+		binary.LittleEndian.PutUint64(buf[o+24:], dllBase)
+	} else {
+		binary.LittleEndian.PutUint64(buf[o+24:], imageBase)
+	}
 	binary.LittleEndian.PutUint32(buf[o+32:], sectionAlignment)
 	binary.LittleEndian.PutUint32(buf[o+36:], fileAlignment)
 	binary.LittleEndian.PutUint16(buf[o+40:], 6) // major OS version
@@ -396,6 +453,10 @@ func writeImage(out string, sections []peSection, entry, importRVA, importSize, 
 	// NX_COMPAT | TERMINAL_SERVER_AWARE. No dynamic base: the image has
 	// no relocations to apply, so it has to load where it says it does.
 	binary.LittleEndian.PutUint16(buf[o+70:], 0x0100|0x8000)
+	if img.dll {
+		// HIGH_ENTROPY_VA | DYNAMIC_BASE | NX_COMPAT: a DLL moves.
+		binary.LittleEndian.PutUint16(buf[o+70:], 0x0020|0x0040|0x0100)
+	}
 	binary.LittleEndian.PutUint64(buf[o+72:], 0x100000) // stack reserve
 	binary.LittleEndian.PutUint64(buf[o+80:], 0x1000)   // stack commit
 	binary.LittleEndian.PutUint64(buf[o+88:], 0x100000) // heap reserve
@@ -403,10 +464,14 @@ func writeImage(out string, sections []peSection, entry, importRVA, importSize, 
 	binary.LittleEndian.PutUint32(buf[o+108:], 16)      // data directories
 
 	dirs := o + 112
-	binary.LittleEndian.PutUint32(buf[dirs+1*8+0:], uint32(importRVA))
-	binary.LittleEndian.PutUint32(buf[dirs+1*8+4:], uint32(importSize))
-	binary.LittleEndian.PutUint32(buf[dirs+12*8+0:], uint32(iatRVA))
-	binary.LittleEndian.PutUint32(buf[dirs+12*8+4:], uint32(iatSize))
+	binary.LittleEndian.PutUint32(buf[dirs+0*8+0:], uint32(img.exportRVA))
+	binary.LittleEndian.PutUint32(buf[dirs+0*8+4:], uint32(img.exportSize))
+	binary.LittleEndian.PutUint32(buf[dirs+1*8+0:], uint32(img.importRVA))
+	binary.LittleEndian.PutUint32(buf[dirs+1*8+4:], uint32(img.importSize))
+	binary.LittleEndian.PutUint32(buf[dirs+5*8+0:], uint32(img.relocRVA))
+	binary.LittleEndian.PutUint32(buf[dirs+5*8+4:], uint32(img.relocSize))
+	binary.LittleEndian.PutUint32(buf[dirs+12*8+0:], uint32(img.iatRVA))
+	binary.LittleEndian.PutUint32(buf[dirs+12*8+4:], uint32(img.iatSize))
 
 	p = o + 240
 	for i, s := range sections {

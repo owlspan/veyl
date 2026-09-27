@@ -612,6 +612,12 @@ type Module struct {
 	Strings []string
 	Floats  []float64
 	Helpers map[string]bool // runtime helpers actually used
+	Thunks  []Thunk         // callback stubs; see callback.go
+	Exports []Export        // `export fn`s, for a DLL build; see dll.go
+
+	// DLL makes the program a library: an entry point Windows calls on
+	// load instead of one that runs and exits, and an export table.
+	DLL     bool
 	Externs map[string]bool // foreign symbols called directly, declared
 	// as .extern at the top of the .s file
 	NGlobals int // words of static storage the program needs
@@ -663,7 +669,11 @@ type sig struct {
 // (ret32), whether the caller may pass extra arguments (variadic), and
 // which library exports the symbol when the declaration said `from`.
 type externSig struct {
-	params   []vty
+	params []vty
+	// widen is, for a function-typed parameter, which of the
+	// callback's arguments arrive as a 32-bit C int or bool. See
+	// callback.go.
+	widen    map[int][]widenArg
 	ret      vty
 	ret32    bool
 	variadic bool
@@ -687,6 +697,16 @@ func (l *lowerer) collectExtern(fd *FnDecl) {
 	es := externSig{sym: fd.Name, dll: fd.DLL, variadic: fd.Variadic}
 	for _, pa := range fd.Params {
 		t, good := typeOfName(pa.Type)
+		// A function is a callback: the address of a stub that makes
+		// the native call look like a Veyl one.
+		if good && t.k == kFunc {
+			if es.widen == nil {
+				es.widen = map[int][]widenArg{}
+			}
+			es.widen[len(es.params)] = callbackWidening(pa.Type)
+			es.params = append(es.params, t)
+			continue
+		}
 		// A bytes buffer and an extern struct both cross as the address
 		// of their first byte.
 		if good && (t.k == kBytes || l.isView(t)) {
@@ -877,6 +897,9 @@ func Lower(p *Program, file string) (*Module, []string) {
 		s.ret = ret
 		if ok {
 			l.sigs[methodName(fd.Recv, fd.Name)] = s
+		}
+		if fd.Export && fd.Recv == "" {
+			l.mod.Exports = append(l.mod.Exports, exportOf(fd))
 		}
 	}
 
@@ -1832,7 +1855,9 @@ func (l *lowerer) callExtern(c *Call, name string, es externSig) Reg {
 	argTypes := make([]vty, n)
 	for i := 0; i < n; i++ {
 		var v Reg
-		if i < len(es.params) {
+		if i < len(es.params) && es.params[i].k == kFunc {
+			v = l.callbackArg(c.Args[i], es.params[i], es.widen[i])
+		} else if i < len(es.params) {
 			v = l.rvalueAs(c.Args[i], es.params[i])
 			if es.params[i].k == kFloat && l.regTy[v].k == kInt {
 				v = l.toFloat(v)
@@ -2630,6 +2655,16 @@ func (l *lowerer) binary(x *Binary) Reg {
 				return n
 			}
 			return d
+		case LT, GT, LTE, GTE:
+			// Go orders strings byte by byte, unsigned, which is what
+			// strcmp does; only the sign of its answer is portable.
+			if at.k != kStr || bt.k != kStr {
+				l.errorAt(x, "cannot compare %s and %s", at, bt)
+				return l.junk()
+			}
+			cmp := l.ccall("strcmp", []Reg{a, b}, []vty{vStr, vStr}, vInt, true, false)
+			op := map[Kind]Op{LT: OpLt, GT: OpGt, LTE: OpLe, GTE: OpGe}[x.Op]
+			return l.compare(op, cmp, l.constant(0))
 		default:
 			l.errorAt(x, "%s is not defined on strings", x.Op)
 			return l.junk()
