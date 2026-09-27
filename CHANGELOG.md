@@ -3,6 +3,37 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.22.0
+
+**Callbacks.** A function type on an `extern fn` parameter takes a Veyl
+function that native code calls back:
+
+```veyl
+extern fn EnumWindows(each: fn(ptr, ptr) -> bool, data: ptr) -> bool from "user32"
+fn onWindow(hwnd: int, data: int) -> bool { return true }
+EnumWindows(onWindow, 0)
+```
+
+Native code is handed a stub that sign-extends the arguments the
+callback type declares as C `int`, normalises each `bool`, and jumps to
+the function, which then returns straight to its caller. A callback
+may allocate and run the collector.
+
+**DLLs.** `veyl build --dll mod.vl` writes `mod.dll`. The top level
+runs once, on load; every `export fn` is in the export table. The image
+is relocatable with no fix-ups, since nothing in it holds an absolute
+address, so a DLL loads wherever Windows puts it.
+
+**`mem.protect`** changes what pages may be used for, and **`mem.scan`**
+finds a byte pattern such as `"48 8B ?? ?? 89"` - the two things a mod
+needs to find and patch code.
+
+**Strings order**: `<`, `>`, `<=` and `>=` on two strings compare byte
+by byte, as on the Go backend. The checker accepted them and the
+backend refused them.
+
+`examples/ffi/plugin.vl` is a DLL to start from.
+
 ## 0.21.0
 
 **Raw memory.** `mem.alloc`, `mem.resize` and `mem.free` give blocks
