@@ -113,3 +113,38 @@ func TestPubAcrossFiles(t *testing.T) {
 		t.Errorf("a pub function was refused: %q", errs)
 	}
 }
+
+func TestEnums(t *testing.T) {
+	if errs := checked(t, `
+enum State { Idle, Running, Done }
+fn next(s: State) -> State {
+    match s {
+        State.Idle => return State.Running
+        State.Running => return State.Done
+        State.Done => return State.Idle
+    }
+    return s
+}
+let s: State = next(State.Idle)
+let same = s == State.Running
+let enum = 1
+`); len(errs) > 0 {
+		t.Fatalf("a valid enum program was refused: %v", errs)
+	}
+
+	bad := []struct{ src, want string }{
+		{"enum S { A, B }\nlet s = S.A\nmatch s {\n    S.A => print(1)\n}", "does not handle S.B"},
+		{"enum S { A }\nlet n = S.A + 1", "needs numbers"},
+		{"enum S { A }\nlet b = S.A == 0", "cannot compare"},
+		{"enum S { A }\nenum T { A }\nlet b = S.A == T.A", "cannot compare"},
+		{"enum S { A }\nlet x = S.B", `has no variant "B"`},
+		{"enum S { A, A }", "declared twice"},
+		{"enum S { }", "at least one variant"},
+	}
+	for _, b := range bad {
+		errs := strings.Join(checked(t, b.src), "\n")
+		if !strings.Contains(errs, b.want) {
+			t.Errorf("%q: want %q, got %q", b.src, b.want, errs)
+		}
+	}
+}

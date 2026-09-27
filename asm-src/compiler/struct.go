@@ -284,6 +284,9 @@ func (l *lowerer) structLit(x *StructLit) Reg {
 // written, but those only ever appear as the callee of a call and are
 // flattened there, so anything reaching here is a real field access.
 func (l *lowerer) fieldRead(x *Field) Reg {
+	if name := l.enumNamed(x.X); name != "" {
+		return l.enumValue(x, name)
+	}
 	if lay := l.viewNamed(x.X); lay != nil {
 		// Player.size, the only thing an extern struct's name has.
 		d := l.constant(lay.bytes)

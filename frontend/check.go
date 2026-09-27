@@ -17,6 +17,7 @@ type Checker struct {
 	file     string
 	funcs    map[string]*FnDecl
 	structs  map[string]*StructDecl
+	enums    map[string]*EnumDecl
 	methods  map[string]map[string]*FnDecl // struct name -> method name -> decl
 	scopes   []map[string]*Type
 	consts   []map[string]bool // parallel to scopes: names declared const
@@ -40,6 +41,7 @@ func NewChecker(file string, lib Library) *Checker {
 		lib:     lib,
 		funcs:   map[string]*FnDecl{},
 		structs: map[string]*StructDecl{},
+		enums:   map[string]*EnumDecl{},
 		methods: map[string]map[string]*FnDecl{},
 	}
 }
@@ -285,6 +287,7 @@ func (c *Checker) resolveAnnotation(text string, n Node) *Type {
 		c.ErrorAt(n, "unknown type %q", text)
 		return Unknown
 	}
+	t = c.enumTypes(t)
 	if bad := c.undeclaredStruct(t); bad != "" {
 		c.ErrorAt(n, "unknown type %q", bad)
 		return Unknown
@@ -323,6 +326,9 @@ func (c *Checker) Check(p *Program) {
 	// itself, through a list.
 	for _, d := range p.Structs {
 		c.structs[d.Name] = d
+	}
+	for _, e := range p.Enums {
+		c.declareEnum(e)
 	}
 	for _, d := range p.Structs {
 		if d.Extern {
@@ -629,9 +635,10 @@ func (c *Checker) stmt(s Stmt) {
 func (c *Checker) match(st *MatchStmt) {
 	subj := c.expr(st.Subject)
 	if !subj.IsUnknown() && (subj.IsCollection() || subj.Kind == KStruct) {
-		c.ErrorAt(st.Subject, "cannot match on %s - match compares values, so it needs an int, float, str or bool", subj)
+		c.ErrorAt(st.Subject, "cannot match on %s - match compares values, so it needs an int, float, str, bool or enum", subj)
 		subj = Unknown
 	}
+	handled := map[string]bool{}
 
 	seen := map[string]bool{}
 	for _, arm := range st.Cases {
@@ -650,11 +657,29 @@ func (c *Checker) match(st *MatchStmt) {
 				}
 				seen[key] = true
 			}
+			if f, ok := v.(*Field); ok && subj.Kind == KEnum {
+				handled[f.Name] = true
+			}
 		}
 		c.stmt(arm.Body)
 	}
 	if st.Else != nil {
 		c.stmt(st.Else)
+	} else if subj.Kind == KEnum {
+		// Without an else, every variant has to have an arm: adding a
+		// variant later then points at each match that forgot it.
+		if e := c.enums[subj.Name]; e != nil {
+			var missing []string
+			for _, v := range e.Variants {
+				if !handled[v] {
+					missing = append(missing, subj.Name+"."+v)
+				}
+			}
+			if len(missing) > 0 {
+				c.ErrorAt(st, "this match on %s does not handle %s - add an arm for each, or an else",
+					subj.Name, strings.Join(missing, ", "))
+			}
+		}
 	}
 }
 
@@ -670,6 +695,10 @@ func constKey(e Expr) (string, bool) {
 		return "s" + x.Val, true
 	case *BoolLit:
 		return fmt.Sprintf("b%t", x.Val), true
+	case *Field:
+		if id, ok := x.X.(*Ident); ok {
+			return "e" + id.Name + "." + x.Name, true
+		}
 	}
 	return "", false
 }
@@ -961,6 +990,19 @@ func (c *Checker) expr(e Expr) *Type {
 // field types `user.name`. A dotted library path never reaches here -
 // the resolver reports those, because they are only valid as a call.
 func (c *Checker) field(x *Field) *Type {
+	if e := c.enumNamed(x.X); e != nil {
+		for _, v := range e.Variants {
+			if v == x.Name {
+				if c.private(e.File, e.Pub) {
+					c.ErrorAt(x, "enum %q is private to %s - mark it 'pub enum %s' to use it from another file",
+						e.Name, baseName(e.File), e.Name)
+				}
+				return EnumOf(e.Name)
+			}
+		}
+		c.ErrorAt(x, "%s has no variant %q - it has: %s", e.Name, x.Name, strings.Join(e.Variants, ", "))
+		return Unknown
+	}
 	if d := c.externStructNamed(x.X); d != nil {
 		if x.Name == "size" {
 			return Int
@@ -2021,4 +2063,74 @@ func (c *Checker) checkFnPrivacy(at Node, f *FnDecl) {
 		c.ErrorAt(at, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
 			f.Name, baseName(f.File), f.Name)
 	}
+}
+
+// ---- enums ----
+
+func (c *Checker) declareEnum(e *EnumDecl) {
+	if prev, dup := c.enums[e.Name]; dup {
+		// The same file imported along two paths is the same enum.
+		if prev.File != e.File || prev.Span != e.Span {
+			c.ErrorAt(e, "enum %s is declared twice", e.Name)
+		}
+		return
+	}
+	if _, clash := c.structs[e.Name]; clash {
+		c.ErrorAt(e, "%s is already a struct", e.Name)
+		return
+	}
+	if len(e.Variants) == 0 {
+		c.ErrorAt(e, "enum %s needs at least one variant", e.Name)
+	}
+	seen := map[string]bool{}
+	for _, v := range e.Variants {
+		if seen[v] {
+			c.ErrorAt(e, "%s.%s is declared twice", e.Name, v)
+		}
+		seen[v] = true
+	}
+	c.enums[e.Name] = e
+}
+
+// enumNamed is the enum an expression names as a type, as in State.Idle,
+// or nil. A variable of the same name wins.
+func (c *Checker) enumNamed(e Expr) *EnumDecl {
+	id, ok := e.(*Ident)
+	if !ok || c.lookup(id.Name) != nil {
+		return nil
+	}
+	return c.enums[id.Name]
+}
+
+// enumTypes turns a name ParseType read as a struct into the enum it
+// is, anywhere inside a type: ParseType has no table of declarations,
+// so it cannot tell the two apart itself.
+func (c *Checker) enumTypes(t *Type) *Type {
+	if t == nil {
+		return nil
+	}
+	switch t.Kind {
+	case KStruct:
+		if _, ok := c.enums[t.Name]; ok {
+			return EnumOf(t.Name)
+		}
+	case KList, KNullable, KResult:
+		cp := *t
+		cp.Elem = c.enumTypes(t.Elem)
+		return &cp
+	case KMap:
+		cp := *t
+		cp.Key = c.enumTypes(t.Key)
+		cp.Elem = c.enumTypes(t.Elem)
+		return &cp
+	case KFunc:
+		cp := *t
+		cp.Params = make([]*Type, len(t.Params))
+		for i, p := range t.Params {
+			cp.Params[i] = c.enumTypes(p)
+		}
+		cp.Elem = c.enumTypes(t.Elem)
+		return &cp
+	}
+	return t
 }

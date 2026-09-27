@@ -162,7 +162,7 @@ func (p *Parser) ParseProgram() *Program {
 			pub = true
 			switch {
 			case p.check(FN), p.check(STRUCT), p.check(CONST), p.check(EXTERN):
-			case p.check(IDENT) && p.cur().Lex == "var":
+			case p.check(IDENT) && (p.cur().Lex == "var" || p.cur().Lex == "enum"):
 			default:
 				p.errorAt(kw, "'pub' can only go before fn, struct, const, var or extern")
 			}
@@ -214,6 +214,13 @@ func (p *Parser) ParseProgram() *Program {
 				d.Pub = pub
 				d.File = p.file
 				prog.Structs = append(prog.Structs, d)
+			}
+		case p.check(IDENT) && p.cur().Lex == "enum" && p.peekKind(1) == IDENT && p.peekKind(2) == LBRACE:
+			// `enum` is only a keyword at the top level, before a name
+			// and a brace, so it stays usable as a name everywhere else.
+			if d := p.parseEnum(); d != nil {
+				d.Pub, d.File = pub, p.file
+				prog.Enums = append(prog.Enums, d)
 			}
 		case p.check(IDENT) && p.cur().Lex == "var" && p.peekKind(1) == IDENT:
 			// `var` is a mutable global: visible inside functions, like
@@ -366,6 +373,31 @@ func (p *Parser) parseExternStruct() *StructDecl {
 		}
 	}
 	p.expectClose(RBRACE, open, "'}'", "struct")
+	p.endStmt()
+	return d
+}
+
+// parseEnum reads `enum State { Idle, Running, Done }`. The variants
+// may be separated by commas, newlines or both.
+func (p *Parser) parseEnum() *EnumDecl {
+	kw := p.advance() // 'enum'
+	name := p.expect(IDENT, "an enum name")
+	d := &EnumDecl{Span: at(kw), Name: name.Lex}
+	open := p.expect(LBRACE, "'{'")
+	p.skipNewlines()
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+		v := p.expect(IDENT, "a variant name")
+		if v.Kind == IDENT {
+			d.Variants = append(d.Variants, v.Lex)
+		}
+		p.match(COMMA)
+		p.skipNewlines()
+		if p.i == before {
+			p.advance()
+		}
+	}
+	p.expectClose(RBRACE, open, "'}'", "enum")
 	p.endStmt()
 	return d
 }

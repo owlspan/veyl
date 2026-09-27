@@ -1,0 +1,11 @@
+Idle
+Running
+Idle
+true
+true
+now Running
+West!
+[North, East, South]
+Robot{name: "r2", facing: South}
+[Done]
+East
