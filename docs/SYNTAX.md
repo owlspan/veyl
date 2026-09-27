@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.22.0** - the language as currently implemented.
+**Version 0.23.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -1843,7 +1843,10 @@ print("took {time.millis() - started} ms")
 
 ### `mem` - memory
 
-Veyl collects its own values. These report on that, and nudge it:
+Veyl collects its own values. The collector runs by itself when the
+live heap passes a threshold - 4 MB at first, then twice what survived
+the last collection - so a short program never pays for one. These
+report on it, and nudge it:
 
 | Function | Returns | Description |
 | --- | --- | --- |
@@ -2194,8 +2197,10 @@ printf("%d %s\n", 7, "dots")
   otherwise abort the program at startup with an error number instead
   of a sentence.
 
-Strings passed to C are safe from the collector: no Veyl code runs
-while C holds them, so nothing can move or free them underneath it.
+Values passed to C are safe from the collector for as long as the call
+lasts: the caller still holds each one, and the collector never moves
+anything. If C keeps a pointer after the call returns, keep the value
+too - in a const, or somewhere the program can still reach.
 
 ### `extern struct` - C layouts
 
@@ -2607,7 +2612,7 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.22.0 does not do yet.
+Honest list of what v0.23.0 does not do yet.
 
 **The language**
 
@@ -2647,7 +2652,8 @@ Honest list of what v0.22.0 does not do yet.
   something on your own network, not a production server.
 - **A string is NUL-terminated bytes.** Binary data containing a zero
   byte reads back short - use `bytes` for that - and building a string
-  by repeated appending is quadratic.
+  by repeated appending is quadratic: push the pieces onto a list and
+  `join` them once, which is linear.
 - **`upper` and `lower` change ASCII letters only**, where the Go
   backend also changes accented and non-Latin ones.
 - **`toFloat` and `isFloat` take decimal numbers only.** Go's parser
@@ -2666,10 +2672,12 @@ Honest list of what v0.22.0 does not do yet.
 
 **Memory**
 
-- **Nothing is collected automatically.** There is a mark-and-sweep
-  collector, but `mem.collect()` is the only thing that runs it. A loop
-  that allocates and never terminates will consume all of memory rather
-  than being collected out of trouble.
+- **Collection pauses while tasks run.** The collector reads only the
+  stack of the thread it runs on, so it waits for a `task` batch to
+  finish rather than miss what another thread holds.
+- **A DLL never collects by itself.** Its exports may be called on the
+  host's threads, which the collector cannot see. Call `mem.collect()`
+  from an export when the host is known to be single-threaded.
 
 
 

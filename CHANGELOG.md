@@ -3,6 +3,30 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.23.0
+
+**Automatic garbage collection.** The collector runs by itself at the
+start of a statement once the live heap passes 4 MB, and after that
+once it doubles what survived the last collection. A loop that makes
+garbage forever now runs in bounded memory. It waits while `task`
+threads run, since it only scans its own stack, and it stays off in a
+DLL. `VEYL_GC=off` turns it off; `VEYL_GC=eager` collects at nearly
+every statement, and CI runs the whole suite that way.
+
+**Maps are fast.** Lookups are a binary search instead of a scan, and
+inserts and removals move entries with one `memmove`. 100,000 inserts
+and lookups: 35 s before, 1.5 s now. Integer keys at opposite ends of
+the range compared by subtraction, which overflowed and sorted them
+wrong; they compare directly now.
+
+**`join` is linear.** It measured the result, allocated once and copied
+each piece in, instead of concatenating: 200,000 pieces went from 121 s
+to under one. Every byte copy - substrings, file reads, `bytes` - is a
+`memmove` instead of a loop.
+
+`mem.goroutines()` counts running task batches instead of always
+answering 1.
+
 ## 0.22.0
 
 **Callbacks.** A function type on an `extern fn` parameter takes a Veyl
