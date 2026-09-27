@@ -565,24 +565,48 @@ func (e *Emitter) instr(in Instr) {
 		e.putf(in.Dst, "xmm0")
 
 	case OpFEq, OpFNe, OpFLt, OpFLe, OpFGt, OpFGe:
-		// comisd sets the flags the same way an unsigned integer compare
-		// does: CF for below, ZF for equal. That gives setb/setbe/
-		// seta/setae for the ordered comparisons, matching the unsigned
-		// forms rather than the signed ones OpLt and friends use.
+		// comisd sets the flags the way an unsigned integer compare
+		// does - CF for below, ZF for equal - and sets all three of CF,
+		// ZF and PF when either side is a NaN. Every comparison with a
+		// NaN has to come out false except !=, so each one is chosen to
+		// be false on that pattern:
 		//
-		// This is not NaN-safe: comisd sets CF=ZF=PF=1 on an unordered
-		// pair, which would read here as both less-than and equal. Veyl
-		// has no NaN literal yet, so nothing in the language can
-		// construct one to expose it, but it is a real gap and belongs
-		// on the record rather than only in this comment.
-		cc := map[Op]string{
-			OpFEq: "e", OpFNe: "ne", OpFLt: "b", OpFLe: "be", OpFGt: "a", OpFGe: "ae",
-		}[in.Op]
-		e.line("movsd xmm0, %s", e.loc(in.A))
-		e.line("movsd xmm1, %s", e.loc(in.B))
+		//   a > b    seta, which wants CF and ZF both clear
+		//   a >= b   setae, which wants CF clear
+		//   a < b    the same as b > a, operands swapped
+		//   a <= b   the same as b >= a
+		//   a == b   ZF set and PF clear
+		//   a != b   ZF clear or PF set
+		//
+		// setb and setbe would read an unordered pair as below, which
+		// is why the swap rather than the obvious condition code.
+		x, y := in.A, in.B
+		if in.Op == OpFLt || in.Op == OpFLe {
+			x, y = y, x
+		}
+		e.line("movsd xmm0, %s", e.loc(x))
+		e.line("movsd xmm1, %s", e.loc(y))
 		e.line("xor eax, eax")
-		e.line("comisd xmm0, xmm1")
-		e.line("set%s al", cc)
+		switch in.Op {
+		case OpFEq, OpFNe:
+			e.line("xor ecx, ecx")
+			e.line("comisd xmm0, xmm1")
+			if in.Op == OpFEq {
+				e.line("sete al")
+				e.line("setnp cl")
+				e.line("and eax, ecx")
+			} else {
+				e.line("setne al")
+				e.line("setp cl")
+				e.line("or eax, ecx")
+			}
+		case OpFGt, OpFLt:
+			e.line("comisd xmm0, xmm1")
+			e.line("seta al")
+		default:
+			e.line("comisd xmm0, xmm1")
+			e.line("setae al")
+		}
 		e.put(in.Dst, "rax")
 
 	case OpIntToFloat:
@@ -1293,6 +1317,33 @@ __vy_floattostr:
     lea rax, [rbp-104]
     mov qword ptr [rbp-24], rax
     mov dword ptr [rbp-16], 1
+    # Infinities and NaN are spelled out here. msvcrt writes 1.#INF and
+    # 1.#QNAN, and the round trip below cannot settle on either, so Go's
+    # +Inf, -Inf and NaN are written straight into the buffer: an
+    # all-ones exponent is one of the three, and the fraction bits say
+    # which.
+    mov rax, qword ptr [rbp-8]
+    mov rcx, rax
+    shr rcx, 52
+    and ecx, 2047
+    cmp ecx, 2047
+    jne .Lftoa_loop
+    mov rcx, rax
+    shl rcx, 12
+    test rcx, rcx
+    jne .Lftoa_nan
+    test rax, rax
+    js .Lftoa_neginf
+    mov dword ptr [rbp-104], 1718503723
+    mov byte ptr [rbp-100], 0
+    jmp .Lftoa_copy
+.Lftoa_neginf:
+    mov dword ptr [rbp-104], 1718503725
+    mov byte ptr [rbp-100], 0
+    jmp .Lftoa_copy
+.Lftoa_nan:
+    mov dword ptr [rbp-104], 5136718
+    jmp .Lftoa_copy
 .Lftoa_loop:
     mov rcx, qword ptr [rbp-24]
     mov edx, 64

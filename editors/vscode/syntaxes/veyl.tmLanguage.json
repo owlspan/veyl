@@ -64,7 +64,7 @@
       "patterns": [
         {
           "name": "constant.character.escape.veyl",
-          "match": "\\\\[ntr\"\\\\0]"
+          "match": "\\\\([ntr\"\\\\0]|x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]{1,6}\\})"
         },
         {
           "name": "constant.character.escape.veyl",
@@ -235,7 +235,7 @@
     "builtins": {
       "name": "support.function.builtin.veyl",
       "comment": "Generated from the table in asm-src/compiler/library.go. The old list still had beep, messageBox, openWindow and setTitle, which this compiler does not have, and was missing map, filter, reduce and the rest of the higher-order builtins.",
-      "match": "\\b(abs|acos|all|any|asin|atan|atan2|cbrt|ceil|charAt|chars|clamp|clear|contains|cos|divf|each|endsWith|errorOf|exit|exp|fail|failed|filter|find|first|float|floor|has|hypot|indexOf|insert|int|isInt|isNan|isOk|join|keys|last|len|lines|log|log10|log2|lower|map|max|min|mod|must|ok|pop|pow|print|push|random|randomInt|reduce|remove|removeAt|repeat|replace|reverse|round|sign|sin|sleep|slice|sort|sortBy|split|sqrt|startsWith|str|substr|sum|tan|toInt|trim|trunc|upper|valueOr|values|write)\\b(?=\\s*\\()"
+      "match": "\\b(abs|acos|all|any|asin|atan|atan2|cbrt|ceil|charAt|chars|clamp|clear|contains|cos|count|divf|each|endsWith|errorOf|exit|exp|fail|failed|filter|find|first|float|floor|has|hypot|indexOf|input|insert|int|isFloat|isInt|isNan|isOk|join|keys|last|len|lines|log|log10|log2|lower|map|max|min|mod|must|ok|padLeft|padRight|pause|pop|pow|print|push|random|randomInt|reduce|remove|removeAt|repeat|replace|reverse|round|sign|sin|sleep|slice|sort|sortBy|split|sqrt|startsWith|str|substr|sum|tan|toFloat|toInt|trim|trunc|upper|valueOr|values|write)\\b(?=\\s*\\()"
     },
     "calls": {
       "comment": "Anything else called like a function.",

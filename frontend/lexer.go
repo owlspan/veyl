@@ -259,6 +259,10 @@ func (l *Lexer) str(line, col int) {
 				sb.WriteByte('\\')
 			case '"':
 				sb.WriteByte('"')
+			case 'x':
+				l.byteEscape(&sb, eLine, eCol)
+			case 'u':
+				l.runeEscape(&sb, eLine, eCol)
 			default:
 				l.errorf(eLine, eCol, "unknown escape sequence \\%c", e)
 				sb.WriteByte(e)
@@ -299,6 +303,75 @@ func (l *Lexer) str(line, col int) {
 		}
 		sb.WriteByte(c)
 	}
+}
+
+// byteEscape reads the two hex digits of \xHH and writes that one byte,
+// which need not be valid UTF-8 on its own.
+func (l *Lexer) byteEscape(sb *strings.Builder, line, col int) {
+	v := 0
+	for i := 0; i < 2; i++ {
+		if !IsHexDigit(l.peek()) {
+			l.errorf(line, col, "\\x needs exactly two hex digits")
+			return
+		}
+		v = v*16 + hexVal(l.advance())
+	}
+	writeLiteral(sb, byte(v))
+}
+
+// runeEscape reads \u{H...}, one to six hex digits naming a Unicode code
+// point, and writes its UTF-8 encoding. The braces are required, the way
+// Rust and Swift spell it, so the end of the escape is never a guess.
+func (l *Lexer) runeEscape(sb *strings.Builder, line, col int) {
+	if l.peek() != '{' {
+		l.errorf(line, col, "\\u needs braces: \\u{41}")
+		return
+	}
+	l.advance()
+	v, n := 0, 0
+	for IsHexDigit(l.peek()) {
+		v = v*16 + hexVal(l.advance())
+		n++
+	}
+	if l.peek() != '}' || n == 0 {
+		l.errorf(line, col, "\\u{...} needs one to six hex digits and a closing brace")
+		return
+	}
+	l.advance()
+	if n > 6 {
+		l.errorf(line, col, "\\u{...} takes at most six hex digits")
+		return
+	}
+	if v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF) {
+		l.errorf(line, col, "\\u{%X} is not a Unicode code point", v)
+		return
+	}
+	if v < 0x80 {
+		writeLiteral(sb, byte(v))
+		return
+	}
+	sb.WriteRune(rune(v))
+}
+
+// writeLiteral writes a byte that came from an escape. A brace is
+// doubled, because the parser reads the literal's text again to find
+// the interpolations and would otherwise take \u{7B} for the start of
+// one.
+func writeLiteral(sb *strings.Builder, b byte) {
+	if b == '{' || b == '}' {
+		sb.WriteByte(b)
+	}
+	sb.WriteByte(b)
+}
+
+func hexVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	}
+	return int(c-'A') + 10
 }
 
 func (l *Lexer) operator(line, col int) {

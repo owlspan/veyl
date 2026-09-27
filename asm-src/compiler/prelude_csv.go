@@ -67,7 +67,7 @@ fn __vy_csvParse(text: str) -> [][]str! {
                         }
                     } else {
                         if c == 10 { line = line + 1 }
-                        field = field + charAt(text, i)
+                        field = field + __charAtB(text, i)
                         i = i + 1
                     }
                 }
@@ -92,7 +92,7 @@ fn __vy_csvParse(text: str) -> [][]str! {
                     }
                     i = i + 1
                 }
-                field = substr(text, start, i)
+                field = __substrB(text, start, i)
             }
 
             push(row, field)
@@ -156,7 +156,7 @@ fn __vy_csvField(f: str) -> str {
         if __strAt(f, i) == 34 {
             out = out + "\"\""
         } else {
-            out = out + charAt(f, i)
+            out = out + __charAtB(f, i)
         }
         i = i + 1
     }

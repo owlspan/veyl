@@ -98,16 +98,20 @@ pipeline:
 - `extern fn`: declare a function that lives in a DLL and call it -
   the Windows API, the C runtime, or any library a package ships
 
-Missing against the Go backend: `zip`, and a handful of small builtins
-(`input`, `pause`, `padLeft`, `padRight`, `toFloat`, `isFloat`,
-`count`). There is also no resolver on this side, so a name that is
-neither a local, a function nor a builtin is caught by the lowerer
-rather than the checker. Everything absent is a compile error naming
-it, never wrong output.
+- `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
+  `padRight`, and the constants `INF` and `NAN`, with comparisons that
+  treat a NaN the way Go does
 
-One thing here that the Go backend does not have is `extern fn`. The
-differential suite compares programs both backends can run; the extern
-demos sit in `examples/ffi/` where only they are exercised.
+Missing against the Go backend: `zip`. There is also no resolver on
+this side, so a name that is neither a local, a function nor a builtin
+is caught by the lowerer rather than the checker. Everything absent is
+a compile error naming it, never wrong output.
+
+Two things here that the Go backend does not have: `extern fn`, and
+the `\xHH` and `\u{...}` string escapes. The differential suite
+compares programs both backends can run; the extern demos sit in
+`examples/ffi/`, and programs that need the escapes or feed standard
+input sit in `tests/` with the output they must print beside them.
 
 Byte-identical means error messages too, which is why the `os` library
 is written against Win32 rather than the C runtime: Go's message for a
@@ -177,14 +181,6 @@ not have one yet.
 significant digits, so a value needing sixteen can round the wrong way.
 The fix is Go's `strconv/decimal.go` in the prelude.
 
-**Two deliberate float gaps**, each a compile error rather than a
-wrong answer:
-
-- `NAN` - the comparisons lower to `comisd`, which reports an unordered
-  pair as both below and equal, so a NaN would compare wrong.
-- `INF` - this build links the legacy msvcrt, whose `printf` writes
-  `1.#INF` where Go writes `+Inf`.
-
 ## Why assembly text and not machine code
 
 Assembly and machine code are one to one. Every decision that is hard -
@@ -217,6 +213,7 @@ asm-src/
     regalloc.go     the register allocator
     x64.go          IR  -> x86-64, GNU as syntax with Intel operands
     peephole.go     the assembly peephole
+    textlib.go      the primitives under input and the text builtins
     encode*.go      x86-64 text -> machine code
     link.go, pe.go  the linker and the PE writer
     gc*.go          the collector
@@ -224,6 +221,7 @@ asm-src/
     *.go            one file per built-in library: list, map, os, net,
                     http, json, task, db, win, and the rest
   examples/         every one is part of the test suite
+  tests/            programs the Go backend cannot run, with their output
   installer/        the Inno Setup script and its build script
   scripts/          make-installer.bat, saferun.ps1, metrics.ps1
 docs/               SYNTAX.md and TUTORIAL.md
@@ -270,7 +268,7 @@ cd asm-src
 go test ./...
 ```
 
-There are no expected-output files. Every program in `examples/` is run
+Every program in `examples/` is run
 through both backends and the output compared byte for byte, with the Go
 backend as the definition of what Veyl means. If they disagree, this one
 is wrong. The Go backend is on the `veylgo` branch; check it out beside
@@ -281,7 +279,8 @@ git worktree add ../veylgo veylgo
 cd ../veylgo/src && go build -o veyl.exe ./compiler
 ```
 
-Without it that half skips. On Linux the whole suite runs too:
+Without it that half skips. The few programs in `tests/` that the Go
+backend cannot run are held to the `.out` file beside each instead. On Linux the whole suite runs too:
 `veyl run` starts the executable through `wine` when the host is not
 Windows, and the encoder check uses `x86_64-w64-mingw32-as`.
 

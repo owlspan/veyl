@@ -620,7 +620,23 @@ fractional result, make one side a `float`.
 ## Strings and interpolation
 
 String literals use double quotes. Escapes: `\n`, `\t`, `\r`, `\\`,
-`\"`, `\0`.
+`\"`, `\0`, and two for writing any byte or character in plain ASCII
+source:
+
+| Escape | Means |
+| --- | --- |
+| `\xHH` | the byte with that hex value, exactly two digits |
+| `\u{H...}` | the Unicode code point, one to six hex digits, as UTF-8 |
+
+```veyl
+print("caf\u{e9}")          // cafe with an acute accent
+print(len("\u{e9}"))        // 2 - len counts bytes
+print("\x41\x42")           // AB
+```
+
+A string is UTF-8 bytes. `len` and `indexOf` count bytes; `charAt`,
+`substr`, `chars`, `padLeft` and `padRight` count characters. A byte
+that does not begin a valid character reads as one character, U+FFFD.
 
 ### Raw strings
 
@@ -948,6 +964,11 @@ print("hi, {name}")
 pause()
 ```
 
+The line comes back without its ending, `\n` or `\r\n`. At the end of
+input - a file piped in has run out, or Ctrl+Z then Enter at a console -
+`input` returns `""`, so a loop reading until an empty line stops there
+too. `pause` writes `Press Enter to continue...` first.
+
 ### Conversion
 
 | Function              | Returns | Description                                     |
@@ -1035,16 +1056,16 @@ Use `divf(7, 2)` for `3.5`, or make one side a float.
 
 | Function                        | Returns | Description                      |
 | ------------------------------- | ------- | -------------------------------- |
-| `upper(s)` `lower(s)`           | `str`   | change case                       |
+| `upper(s)` `lower(s)`           | `str`   | change case of ASCII letters      |
 | `trim(s)`                       | `str`   | remove surrounding whitespace     |
 | `contains(s, sub)`              | `bool`  | whether `sub` occurs in `s`       |
 | `startsWith(s, p)` `endsWith(s, p)` | `bool` | prefix / suffix test         |
-| `indexOf(s, sub)`               | `int`   | position of `sub`, or `-1`        |
+| `indexOf(s, sub)`               | `int`   | byte position of `sub`, or `-1`   |
 | `count(s, sub)`                 | `int`   | how many times `sub` occurs       |
 | `replace(s, old, new)`          | `str`   | replace every occurrence          |
 | `repeat(s, n)`                  | `str`   | `s` joined to itself `n` times    |
-| `charAt(s, i)`                  | `str`   | one character; `""` if out of range |
-| `substr(s, start, end)`         | `str`   | a slice; indexes are clamped      |
+| `charAt(s, i)`                  | `str`   | character `i`; `""` if out of range |
+| `substr(s, start, end)`         | `str`   | characters `start` to `end`; indexes are clamped |
 | `padLeft(s, width)` `padRight(s, width)` | `str` | pad with spaces        |
 | `padLeft(s, width, fill)`       | `str`   | pad with a chosen character       |
 
@@ -2440,6 +2461,11 @@ Honest list of what v0.19.0 does not do yet.
 - **A string is NUL-terminated bytes.** Binary data containing a zero
   byte reads back short - use `bytes` for that - and building a string
   by repeated appending is quadratic.
+- **`upper` and `lower` change ASCII letters only**, where the Go
+  backend also changes accented and non-Latin ones.
+- **`toFloat` and `isFloat` take decimal numbers only.** Go's parser
+  also accepts a hexadecimal mantissa with a `p` exponent, like
+  `0x1p-2`.
 - **Printing a float rounds through the C library**, which stops at
   seventeen significant digits, so a value needing sixteen can round
   the wrong way in the last place.

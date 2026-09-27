@@ -264,6 +264,25 @@ func TestForwardStoreToLoad(t *testing.T) {
 	}
 }
 
+func TestForwardKeepsABitcast(t *testing.T) {
+	// __frombits stores an int and loads the slot back as a float. That
+	// load is the conversion, not a copy: forwarding it handed an int
+	// register to movsd once the allocator put the int in r9, and
+	// floor(3.7) came out as 0.
+	fn := mkfn([]Instr{
+		{Op: OpConst, Dst: 0, Imm: 4611686018427387904},
+		{Op: OpStore, A: 0, Imm: 0},
+		{Op: OpLoad, Dst: 1, Imm: 0},
+		{Op: OpRet, A: 1},
+	}, 2)
+	fn.RegTypes = []vty{vInt, vFloat}
+	forwardLoads(fn)
+
+	if len(fn.Code) != 4 || fn.Code[2].Op != OpLoad || fn.Code[3].A != 1 {
+		t.Fatalf("the reinterpreting load was forwarded: %+v", fn.Code)
+	}
+}
+
 func TestForwardRestoresAtLabel(t *testing.T) {
 	// A join can be reached by a path that never saw the store, so the
 	// slot map resets and the load after the label stays. (The register

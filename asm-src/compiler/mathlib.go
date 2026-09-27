@@ -30,6 +30,16 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 			l.errorAt(c, "the prelude did not supply %s", fn)
 			return l.junk(), true
 		}
+		if defaults := preludeDefaults[name]; len(defaults) > 0 {
+			missing := len(sig.params) - len(c.Args)
+			if missing > 0 && missing <= len(defaults) {
+				// A copy of the call, so the checker's own record of
+				// the original is left as it was written.
+				cc := *c
+				cc.Args = append(append([]Expr{}, c.Args...), defaults[len(defaults)-missing:]...)
+				c = &cc
+			}
+		}
 		if !arity(len(sig.params)) {
 			return l.junk(), true
 		}
@@ -89,12 +99,12 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(1) {
 			return l.junk(), true
 		}
-		// A bitcast, and it needs no instruction at all. Every value
-		// here lives in a stack slot and moves through rax as a raw
-		// word, whatever its type - so storing a float and loading the
-		// same slot as an int already is the reinterpretation, and the
-		// only thing that changes is what the lowerer believes about the
-		// register it hands back.
+		// A bitcast through a stack slot: storing a float and loading
+		// the same slot as an int is the reinterpretation, and the only
+		// thing that changes is what the lowerer believes about the
+		// register it hands back. Load forwarding knows not to fold the
+		// load away - see sameClass in opt.go - because the two sides
+		// may live in different register files.
 		want, from := vInt, kFloat
 		if name == "__frombits" {
 			want, from = vFloat, kInt
@@ -135,11 +145,8 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 		if !arity(1) {
 			return l.junk(), true
 		}
-		// A NaN is the only value that is not equal to itself, and
-		// comisd reports an unordered pair as not-equal, so this is the
-		// one NaN question the comparison hardware answers correctly.
-		// It is also why NAN itself is not a constant here: every other
-		// comparison gets an unordered pair wrong.
+		// A NaN is the only value that is not equal to itself, and the
+		// float comparisons in x64.go are NaN-correct.
 		x := l.numeric(c.Args[0])
 		eq := l.compare(OpFEq, x, x)
 		return l.pick(eq, l.intConst(0), l.intConst(1), vBool), true

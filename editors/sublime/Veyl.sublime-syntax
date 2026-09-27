@@ -39,7 +39,7 @@ contexts:
       scope: punctuation.definition.string.begin.veyl
       push:
         - meta_scope: string.quoted.double.veyl
-        - match: '\\.'
+        - match: '\\(x\h\h|u\{\h{1,6}\}|.)'
           scope: constant.character.escape.veyl
         # Interpolation: any expression between braces.
         - match: '\{'

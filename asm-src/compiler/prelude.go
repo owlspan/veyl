@@ -178,10 +178,31 @@ var preludeOf = map[string]string{
 	"re.replace": "__vy_reReplace",
 	"re.valid":   "__vy_reValid",
 	"re.escape":  "__vy_reEscape",
-	"floor":      "__vy_floor",
-	"ceil":       "__vy_ceil",
-	"round":      "__vy_round",
-	"trunc":      "__vy_trunc",
+	"floor":      "__vy_floorInt",
+	"ceil":       "__vy_ceilInt",
+	"round":      "__vy_roundInt",
+	"trunc":      "__vy_truncInt",
+
+	"input":    "__vy_input",
+	"pause":    "__vy_pause",
+	"toFloat":  "__vy_toFloat",
+	"isFloat":  "__vy_isFloat",
+	"count":    "__vy_count",
+	"padLeft":  "__vy_padLeft",
+	"padRight": "__vy_padRight",
+	"substr":   "__vy_substr",
+	"charAt":   "__vy_charAt",
+	"chars":    "__vy_chars",
+}
+
+// preludeDefaults supplies the trailing arguments a call may leave off,
+// for the builtins checkOptional admits with fewer than their full
+// parameter list. The values are the Go backend's.
+var preludeDefaults = map[string][]Expr{
+	"input":    {&StrLit{Val: ""}},
+	"toFloat":  {&FloatLit{Val: "0.0"}},
+	"padLeft":  {&StrLit{Val: " "}},
+	"padRight": {&StrLit{Val: " "}},
 }
 
 // preludeAlso is for a builtin the lowerer implements itself but which
@@ -429,4 +450,5 @@ var preludeSource = strings.Join([]string{
 	preludeHTTP,
 	preludeUI,
 	preludeRe,
+	preludeText,
 }, "\n")

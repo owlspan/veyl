@@ -560,16 +560,6 @@ func (l *lowerer) strListBuiltin(c *Call, name string) (Reg, bool) {
 		}
 		return l.splitStr(l.expr(c.Args[0]), l.expr(c.Args[1])), true
 
-	case "chars":
-		if len(c.Args) != 1 {
-			l.errorAt(c, "chars takes 1 argument, got %d", len(c.Args))
-			return l.junk(), true
-		}
-		// Bytes, not runes. Every string function on this backend
-		// indexes by byte, so chars agrees with charAt and substr and
-		// disagrees with the Go backend on text outside ASCII.
-		return l.splitStr(l.expr(c.Args[0]), l.strLit("")), true
-
 	case "lines":
 		if len(c.Args) != 1 {
 			l.errorAt(c, "lines takes 1 argument, got %d", len(c.Args))
