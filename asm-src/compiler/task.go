@@ -140,8 +140,10 @@ func (l *lowerer) taskRun(xs, f Reg, elem, ret vty, limit Reg, wantResults bool)
 	toSlot := l.temp(vInt)
 	l.emit(Instr{Op: OpStore, A: to, Dst: NoReg, Imm: toSlot})
 
+	l.rtBump(gcTasksSlot, l.constant(1))
 	l.taskSpawn(jobs, handles, from, l.load(toSlot, vInt), entry, perJob)
 	l.taskWait(handles, from, l.load(toSlot, vInt))
+	l.rtBump(gcTasksSlot, l.constant(-1))
 
 	l.emit(Instr{Op: OpStore, A: l.load(toSlot, vInt), Dst: NoReg, Imm: start})
 	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: outer})

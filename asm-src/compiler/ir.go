@@ -814,6 +814,11 @@ type lowerer struct {
 	gcStress bool
 	inHelper bool
 
+	// autoGC is automatic collection: on, except in a DLL, whose
+	// functions the host may call on threads of its own, and when
+	// VEYL_GC=off asks for the old behaviour.
+	autoGC bool
+
 	// Declared structs, by name. Filled before anything is lowered,
 	// because a function signature can name one.
 	structs map[string]*structLayout
@@ -856,6 +861,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		globalTy:  map[int64]vty{},
 		buf:       -1,
 		gcStress:  os.Getenv("VEYL_GC_STRESS") != "",
+		autoGC:    !lowerForDLL && os.Getenv("VEYL_GC") != "off",
 	}
 
 	// Struct layouts before signatures, because a parameter or a return
@@ -941,6 +947,14 @@ func Lower(p *Program, file string) (*Module, []string) {
 	l.captureTy = nil
 	l.boxNames = capturedInStmts(p.Main)
 	l.pushScope()
+	// The runtime's own words sit ahead of the program's, so a program
+	// with no globals at all still has somewhere to keep the object
+	// list. How many there are in total is written down where the
+	// collector can read it, since it scans them as roots - and before
+	// any global is computed, since computing one can collect.
+	l.mod.NGlobals = len(l.globals) + gcReserved
+	l.rtStore(gcNGlobSlot, l.constant(int64(l.mod.NGlobals)))
+	l.rtStore(gcNextSlot, l.constant(gcFirst))
 	// The globals' values are computed here, at the top of main, and
 	// written into static storage. Every user function is reached from
 	// main, so nothing can read one before this runs.
@@ -952,13 +966,6 @@ func Lower(p *Program, file string) (*Module, []string) {
 		done[g.Name] = true
 		l.globalInit(g)
 	}
-	// The runtime's own words sit ahead of the program's, so a program
-	// with no globals at all still has somewhere to keep the object
-	// list. How many there are in total is written down where the
-	// collector can read it, since it scans them as roots and the count
-	// is not known until here.
-	l.mod.NGlobals = len(l.globals) + gcReserved
-	l.rtStore(gcNGlobSlot, l.constant(int64(l.mod.NGlobals)))
 	for _, st := range p.Main {
 		l.stmt(st)
 	}
@@ -1285,6 +1292,8 @@ func (l *lowerer) stmt(s Stmt) {
 	// terminate.
 	if l.gcStress && !l.inHelper {
 		l.collect()
+	} else if l.autoGC && !l.inHelper {
+		l.maybeCollect()
 	}
 
 	switch st := s.(type) {

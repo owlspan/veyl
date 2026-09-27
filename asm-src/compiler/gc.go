@@ -1,5 +1,7 @@
 package main
 
+import "os"
+
 // The garbage collector.
 //
 // Mark and sweep, with conservative roots and precise tracing. That
@@ -43,7 +45,9 @@ const (
 	gcTotalSlot  = 3 // bytes ever allocated
 	gcCyclesSlot = 4 // how many times collect has run
 	gcNGlobSlot  = 5 // how many words the globals block has, for the scan
-	gcReserved   = 6
+	gcTasksSlot  = 6 // task batches running, during which nothing collects
+	gcNextSlot   = 7 // live bytes at which the next automatic collection runs
+	gcReserved   = 8
 )
 
 // rtSlot is the address of one of the runtime's own global words.
@@ -78,6 +82,54 @@ func (l *lowerer) trackObject(raw, obj, bytes Reg) {
 	l.rtBump(gcTotalSlot, bytes)
 }
 
+// gcFirst is the live heap at which the first automatic collection runs.
+// Small programs never reach it, and so never pay for one.
+//
+// VEYL_GC=eager makes it zero, and keeps it there, so the automatic path
+// collects at nearly every statement - the test suite runs under it to
+// hold that path to the same standard as stress mode.
+var gcFirst = func() int64 {
+	if os.Getenv("VEYL_GC") == "eager" {
+		return 0
+	}
+	return 4 << 20
+}()
+
+// maybeCollect is the check every statement starts with: collect when
+// the live heap has grown past the threshold. The common case is one
+// compare and a branch not taken; the rest is in gcmaybe.
+//
+// A statement boundary is a safe place to collect. Every pointer the
+// program holds is in a stack slot or a global there - the register
+// allocator never takes one - and nothing is half-built that is not
+// already reachable from one of those, which is also what stress mode
+// relies on.
+func (l *lowerer) maybeCollect() {
+	skip := l.newLabel()
+	over := l.compare(OpGt, l.rtLoad(gcBytesSlot), l.rtLoad(gcNextSlot))
+	l.emit(Instr{Op: OpJumpNot, A: over, Dst: NoReg, Imm: skip})
+	name := l.helperFunc("gcmaybe", nil, vVoid, func([]Reg) {
+		// Not while tasks run: the collector reads only the stack it
+		// runs on, and a pointer on another thread's would be missed.
+		// The threshold moves on either way, so this is not asked again
+		// on every statement until the tasks finish.
+		busy := l.newLabel()
+		idle := l.compare(OpEq, l.rtLoad(gcTasksSlot), l.constant(0))
+		l.emit(Instr{Op: OpJumpNot, A: idle, Dst: NoReg, Imm: busy})
+		l.collect()
+		l.mark(busy)
+		twice := l.arith(OpMul, l.rtLoad(gcBytesSlot), l.constant(2))
+		if gcFirst == 0 {
+			twice = l.constant(0)
+		}
+		floor := l.constant(gcFirst)
+		l.rtStore(gcNextSlot, l.pick(l.compare(OpGt, twice, floor), twice, floor, vInt))
+		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
+	})
+	l.callHelper(name, nil, nil, vVoid)
+	l.mark(skip)
+}
+
 // memBuiltin lowers the mem library.
 func (l *lowerer) memBuiltin(c *Call, name string) (Reg, bool) {
 	switch name {
@@ -97,9 +149,8 @@ func (l *lowerer) memBuiltin(c *Call, name string) (Reg, bool) {
 		// much memory is this program holding".
 		return l.rtLoad(gcBytesSlot), true
 	case "mem.goroutines":
-		// Structured concurrency is not on this backend, so a program
-		// that gets here has exactly one thread of control.
-		return l.constant(1), true
+		// The main thread, and one more for each task batch in flight.
+		return l.arith(OpAdd, l.rtLoad(gcTasksSlot), l.constant(1)), true
 	case "mem.collect":
 		l.collect()
 		return l.void(), true

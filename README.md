@@ -163,17 +163,16 @@ program, executables average 36% smaller than before the passes.
 
 ## What it does not have
 
-**Nothing collects on its own.** There is a mark-and-sweep collector,
-but `mem.collect()` is the only thing that runs it. Automatic
-collection would have to be sure no allocation site is holding a live
-pointer in a register between the allocation and the store that parks
-it, which is true of every site written so far and is a property
-nobody is currently checking.
-
-The practical consequence is worth stating plainly: a loop that
-allocates and never terminates will consume all of memory rather than
-being collected out of trouble. `scripts/saferun.ps1` runs a program
-under a job object memory cap for exactly that case.
+**Collection is statement-grained and single-threaded.** The collector
+runs by itself, at the start of a statement, once the live heap passes
+a threshold: 4 MB, then twice what survived the last collection. A
+statement boundary is safe because every pointer is in a stack slot or
+a global there - the register allocator never takes one - and the test
+suite runs with `VEYL_GC=eager`, which collects at nearly every
+statement, to hold it to that. It does not run while `task` threads are
+working, since it scans only its own stack, and it does not run in a
+DLL, whose exports the host may call on threads of its own.
+`VEYL_GC=off` turns it off.
 
 **No resolver.** A name that is neither a local, a function nor a
 builtin is caught by the lowerer rather than the checker, so it is
@@ -183,8 +182,7 @@ missed when the checker has already failed on something else. Sharing
 **A string is NUL-terminated bytes**, with no length beside it. So a
 file holding a zero byte reads back short where the Go backend reads it
 whole, which is what the `bytes` type is for, and building a string by
-repeated appending is quadratic, which wants a growable buffer and does
-not have one yet.
+repeated appending is quadratic - push the pieces and `join` them.
 
 **Printing a float rounds through msvcrt**, which stops at seventeen
 significant digits, so a value needing sixteen can round the wrong way.
@@ -506,10 +504,12 @@ all of it off.
 
 - **A resolver**, so a misspelled name is reported alongside type
   errors rather than after them.
-- **Automatic collection**, once every allocation site is known not to
-  hold a live pointer only in a register.
-- **A growable string buffer**, so building a string by appending stops
-  being quadratic.
-- **Calling a raw function pointer**, and closures as callbacks.
-- **Hash maps**, since a sorted map inserts in O(n).
+- **Collection across threads**, so it can run while tasks work and
+  inside a DLL - which needs every thread's stack, not only the
+  collector's own.
+- **Appending in place.** `s = s + x` in a loop still copies `s` each
+  time; pushing the pieces and calling `join` once is linear.
+- **Hash maps.** Lookups are a binary search now, but an insert still
+  moves every later entry to keep the keys sorted.
+- **Closures as callbacks.**
 - **`zip`**, the last library the Go backend has and this one does not.
