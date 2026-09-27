@@ -3,6 +3,28 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.25.0
+
+**Images.** `win.image` loads a `.bmp`; `win.draw`, `win.drawScaled`
+and `win.drawKeyed` put it in the window - at its own size, stretched,
+or with one colour left out so a sprite has a transparent background.
+
+**Measuring text.** `win.textWidth` and `win.textHeight`, so a label
+can be centred instead of guessed at.
+
+**Canvases.** `win.canvas(width, height)` is a back buffer with no
+window, and `win.pixel` reads a colour back from it or from a window.
+Every drawing function works on one.
+
+**Sound.** `sound.play`, `sound.loop` and `sound.stop` play a WAV in
+the background.
+
+`examples/gui/sprites.vl` uses all of it.
+
+Fixed: a window's state lived on the collected heap behind an `int`
+handle, so since automatic collection a window kept in a struct or a
+list could have been freed while still open.
+
 ## 0.24.0
 
 **Global variables.** A top-level `var` is visible inside every
