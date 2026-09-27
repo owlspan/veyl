@@ -66,6 +66,12 @@ var importOverride = func() map[string]string {
 	for _, s := range gdi32Syms {
 		m[s] = "gdi32.dll"
 	}
+	for _, s := range msimg32Syms {
+		m[s] = "msimg32.dll"
+	}
+	for _, s := range winmmSyms {
+		m[s] = "winmm.dll"
+	}
 	for _, s := range winhttpSyms {
 		m[s] = "winhttp.dll"
 	}
@@ -115,6 +121,7 @@ var knownSystemDLL = map[string]bool{
 	"shell32.dll":  true,
 	"advapi32.dll": true,
 	"winmm.dll":    true,
+	"msimg32.dll":  true,
 	"comdlg32.dll": true,
 	"ole32.dll":    true,
 	"oleaut32.dll": true,

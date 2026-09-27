@@ -2188,6 +2188,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.mediaBuiltin(c, name); handled {
+		return r
+	}
+
 	if r, handled := l.bytesBuiltin(c, name); handled {
 		return r
 	}
