@@ -3,6 +3,40 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.24.0
+
+**Global variables.** A top-level `var` is visible inside every
+function and can be changed from any of them:
+
+```veyl
+var score = 0
+fn award(points: int) { score += points }
+```
+
+A function reaching for a top-level `let` now gets an error that says
+so and suggests `var`, instead of "undefined variable".
+
+**Enums.**
+
+```veyl
+enum State { Idle, Running, Done }
+var state = State.Idle
+print(state)                // Idle
+```
+
+Values compare with `==`, print by name, and cannot be mixed with ints
+or other enums. A `match` on an enum without an `else` has to handle
+every value, and names the ones it misses.
+
+Fixed:
+
+- `pub` was never enforced on this backend: private functions,
+  structs and constants of an imported file could be used freely.
+- Every type error in an imported file was reported against the main
+  file's name. It names the file it is in now.
+- Assigning to a `const` reported "undefined variable"; it says the
+  name was declared const.
+
 ## 0.23.0
 
 **Automatic garbage collection.** The collector runs by itself at the
