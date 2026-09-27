@@ -19,8 +19,11 @@ type Checker struct {
 	structs  map[string]*StructDecl
 	methods  map[string]map[string]*FnDecl // struct name -> method name -> decl
 	scopes   []map[string]*Type
+	consts   []map[string]bool // parallel to scopes: names declared const
 	narrowed []map[string]bool // names proved non-nil, innermost last
 	curFn    *FnDecl
+	curGlob  *LetStmt            // the global being checked, if any
+	globals  map[string]*LetStmt // top-level const and var, by name
 	Errors   []string
 
 	// lib is the backend's set of builtins. The checker never assumes
@@ -85,13 +88,60 @@ func (c *Checker) pkg() string {
 func (c *Checker) ErrorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
 	c.Errors = append(c.Errors,
-		fmt.Sprintf("%s:%d:%d: %s", c.file, line, col, fmt.Sprintf(format, args...)))
+		fmt.Sprintf("%s:%d:%d: %s", c.useFile(), line, col, fmt.Sprintf(format, args...)))
+}
+
+// useFile is the file the code being checked is in: the function's, the
+// global's, or, for the top-level statements, the main file. Imported
+// declarations carry their own, so an error inside one names the file
+// it is actually in.
+func (c *Checker) useFile() string {
+	switch {
+	case c.curFn != nil && c.curFn.File != "":
+		return c.curFn.File
+	case c.curGlob != nil && c.curGlob.File != "":
+		return c.curGlob.File
+	}
+	return c.file
+}
+
+// private reports whether a declaration from another file is being used
+// without being pub. The prelude is the compiler's own and is exempt.
+func (c *Checker) private(declFile string, pub bool) bool {
+	if pub || declFile == "" || declFile == "<prelude>" {
+		return false
+	}
+	return declFile != c.useFile()
+}
+
+func baseName(path string) string {
+	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
 
 // ---- scopes ----
 
-func (c *Checker) push() { c.scopes = append(c.scopes, map[string]*Type{}) }
-func (c *Checker) pop()  { c.scopes = c.scopes[:len(c.scopes)-1] }
+func (c *Checker) push() {
+	c.scopes = append(c.scopes, map[string]*Type{})
+	c.consts = append(c.consts, map[string]bool{})
+}
+
+func (c *Checker) pop() {
+	c.scopes = c.scopes[:len(c.scopes)-1]
+	c.consts = c.consts[:len(c.consts)-1]
+}
+
+// isConst reports whether the innermost declaration of a name is a const.
+func (c *Checker) isConst(name string) bool {
+	for i := len(c.scopes) - 1; i >= 0; i-- {
+		if _, ok := c.scopes[i][name]; ok {
+			return c.consts[i][name]
+		}
+	}
+	return false
+}
 
 // ---- nil narrowing ----
 //
@@ -212,6 +262,7 @@ func innerScalar(t *Type) *Type {
 
 func (c *Checker) define(name string, t *Type) {
 	c.scopes[len(c.scopes)-1][name] = t
+	c.consts[len(c.consts)-1][name] = false
 }
 
 func (c *Checker) lookup(name string) *Type {
@@ -305,8 +356,12 @@ func (c *Checker) Check(p *Program) {
 
 	// Scope 0 is the globals, so a function body can see them.
 	c.push()
+	c.globals = map[string]*LetStmt{}
 	for _, g := range p.Globals {
+		c.curGlob = g
 		c.stmt(g)
+		c.curGlob = nil
+		c.globals[g.Name] = g
 	}
 
 	// Pass 1: resolve every signature before checking any body, so calls
@@ -464,8 +519,16 @@ func (c *Checker) stmt(s Stmt) {
 			st.T = annot
 		}
 		c.define(st.Name, st.T)
+		if st.Const {
+			c.consts[len(c.consts)-1][st.Name] = true
+		}
 
 	case *AssignStmt:
+		if id, ok := st.Target.(*Ident); ok && c.isConst(id.Name) {
+			c.expr(st.Value)
+			c.ErrorAt(st, "cannot assign to %q because it was declared const", id.Name)
+			return
+		}
 		if _, ok := c.arrayField(st.Target); ok {
 			c.expr(st.Target)
 			c.expr(st.Value)
@@ -813,6 +876,14 @@ func (c *Checker) expr(e Expr) *Type {
 		return Str
 
 	case *Ident:
+		if g := c.globalNamed(x.Name); g != nil && c.private(g.File, g.Pub) {
+			kind := "const"
+			if !g.Const {
+				kind = "var"
+			}
+			c.ErrorAt(x, "%q is private to %s - mark it 'pub %s %s' to use it from another file",
+				x.Name, baseName(g.File), kind, x.Name)
+		}
 		if t := c.lookup(x.Name); t != nil {
 			// Inside a proven `x != nil`, the narrowed binding shadows the
 			// nullable one and the use is marked so codegen dereferences.
@@ -827,6 +898,7 @@ func (c *Checker) expr(e Expr) *Type {
 		}
 		// A declared function used as a value.
 		if f, ok := c.funcs[x.Name]; ok {
+			c.checkFnPrivacy(x, f)
 			if f.Extern {
 				c.ErrorAt(x, "extern %s names native code and cannot be used as a value - call it directly", f.Name)
 				return Unknown
@@ -928,6 +1000,10 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		}
 		x.T = Unknown
 		return Unknown // the resolver already reported it
+	}
+	if c.private(d.File, d.Pub) {
+		c.ErrorAt(x, "struct %q is private to %s - mark it 'pub struct %s' to use it from another file",
+			x.Name, baseName(d.File), x.Name)
 	}
 
 	seen := map[string]bool{}
@@ -1534,6 +1610,7 @@ func (c *Checker) call(x *Call) *Type {
 	if !isUser {
 		return Unknown // the resolver reported it
 	}
+	c.checkFnPrivacy(x, f)
 	// Arity is the resolver's job; only check the arguments we have.
 	n := len(args)
 	if n > len(f.Params) {
@@ -1921,5 +1998,27 @@ func (c *Checker) checkExportDecl(f *FnDecl) {
 	if f.RetT != nil && f.RetT != Void && !ok(f.RetT) {
 		c.ErrorAt(f, "exported %s cannot return %s - native code can only take back int, "+
 			"float, bool, ptr or an extern struct", f.Name, f.RetT)
+	}
+}
+
+// globalNamed is the top-level const or var a name refers to, or nil
+// when it is not one or a local shadows it.
+func (c *Checker) globalNamed(name string) *LetStmt {
+	g, ok := c.globals[name]
+	if !ok || len(c.scopes) == 0 {
+		return nil
+	}
+	for i := len(c.scopes) - 1; i > 0; i-- {
+		if _, local := c.scopes[i][name]; local {
+			return nil
+		}
+	}
+	return g
+}
+
+func (c *Checker) checkFnPrivacy(at Node, f *FnDecl) {
+	if f.Recv == "" && c.private(f.File, f.Pub) {
+		c.ErrorAt(at, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
+			f.Name, baseName(f.File), f.Name)
 	}
 }

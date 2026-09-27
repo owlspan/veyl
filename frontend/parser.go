@@ -160,10 +160,11 @@ func (p *Parser) ParseProgram() *Program {
 		if p.check(PUB) {
 			kw := p.advance()
 			pub = true
-			switch p.cur().Kind {
-			case FN, STRUCT, CONST, EXTERN:
+			switch {
+			case p.check(FN), p.check(STRUCT), p.check(CONST), p.check(EXTERN):
+			case p.check(IDENT) && p.cur().Lex == "var":
 			default:
-				p.errorAt(kw, "'pub' can only go before fn, struct, const or extern")
+				p.errorAt(kw, "'pub' can only go before fn, struct, const, var or extern")
 			}
 		}
 
@@ -214,6 +215,21 @@ func (p *Parser) ParseProgram() *Program {
 				d.File = p.file
 				prog.Structs = append(prog.Structs, d)
 			}
+		case p.check(IDENT) && p.cur().Lex == "var" && p.peekKind(1) == IDENT:
+			// `var` is a mutable global: visible inside functions, like
+			// a const, and assignable, like a let. It is only a keyword
+			// here, so `var` stays usable as a name.
+			kw := p.cur()
+			p.advance()
+			name := p.expect(IDENT, "a variable name")
+			g := &LetStmt{Span: at(kw), Name: name.Lex, Global: true, Pub: pub, File: p.file}
+			if p.match(COLON) {
+				g.Type = p.parseTypeRef()
+			}
+			p.expect(ASSIGN, "'='")
+			g.Value = p.parseExpr(0)
+			p.endStmt()
+			prog.Globals = append(prog.Globals, g)
 		case p.check(CONST):
 			// A top-level const is a genuine global: visible inside
 			// functions, unlike a top-level `let`, which stays a local of
