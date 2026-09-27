@@ -73,3 +73,11 @@ print(str(lines("crlf\r\nhandled")))
 // And back again.
 print(join(split("2026-08-20", "-"), "/"))
 print(len(chars("veyl")))
+
+// join renders anything that is not already a string, and an empty
+// list joins to nothing.
+print(join([1.5, 2.25], " | "))
+print(join([true, false], "/"))
+print(join(["", "", ""], "x"))
+let none: []str = []
+print("[" + join(none, ",") + "]")

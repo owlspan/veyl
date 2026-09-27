@@ -124,26 +124,15 @@ func (l *lowerer) strFromMem(src, n Reg) Reg {
 	return out
 }
 
-// copyBytes moves n bytes from src to dst, front to back.
+// copyBytes moves n bytes from src to dst, with memmove: one pass over
+// memory rather than a loop of byte loads and stores, which is what
+// every substring, file read and bytes copy spends its time in. A count
+// of zero or less copies nothing.
 func (l *lowerer) copyBytes(dst, src, n Reg) {
-	i := l.temp(vInt)
-	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: i})
-	top, done := l.newLabel(), l.newLabel()
-	l.mark(top)
-
-	cur := l.newReg()
-	l.regTy[cur] = vInt
-	l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: i})
-	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpLt, cur, n), Dst: NoReg, Imm: done})
-
-	v := l.newReg()
-	l.regTy[v] = vInt
-	l.emit(Instr{Op: OpLoadByte, Dst: v, A: src, B: cur})
-	l.storeByte(dst, cur, v)
-
-	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, cur, l.constant(1)), Dst: NoReg, Imm: i})
-	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
-	l.mark(done)
+	skip := l.newLabel()
+	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpGt, n, l.constant(0)), Dst: NoReg, Imm: skip})
+	l.ccall("memmove", []Reg{dst, src, n}, []vty{vInt, vInt, vInt}, vInt, false, false)
+	l.mark(skip)
 }
 
 // bytesConcat is variadic, which the prelude cannot express, so it is
@@ -175,24 +164,7 @@ func (l *lowerer) bytesConcat(c *Call) Reg {
 
 // copyBytesAt is copyBytes writing at an offset in dst.
 func (l *lowerer) copyBytesAt(dst, off, src, n Reg) {
-	i := l.temp(vInt)
-	l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: i})
-	top, done := l.newLabel(), l.newLabel()
-	l.mark(top)
-
-	cur := l.newReg()
-	l.regTy[cur] = vInt
-	l.emit(Instr{Op: OpLoad, Dst: cur, A: NoReg, B: NoReg, Imm: i})
-	l.emit(Instr{Op: OpJumpNot, A: l.compare(OpLt, cur, n), Dst: NoReg, Imm: done})
-
-	v := l.newReg()
-	l.regTy[v] = vInt
-	l.emit(Instr{Op: OpLoadByte, Dst: v, A: src, B: cur})
-	l.storeByte(dst, l.arith(OpAdd, off, cur), v)
-
-	l.emit(Instr{Op: OpStore, A: l.arith(OpAdd, cur, l.constant(1)), Dst: NoReg, Imm: i})
-	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
-	l.mark(done)
+	l.copyBytes(l.arith(OpAdd, dst, off), src, n)
 }
 
 // bytesEqual compares contents, which is what == means on every other
