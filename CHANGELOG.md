@@ -3,6 +3,50 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.20.0
+
+**Reading input.** `input()`, `input(prompt)` and `pause()`. A line
+comes back without its ending, and the end of input reads as `""`.
+
+```veyl
+let name = input("Your name: ")
+print("hi, {name}")
+```
+
+**Text builtins** the Go backend had and this one did not: `toFloat`
+and `isFloat`, which follow Go's `ParseFloat` including underscores,
+`inf` and `nan`; `count`; and `padLeft` and `padRight`, with an
+optional fill.
+
+**Characters, not bytes.** `charAt`, `substr` and `chars` count
+characters, as they always did on the Go backend. They counted bytes
+here, so anything outside ASCII came out cut in half.
+
+**`\xHH` and `\u{...}` string escapes**, so any byte or character can
+be written in plain ASCII source: `"caf\u{e9}"`.
+
+**`INF` and `NAN`.** Float comparisons are NaN-correct now - every
+comparison with a NaN is false except `!=` - and infinities and NaN
+print as `+Inf`, `-Inf` and `NaN` rather than msvcrt's `1.#INF`.
+
+Fixed:
+
+- `floor`, `ceil`, `round` and `trunc` returned 0 for most arguments
+  since 0.18.1: load forwarding turned a float bitcast into a plain
+  copy, and once the register allocator put the int in a register the
+  float return read the wrong register file. They also return `int`
+  now, as the docs and the Go backend always said.
+- `isNan` was false for a NaN.
+- Compile errors whose message contained a colon were sorted into the
+  wrong order.
+- A float constant equal to another under `==` shared its storage, so
+  `-0.0` could become `0.0`.
+
+Tests:
+
+- `tests/` holds programs the Go backend cannot run - the new escapes,
+  and programs fed standard input - with the output they must print.
+
 ## 0.19.0
 
 **`extern fn`: native functions declared in Veyl source.**
