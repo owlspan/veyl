@@ -3,6 +3,44 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.21.0
+
+**Raw memory.** `mem.alloc`, `mem.resize` and `mem.free` give blocks
+outside the collector. `mem.readU8` through `mem.readI64`,
+`mem.readF32` and `mem.readF64` read at every width, signed or not;
+`mem.write8` through `mem.write64`, `mem.writeF32` and `mem.writeF64`
+write. `mem.copy`, `mem.fill`, `mem.str`, `mem.strN`, `mem.bytes` and
+`mem.addr` round it out. An address is an `int`, so pointer arithmetic
+is ordinary arithmetic.
+
+**`extern struct`**, a C layout over an address:
+
+```veyl
+extern struct Player {
+    hp: i32
+    pos: Vec3
+    name: [16]u8
+    ammo: u16 at 0x40
+}
+let p = Player(address)
+p.hp -= 10
+```
+
+Fields are laid out the way a C compiler would, or pinned with `at`.
+They read and write at their own width, nest, and print. An extern
+struct can be passed to and returned from an `extern fn`, and a
+literal allocates zeroed memory for filling in a Win32 structure.
+
+**`bytes` crosses into `extern fn`** as a pointer to its data, for
+functions that fill in a buffer.
+
+**`examples/ffi/memreader.vl`**: lists running programs, finds where
+one is loaded, and follows a pointer chain through its memory.
+
+Under the hood: width-specific loads and stores in the IR, and the
+byte encoder learned `movsx`, word operands, and the single-precision
+conversions, each checked against GNU as.
+
 ## 0.20.0
 
 **Reading input.** `input()`, `input(prompt)` and `pause()`. A line
