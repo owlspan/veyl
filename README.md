@@ -119,6 +119,8 @@ pipeline:
 - `defer`, scoped to the block, and `Builder` for linear string
   building
 - default parameter values: `fn greet(name: str, greeting: str = "hi")`
+- runtime errors name the file, line and function they happened in,
+  and a crash names its kind and function
 - interfaces: `interface Shape { fn area(self) -> float }`, satisfied
   by any struct with the methods, as in Go
 - garbage collected by default, or `gc off` at the top of a file to

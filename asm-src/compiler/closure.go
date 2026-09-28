@@ -159,6 +159,9 @@ func (l *lowerer) liftFunc(fd *FnDecl, t vty, captured []capture) string {
 	savedFn, savedSlots, savedRegs := l.fn, l.slotTy, l.regTy
 	savedScopes, savedLoops, savedBuf := l.scopes, l.loops, l.buf
 	savedCaptures, savedCapTy, savedBoxed := l.captures, l.captureTy, l.boxed
+	savedDisplay := l.fnDisplay
+	l.fnDisplay = "a function literal in " + savedDisplay
+	defer func() { l.fnDisplay = savedDisplay }()
 
 	params := make([]vty, len(fd.Params))
 	if t.fn != nil {

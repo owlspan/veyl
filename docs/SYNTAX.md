@@ -1656,6 +1656,28 @@ error: there is no builtin called os.file.slurp
          os.file.exists, os.file.lines, os.file.read, ...
 ```
 
+### When a program stops
+
+A runtime error - an index past the end of a list, a `must` on a
+failure - says what went wrong and where:
+
+```
+runtime error: index 5 is out of range for a list of length 3
+    at game.vl:42 in update
+```
+
+A crash that is not one of Veyl's own errors - an address given to
+`mem.*` that is not valid, native code misbehaving - is reported too,
+with what kind it was and which of the program's functions it happened
+in, after everything the program printed has been written out:
+
+```
+crash: access violation - an address that is not valid was read or written
+    in poke
+```
+
+Neither costs anything while the program runs normally.
+
 ### How failure is reported
 
 **Nothing in the library stops your program.** Anything that can fail
