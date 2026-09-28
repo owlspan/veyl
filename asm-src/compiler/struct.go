@@ -107,6 +107,9 @@ func (l *lowerer) collectStructs(p *Program) {
 			l.structs[sd.Name] = viewLayout(sd)
 			continue
 		}
+		if sd.Enum != nil {
+			dataEnums[sd.Name] = sd.Enum
+		}
 		lay := &structLayout{name: sd.Name}
 		ok := true
 
@@ -224,6 +227,9 @@ func (l *lowerer) zeroOf(n Node, t vty, depth int) Reg {
 		if !ok {
 			return l.junk()
 		}
+		if e := dataEnums[lay.name]; e != nil {
+			return l.zeroVariant(n, lay, e, depth+1)
+		}
 		return l.zeroStruct(n, lay, depth+1)
 	}
 	d := l.constant(0)
@@ -270,6 +276,11 @@ func (l *lowerer) structLit(x *StructLit) Reg {
 			if f.t.k == kFloat && l.regTy[v].k == kInt {
 				v = l.toFloat(v)
 			}
+		} else if dataEnums[lay.name] != nil {
+			// Another variant's field, which is only ever read after the
+			// tag says it is that variant: it holds nothing at all.
+			v = l.constant(0)
+			l.regTy[v] = f.t
 		} else {
 			v = l.zeroOf(x, f.t, 0)
 		}
@@ -374,6 +385,11 @@ func (l *lowerer) copyStruct(n Node, v Reg, t vty) Reg {
 		// names for the same native memory.
 		return v
 	}
+	if dataEnums[lay.name] != nil {
+		// Nothing can change a data enum once it is built, so there is
+		// nothing a copy would protect: sharing it is the same value.
+		return v
+	}
 	dup := l.allocStruct(lay)
 	for _, f := range lay.fields {
 		cur := l.newReg()
@@ -423,6 +439,29 @@ func (l *lowerer) writeStruct(n Node, v Reg, t vty) {
 	}
 	if lay.view {
 		l.writeView(n, v, lay)
+		return
+	}
+	// Rendering is inlined, which is fine for a type of fixed depth and
+	// never ends for one that holds itself - a tree, a data enum with a
+	// list of itself. That kind is rendered by a function of its own,
+	// once, which calls itself for each value inside.
+	if l.inlineOnce == lay.name {
+		l.inlineOnce = ""
+	} else if l.recursiveStruct(lay.name) {
+		plain := vStructOf(lay.name)
+		sym := l.helperFunc("__show_"+lay.name, []vty{plain}, vStr, func(a []Reg) {
+			slot := l.temp(vStr)
+			l.emit(Instr{Op: OpStore, A: l.emptyStr(), Dst: NoReg, Imm: slot})
+			l.buf = slot
+			l.inlineOnce = lay.name
+			l.writeStruct(n, a[0], plain)
+			l.emit(Instr{Op: OpRet, A: l.load(slot, vStr), Dst: NoReg})
+		})
+		l.emitStr(l.callHelper(sym, []Reg{v}, []vty{plain}, vStr))
+		return
+	}
+	if e := dataEnums[lay.name]; e != nil {
+		l.writeVariant(n, v, lay, e)
 		return
 	}
 	l.writeLit(lay.name + "{")
@@ -583,4 +622,45 @@ func (l *lowerer) callMethod(c *Call, fld *Field, recv string) Reg {
 	l.emit(Instr{Op: OpCall, Dst: d, A: NoReg, B: NoReg, Args: args,
 		ArgTypes: s.params, RetType: s.ret, Sym: name, Comment: name + "()"})
 	return d
+}
+
+// recursiveStruct reports whether a struct can hold another of its own
+// type, through any depth of fields, lists and maps.
+func (l *lowerer) recursiveStruct(name string) bool {
+	seen := map[string]bool{}
+	var reaches func(t vty) bool
+	reaches = func(t vty) bool {
+		switch t.k {
+		case kStruct:
+			if t.name == name {
+				return true
+			}
+			if seen[t.name] {
+				return false
+			}
+			seen[t.name] = true
+			lay, ok := l.structs[t.name]
+			if !ok || lay.view {
+				return false
+			}
+			for _, f := range lay.fields {
+				if reaches(f.t) {
+					return true
+				}
+			}
+		case kList, kMap:
+			return reaches(t.elemType())
+		}
+		return false
+	}
+	lay, ok := l.structs[name]
+	if !ok {
+		return false
+	}
+	for _, f := range lay.fields {
+		if reaches(f.t) {
+			return true
+		}
+	}
+	return false
 }

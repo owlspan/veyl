@@ -219,7 +219,8 @@ func (p *Parser) ParseProgram() *Program {
 				d.File = p.file
 				prog.Structs = append(prog.Structs, d)
 			}
-		case p.check(IDENT) && p.cur().Lex == "enum" && p.peekKind(1) == IDENT && p.peekKind(2) == LBRACE:
+		case p.check(IDENT) && p.cur().Lex == "enum" && p.peekKind(1) == IDENT &&
+			(p.peekKind(2) == LBRACE || p.peekKind(2) == LT):
 			// `enum` is only a keyword at the top level, before a name
 			// and a brace, so it stays usable as a name everywhere else.
 			if d := p.parseEnum(); d != nil {
@@ -391,16 +392,42 @@ func (p *Parser) parseExternStruct() *StructDecl {
 // parseEnum reads `enum State { Idle, Running, Done }`. The variants
 // may be separated by commas, newlines or both.
 func (p *Parser) parseEnum() *EnumDecl {
+	start := p.i
 	kw := p.advance() // 'enum'
 	name := p.expect(IDENT, "an enum name")
 	d := &EnumDecl{Span: at(kw), Name: name.Lex}
+	if p.check(LT) {
+		d.TypeParams = p.typeParams()
+	}
 	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
 	for !p.check(RBRACE) && !p.check(EOF) {
 		before := p.i
 		v := p.expect(IDENT, "a variant name")
 		if v.Kind == IDENT {
+			// Circle(r: float): the variant carries fields, written as a
+			// function's parameters are.
+			var payload []Param
+			if p.check(LPAREN) {
+				sig := p.parseFnSignature(v, v.Lex)
+				if sig != nil {
+					payload = sig.Params
+					if payload == nil {
+						payload = []Param{}
+					}
+					if sig.Ret != "" || sig.Variadic {
+						p.errorAt(v, "a variant lists what it holds, as in %s(x: int, y: int)", v.Lex)
+					}
+					for _, prm := range payload {
+						if prm.Name == "self" {
+							p.errorAt(v, "a variant's fields need names and types, as in %s(x: int)", v.Lex)
+						}
+					}
+				}
+				d.Data = true
+			}
 			d.Variants = append(d.Variants, v.Lex)
+			d.Payloads = append(d.Payloads, payload)
 		}
 		p.match(COMMA)
 		p.skipNewlines()
@@ -409,6 +436,10 @@ func (p *Parser) parseEnum() *EnumDecl {
 		}
 	}
 	p.expectClose(RBRACE, open, "'}'", "enum")
+	if d.TypeParams != nil {
+		d.Data = true
+		d.Toks = append([]Token(nil), p.toks[start:p.i]...)
+	}
 	p.endStmt()
 	return d
 }
@@ -552,7 +583,7 @@ func (p *Parser) tryTypeArgs() ([]string, bool) {
 	i, errs, gt := p.i, len(p.Errors), p.pendingGT
 	args, ok := p.typeArgs()
 	if ok && p.pendingGT == 0 && len(p.Errors) == errs &&
-		(p.check(LPAREN) || p.check(LBRACE) && p.noBrace == 0) {
+		(p.check(LPAREN) || p.check(DOT) || p.check(LBRACE) && p.noBrace == 0) {
 		return args, true
 	}
 	p.i, p.Errors, p.pendingGT = i, p.Errors[:errs], gt

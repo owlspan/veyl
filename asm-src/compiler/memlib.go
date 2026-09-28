@@ -56,6 +56,65 @@ func (l *lowerer) rawMemBuiltin(c *Call, name string) (Reg, bool) {
 	}
 
 	switch name {
+	case "mem.call", "mem.callF":
+		// Native code at an address, with the Windows x64 convention:
+		// a float in an xmm register, everything else a word. A float
+		// also goes in the integer register beside it, as for a
+		// variadic, so a callee that takes it either way gets it.
+		if len(c.Args) < 1 {
+			l.errorAt(c, "%s takes an address and then its arguments", name)
+			return l.junk(), true
+		}
+		target := l.intArg(c, 0)
+		var args []Reg
+		var types []vty
+		for _, a := range c.Args[1:] {
+			v := l.expr(a)
+			t := l.regTy[v]
+			switch {
+			case t.null || t.res:
+				l.errorAt(a, "%s cannot pass %s to native code", name, t)
+				return l.junk(), true
+			case t.k == kFloat:
+				types = append(types, vFloat)
+			case t.k == kInt, t.k == kBool, t.k == kStr, t.k == kBytes, l.isView(t):
+				types = append(types, vInt)
+			default:
+				l.errorAt(a, "%s passes ints, floats, bools, strings, bytes and extern structs; this is %s", name, t)
+				return l.junk(), true
+			}
+			args = append(args, v)
+		}
+		if len(args) > l.fn.MaxCallArgs {
+			l.fn.MaxCallArgs = len(args)
+		}
+		ret := vInt
+		if name == "mem.callF" {
+			ret = vFloat
+		}
+		d := l.newReg()
+		l.regTy[d] = ret
+		l.emit(Instr{Op: OpCallAddr, Dst: d, A: target, B: NoReg, Args: args, ArgTypes: types,
+			RetType: ret, Variadic: true, Comment: name})
+		return d, true
+
+	case "mem.symbol":
+		// Where a DLL's export is, loading the DLL if it is not loaded
+		// yet: 0 when either cannot be found.
+		if !arity(2) {
+			return l.junk(), true
+		}
+		dll, sym := l.expr(c.Args[0]), l.expr(c.Args[1])
+		out := l.temp(vInt)
+		l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: out})
+		h := l.ccall("LoadLibraryA", []Reg{dll}, []vty{vStr}, vInt, false, false)
+		skip := l.newLabel()
+		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, h, l.constant(0)), Dst: NoReg, Imm: skip})
+		l.emit(Instr{Op: OpStore, Dst: NoReg, Imm: out,
+			A: l.ccall("GetProcAddress", []Reg{h, sym}, []vty{vInt, vStr}, vInt, false, false)})
+		l.mark(skip)
+		return l.load(out, vInt), true
+
 	case "mem.alloc":
 		if !arity(1) {
 			return l.junk(), true

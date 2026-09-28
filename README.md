@@ -111,6 +111,9 @@ pipeline:
   on one checked for every variant
 - generics: `fn largest<T>(xs: []T) -> T`, `struct Stack<T>` and
   `impl Stack<T>`, each use compiled to its own copy as in C++
+- enums whose variants carry values, `Circle(r: float)`, taken apart
+  by a `match`; recursive ones for trees, generic ones like `Option<T>`
+- `mem.call` and `mem.symbol`: call native code at any address
 
 - `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
   `padRight`, and the constants `INF` and `NAN`, with comparisons that

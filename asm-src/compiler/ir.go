@@ -500,6 +500,11 @@ const (
 	// value is in hand.
 	OpCallClosure
 
+	// OpCallAddr calls native code at the address in A, with Args, by the
+	// Windows x64 convention: mem.call. Like OpCall to an extern, but
+	// what is called is a number the program worked out.
+	OpCallAddr
+
 	// Raw memory at a width. Imm is one of the mem* kinds below, which
 	// says how many bytes, whether a narrow integer is sign-extended,
 	// and whether the value is a float. Dst is an int or a float to
@@ -821,6 +826,11 @@ type lowerer struct {
 	// statement turns that into a failure at the statement responsible.
 	gcStress bool
 	inHelper bool
+
+	// inlineOnce is a recursive struct whose rendering function is being
+	// built, so the next writeStruct of it is that function's own body.
+	inlineOnce string
+	eqInline   string
 
 	// autoGC is automatic collection: on, except in a DLL, whose
 	// functions the host may call on threads of its own, and when
@@ -1415,6 +1425,16 @@ func (l *lowerer) stmt(s Stmt) {
 		l.forRange(st)
 
 	case *MatchStmt:
+		if st.Lowered != nil {
+			// A match on a data enum, which the checker has already
+			// turned into ifs on a local holding the subject.
+			l.pushScope()
+			v := l.rvalue(st.Subject)
+			l.storeLocal(l.declare(st.Temp, l.regTy[v]), v)
+			l.stmt(st.Lowered)
+			l.popScope()
+			return
+		}
 		l.match(st)
 
 	case *ReturnStmt:
@@ -1768,6 +1788,9 @@ func constInt(e Expr) (int64, bool) {
 // ---- calls ----
 
 func (l *lowerer) call(c *Call) Reg {
+	if c.Lit != nil {
+		return l.expr(c.Lit) // a data enum's variant; see dataenums.go
+	}
 	// DottedName flattens both a plain identifier and a chain of field
 	// accesses, so `print` and `time.now` arrive here the same way. The
 	// checker has already refused any dotted name the library does not
@@ -2606,6 +2629,9 @@ func (l *lowerer) expr(e Expr) Reg {
 		return l.structLit(x)
 
 	case *Field:
+		if x.Lit != nil {
+			return l.expr(x.Lit) // a data enum's variant; see dataenums.go
+		}
 		return l.fieldRead(x)
 
 	default:

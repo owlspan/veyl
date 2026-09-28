@@ -1,0 +1,34 @@
+Circle(2) has area 12
+Rect(3, 4.5) has area 13.5
+Empty has area 0
+[Circle(2), Rect(3, 4.5), Empty]
+Add([Num(1), Mul(Num(2), Num(3)), Neg(Num(4))])
+3
+Some(2)
+None
+1
+hi
+none
+age 36
+not an age: abc
+key 65
+key 66
+1
+other
+skip Key(65, true)
+skip Key(66, false)
+skip Quit
+34
+0
+true
+true
+false
+true
+Player{name: "ada", held: Some("lamp")}
+Circle(1)
+true
+false
+Node{v: 1, kids: [Node{v: 2, kids: []}, Node{v: 3, kids: [Node{v: 4, kids: []}]}]}
+true
+false
+Neg(Num(5))

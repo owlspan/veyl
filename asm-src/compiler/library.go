@@ -401,6 +401,9 @@ var sigs = map[string]front.Signature{
 	"mem.addr":     {Params: []*Type{Any}, Ret: Int},
 	"mem.protect":  {Params: []*Type{Int, Int, Str}, Ret: Bool},
 	"mem.scan":     {Params: []*Type{Int, Int, Str}, Ret: Int},
+	"mem.call":     {Params: []*Type{Int}, Rest: Any, Ret: Int},
+	"mem.callF":    {Params: []*Type{Int}, Rest: Any, Ret: Float},
+	"mem.symbol":   {Params: []*Type{Str, Str}, Ret: Int},
 
 	"mem.used":         {Ret: Int},
 	"mem.total":        {Ret: Int},
