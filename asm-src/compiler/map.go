@@ -561,7 +561,7 @@ func (l *lowerer) forMap(st *ForStmt, m Reg, t vty) {
 			Dst: NoReg, Imm: valSlot, Comment: st.Var2})
 	}
 
-	l.loops = append(l.loops, loopTarget{brk: done, cont: cont})
+	l.loops = append(l.loops, loopTarget{brk: done, cont: cont, defers: len(l.defers)})
 	l.stmt(st.Body)
 	l.loops = l.loops[:len(l.loops)-1]
 

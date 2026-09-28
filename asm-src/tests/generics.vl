@@ -169,3 +169,29 @@ print(b > c)
 if a < b {
     print("less")
 }
+
+// Methods with type parameters of their own.
+struct Box2<T> { v: T }
+impl Box2<T> {
+    fn map<U>(self, f: fn(T) -> U) -> Box2<U> {
+        return Box2<U>{v: f(self.v)}
+    }
+    fn get(self) -> T { return self.v }
+}
+struct Bag { items: []int }
+impl Bag {
+    fn mapAll<U>(self, f: fn(int) -> U) -> []U {
+        let out: []U = []
+        for x in self.items {
+            push(out, f(x))
+        }
+        return out
+    }
+}
+let bx = Box2<int>{v: 21}
+let sx = bx.map(fn(x: int) -> str { return "n={x * 2}" })
+print(sx.get())
+print(bx.map(fn(x: int) -> float { return float(x) / 2.0 }).get())
+let bag = Bag{items: [1, 2, 3]}
+print(bag.mapAll(fn(x: int) -> str { return "<{x}>" }))
+print(bag.mapAll(fn(x: int) -> bool { return x > 1 }))

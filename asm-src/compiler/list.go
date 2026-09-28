@@ -621,7 +621,7 @@ func (l *lowerer) forList(st *ForStmt) {
 	l.emit(Instr{Op: OpStore, A: l.listGet(list, i, t.elemType()), Dst: NoReg,
 		Imm: varSlot, Comment: varName})
 
-	l.loops = append(l.loops, loopTarget{brk: done, cont: cont})
+	l.loops = append(l.loops, loopTarget{brk: done, cont: cont, defers: len(l.defers)})
 	l.stmt(st.Body)
 	l.loops = l.loops[:len(l.loops)-1]
 

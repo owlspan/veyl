@@ -757,8 +757,19 @@ consequences:
 - **Every instance is code of its own**, so a generic used with twenty
   types is twenty copies in the executable.
 
-A method cannot have type parameters of its own yet, only the ones its
-struct has.
+A method can have type parameters of its own, besides its struct's.
+Theirs come from the arguments, as a function's do:
+
+```veyl
+impl Box<T> {
+    fn map<U>(self, f: fn(T) -> U) -> Box<U> {
+        return Box<U>{v: f(self.v)}
+    }
+}
+
+let n = Box<int>{v: 21}
+let s = n.map(fn(x: int) -> str { return "{x * 2}" })   // a Box<str>
+```
 
 `f<A, B>(x)` in an expression is read as a call naming its types, so a
 pair of comparisons written as `f(a < b, c > (d))` needs brackets:
@@ -1052,6 +1063,30 @@ call in the range is not re-run on every iteration.
 The loop variable is scoped to the loop and may shadow an outer name
 without disturbing it.
 
+### defer
+
+`defer` puts a statement off until the block it is in is left, however
+it is left: its end, a `return`, or a `break` or `continue`. Several
+run latest first:
+
+```veyl
+fn save(m: int, path: str) -> bool {
+    thread.lock(m)
+    defer thread.unlock(m)      // on every way out below
+    if !os.file.exists(path) {
+        return false
+    }
+    ...
+    return true
+}
+```
+
+It belongs to the block, not the function, so inside a loop it runs at
+the end of each trip - which is what makes `defer delete(xs)` in a
+`gc off` loop free each trip's list on that trip. The statement is run
+as it is on the way out, so `defer print(x)` prints `x`'s value then.
+It cannot itself `return`, `break` or `continue`.
+
 ### break and continue
 
 ```veyl
@@ -1335,6 +1370,21 @@ Use `divf(7, 2)` for `3.5`, or make one side a float.
 | `randomInt(lo, hi)` | `int`   | between `lo` and `hi`, both included     |
 
 ### Strings
+
+`s = s + piece` in a loop copies all of `s` every time. A `Builder`
+keeps the pieces and joins them once, so building a long string is
+linear:
+
+```veyl
+let sb = Builder{}
+for i in 0..1000 {
+    sb.add("{i},")
+}
+print(sb.str())
+```
+
+`add(s)` and `addLine(s)` append, `str()` gives the string, `len()` its
+length, and `clear()` empties it.
 
 | Function                        | Returns | Description                      |
 | ------------------------------- | ------- | -------------------------------- |
@@ -3148,9 +3198,8 @@ Honest list of what v0.31.0 does not do yet.
   lands in one flat namespace, so two files exporting the same name
   collide. The error names both files.
 - **A map cannot be keyed by an enum.** Keys are still `int` or `str`.
-- **A method cannot be generic by itself.** Its struct can be, and a
-  plain function can, but `fn map<U>(self, ...)` inside an impl is
-  refused.
+- **A generic method's types cannot be named at the call.** They come
+  from the arguments; `b.map<str>(f)` is not accepted.
 - **Garbage collected**, with raw memory beside it: `mem.alloc` and
   extern structs give manual memory and pointers, but nothing checks an
   address, and `unsafe` is still reserved.

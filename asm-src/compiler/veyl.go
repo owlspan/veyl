@@ -279,7 +279,7 @@ func compile(source, path string) *Module {
 	if errs := addPrelude(prog, append([]string{source}, imported...)); len(errs) > 0 {
 		report(errs)
 	}
-	if errs := addChannel(prog, append([]string{source}, imported...)); len(errs) > 0 {
+	if errs := addLibrary(prog, append([]string{source}, imported...)); len(errs) > 0 {
 		report(errs)
 	}
 
@@ -303,6 +303,18 @@ func compile(source, path string) *Module {
 
 func report(errs []string) {
 	sortByPosition(errs)
+	// The same message at the same place twice is one mistake: a
+	// receiver that is itself a call can be checked on the way to each
+	// method called on it.
+	seen := map[string]bool{}
+	uniq := errs[:0]
+	for _, e := range errs {
+		if !seen[e] {
+			seen[e] = true
+			uniq = append(uniq, e)
+		}
+	}
+	errs = uniq
 	for _, e := range errs {
 		fmt.Fprintln(os.Stderr, e)
 	}
