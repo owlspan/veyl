@@ -238,6 +238,14 @@ func (c *Checker) matchData(st *MatchStmt, subj *Type, e *EnumDecl) {
 				continue
 			}
 			i := variantIndex(e, name)
+			if i < 0 && e.Interface {
+				// An arm can name a struct nothing has converted yet.
+				if d := c.ifaces[e.Name]; d != nil {
+					if _, isStruct := c.structs[name]; isStruct && c.missingMethod(name, d) == "" {
+						i = c.ifaceVariant(d, name)
+					}
+				}
+			}
 			if i < 0 {
 				c.ErrorAt(v, "%s has no variant %q - it has: %s", e.Name, name, strings.Join(e.Variants, ", "))
 				continue
@@ -287,7 +295,9 @@ func (c *Checker) matchData(st *MatchStmt, subj *Type, e *EnumDecl) {
 		arms = append(arms, &IfStmt{Span: at, Cond: cond, Then: body})
 	}
 
-	if st.Else == nil {
+	// An interface's structs are only the ones this program converts, so
+	// a match on one is not held to naming them all.
+	if st.Else == nil && !e.Interface {
 		var missing []string
 		for _, v := range e.Variants {
 			if !handled[v] {

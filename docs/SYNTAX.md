@@ -20,16 +20,17 @@ runtime to install, and building one needs nothing but `veyl.exe`.
 5. [Types](#types)
 6. [Enums](#enums)
 7. [Generics](#generics)
-8. [Operators](#operators)
-9. [Strings and interpolation](#strings-and-interpolation)
-10. [Control flow](#control-flow)
-11. [Functions](#functions)
-12. [Builtin library](#builtin-library)
-13. [Native functions (`extern`)](#native-functions-extern)
-14. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
-15. [Reserved words](#reserved-words)
-16. [Compiler commands](#compiler-commands)
-17. [Known limitations](#known-limitations)
+8. [Interfaces](#interfaces)
+9. [Operators](#operators)
+10. [Strings and interpolation](#strings-and-interpolation)
+11. [Control flow](#control-flow)
+12. [Functions](#functions)
+13. [Builtin library](#builtin-library)
+14. [Native functions (`extern`)](#native-functions-extern)
+15. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
+16. [Reserved words](#reserved-words)
+17. [Compiler commands](#compiler-commands)
+18. [Known limitations](#known-limitations)
 
 ---
 
@@ -762,6 +763,76 @@ struct has.
 `f<A, B>(x)` in an expression is read as a call naming its types, so a
 pair of comparisons written as `f(a < b, c > (d))` needs brackets:
 `f((a < b), c > (d))`.
+
+---
+
+## Interfaces
+
+An interface lists methods. Any struct that has them, with the same
+parameter and result types, can be used as one - nothing on the struct
+says so, the way Go does it:
+
+```veyl
+interface Shape {
+    fn area(self) -> float
+    fn name(self) -> str
+}
+
+struct Square { side: float }
+impl Square {
+    fn area(self) -> float { return self.side * self.side }
+    fn name(self) -> str { return "square" }
+}
+
+struct Circle { r: float }
+impl Circle {
+    fn area(self) -> float { return 3.14159 * self.r * self.r }
+    fn name(self) -> str { return "circle" }
+}
+
+let shapes: []Shape = [Square{side: 2.0}, Circle{r: 1.0}]
+push(shapes, Square{side: 1.0})
+for s in shapes {
+    print("{s.name()}: {s.area()}")
+}
+```
+
+A struct becomes the interface wherever one is wanted: a parameter, a
+`let` with the type, a list or map element, a return, `push`, `==`.
+One missing a method, or with a method of the wrong type, is an error
+saying which:
+
+```
+Box is not a Shape: area is fn(self) -> int where Shape needs fn(self) -> float
+```
+
+Calls go to the struct inside, and a method that changes `self`
+changes the value the interface holds. Printing one prints that
+struct. Its fields are not reachable through the interface; a `match`
+names the structs it could be and gets the one it is:
+
+```veyl
+match s {
+    Shape.Circle(c) => print("radius {c.r}")
+    Shape.Square(sq) => print("side {sq.side}")
+    else => print("something else")
+}
+```
+
+The zero value of an interface - a struct field of one that a literal
+left out - holds no struct, and calling a method on it stops the
+program with a message naming the interface.
+
+`interface` is only a keyword at the top of a file, before a name and a
+brace.
+
+### How it works
+
+The whole program is compiled at once, so every struct ever used as a
+`Shape` is known by the end. A `Shape` is kept as a tagged value, like
+an enum whose variants are those structs, and each of its methods is a
+branch on the tag that calls the struct's own. There is no vtable to
+look up and nothing allocated beyond the value itself.
 
 ---
 

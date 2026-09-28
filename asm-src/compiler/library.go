@@ -929,7 +929,9 @@ func checkPush(c *Checker, x *Call, args []*Type) *Type {
 		return Unknown
 	}
 	for i := 1; i < len(args); i++ {
-		if !args[i].IsUnknown() && !args[i].Equal(args[0].Elem) {
+		// A struct pushed onto a list of an interface becomes one.
+		if !args[i].IsUnknown() && !args[i].Equal(args[0].Elem) &&
+			!(args[0].Elem.Kind == KStruct && c.Coerce(&x.Args[i], args[0].Elem, args[i])) {
 			c.ErrorAt(x.Args[i], "cannot push %s into %s", args[i], args[0])
 			return Unknown
 		}

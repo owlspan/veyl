@@ -39,6 +39,8 @@ type Checker struct {
 	genStructs map[string]*StructDecl
 	genMethods map[string][]*FnDecl
 	genEnums   map[string]*EnumDecl
+	ifaces     map[string]*InterfaceDecl
+	dispatch   []*FnDecl
 	pending    []*FnDecl
 	matchCount int
 	instances  int
@@ -254,6 +256,13 @@ func (c *Checker) coerce(slot *Expr, want *Type, got *Type) bool {
 	if want == nil || want.IsUnknown() || got.IsUnknown() {
 		return true
 	}
+	// A struct where an interface is wanted becomes that interface.
+	if t, converted := c.toInterface(slot, want, got); converted {
+		if t.IsUnknown() {
+			return true // reported, with the reason
+		}
+		got = t
+	}
 	if !want.Accepts(got) && !(IsUntypedInt(*slot) && innerScalar(want).Kind == KFloat) {
 		return false
 	}
@@ -270,6 +279,11 @@ func (c *Checker) coerce(slot *Expr, want *Type, got *Type) bool {
 	*slot = &Widen{Span: Span{Line: line, Col: col}, X: *slot, T: want}
 	return true
 }
+
+// Coerce is coerce for a backend's own builtin checks: it converts a
+// value where the type wanted calls for it, and reports whether the
+// value fits.
+func (c *Checker) Coerce(slot *Expr, want, got *Type) bool { return c.coerce(slot, want, got) }
 
 // innerScalar strips every layer of ? and ! to reach the type actually
 // being carried, so an untyped integer literal can still find the float
@@ -374,6 +388,13 @@ func (c *Checker) Check(p *Program) {
 	for _, e := range p.Enums {
 		c.declareEnum(e)
 	}
+	c.ifaces = map[string]*InterfaceDecl{}
+	for _, d := range p.Ifaces {
+		c.declareInterface(d)
+	}
+	for _, d := range p.Ifaces {
+		c.declareIfaceMethods(d)
+	}
 	// A data enum is a struct from here on, which a backend lowers as
 	// one, so it leaves the list of enums that are ints.
 	plain := p.Enums[:0:0]
@@ -437,6 +458,11 @@ func (c *Checker) Check(p *Program) {
 
 	// Last, the generic instances all that asked for, in the scope of
 	// the globals alone.
+	c.checkPending()
+
+	// Every struct used as an interface is known now, so the interface
+	// methods, which call each one's, can be written and checked.
+	c.writeDispatch()
 	c.checkPending()
 	c.pop() // globals
 }
@@ -1123,7 +1149,11 @@ func (c *Checker) field(x *Field) *Type {
 	}
 	if d, ok := c.structs[recv.Name]; ok && d.Enum != nil && !strings.HasPrefix(x.Name, "#") &&
 		!strings.Contains(x.Name, ".") {
-		c.ErrorAt(x, "%s is an enum - a match says which variant it is and names what it holds", recv.Name)
+		if d.Enum.Interface {
+			c.ErrorAt(x, "%s is an interface - call its methods, or match to get the struct inside", recv.Name)
+		} else {
+			c.ErrorAt(x, "%s is an enum - a match says which variant it is and names what it holds", recv.Name)
+		}
 		return Unknown
 	}
 	if t, ok := c.fieldType(recv.Name, x.Name); ok {
@@ -1163,8 +1193,12 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		for i := range x.Vals {
 			c.expr(x.Vals[i])
 		}
-		c.ErrorAt(x, "%s is an enum - a value of it is one of its variants, as in %s.%s",
-			x.Name, x.Name, d.Enum.Variants[0])
+		if d.Enum.Interface {
+			c.ErrorAt(x, "%s is an interface - a value of it is any struct with its methods", x.Name)
+		} else {
+			c.ErrorAt(x, "%s is an enum - a value of it is one of its variants, as in %s.%s",
+				x.Name, x.Name, d.Enum.Variants[0])
+		}
 		x.T = Unknown
 		return Unknown
 	}
@@ -1573,6 +1607,20 @@ func (c *Checker) binary(x *Binary) *Type {
 					other, x.Op == NEQ)
 				return Bool
 			}
+			return Bool
+		}
+		// A struct compared with an interface is converted to it, and
+		// equal when the interface holds an equal one.
+		if c.ifaceOf(lt) != nil && !lt.Equal(rt) {
+			if t, ok := c.toInterface(&x.R, lt, rt); ok {
+				rt = t
+			}
+		} else if c.ifaceOf(rt) != nil && !lt.Equal(rt) {
+			if t, ok := c.toInterface(&x.L, rt, lt); ok {
+				lt = t
+			}
+		}
+		if lt.IsUnknown() || rt.IsUnknown() {
 			return Bool
 		}
 		if !lt.Equal(rt) {
