@@ -743,6 +743,29 @@ func (e *Emitter) instr(in Instr) {
 	case OpCallAddr:
 		e.callAddr(in)
 
+	case OpAtomicAdd, OpAtomicSwap:
+		e.line("mov rcx, %s", e.loc(in.A))
+		e.line("mov rax, %s", e.loc(in.B))
+		if in.Op == OpAtomicAdd {
+			e.line("lock xadd qword ptr [rcx], rax")
+		} else {
+			e.line("xchg qword ptr [rcx], rax")
+		}
+		if in.Dst != NoReg {
+			e.put(in.Dst, "rax")
+		}
+
+	case OpAtomicCAS:
+		e.line("mov rcx, %s", e.loc(in.Args[0]))
+		e.line("mov rax, %s", e.loc(in.Args[1]))
+		e.line("mov rdx, %s", e.loc(in.Args[2]))
+		e.line("lock cmpxchg qword ptr [rcx], rdx")
+		e.line("sete al")
+		e.line("movzx eax, al")
+		if in.Dst != NoReg {
+			e.put(in.Dst, "rax")
+		}
+
 	case OpRet:
 		switch {
 		case in.A != NoReg && e.f.Ret.k == kFloat:
@@ -1221,6 +1244,17 @@ __vy_talloc:
     mov rcx, qword ptr [rbp-16]
     mov qword ptr [rax+0], rcx
     lea rcx, __globals[rip]
+    mov qword ptr [rbp-32], 0
+    cmp qword ptr [rcx+48], 0
+    je __vy_talloc_go
+    mov qword ptr [rbp-32], 1
+__vy_talloc_spin:
+    mov rax, 0
+    mov rdx, 1
+    lock cmpxchg qword ptr [rcx+64], rdx
+    jne __vy_talloc_spin
+__vy_talloc_go:
+    mov rax, qword ptr [rbp-24]
     mov rdx, qword ptr [rcx+0]
     mov qword ptr [rax+8], rdx
     mov qword ptr [rcx+0], rax
@@ -1233,6 +1267,11 @@ __vy_talloc:
     mov rdx, qword ptr [rcx+24]
     add rdx, qword ptr [rbp-8]
     mov qword ptr [rcx+24], rdx
+    cmp qword ptr [rbp-32], 0
+    je __vy_talloc_out
+    mov rdx, 0
+    xchg qword ptr [rcx+64], rdx
+__vy_talloc_out:
     add rax, 16
     mov rsp, rbp
     pop rbp

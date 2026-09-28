@@ -166,6 +166,16 @@ func (b *block) encodeLine(line string) error {
 		mnemonic = line[:sp]
 		rest = strings.TrimSpace(line[sp+1:])
 	}
+	// `lock xadd ...`: the prefix is a word of its own ahead of the
+	// instruction it makes atomic.
+	lock := false
+	if mnemonic == "lock" {
+		lock = true
+		mnemonic, rest = rest, ""
+		if sp := strings.IndexByte(mnemonic, ' '); sp >= 0 {
+			mnemonic, rest = mnemonic[:sp], strings.TrimSpace(mnemonic[sp+1:])
+		}
+	}
 
 	var ops []operand
 	if rest != "" {
@@ -180,6 +190,9 @@ func (b *block) encodeLine(line string) error {
 
 	b.code = b.code[:0]
 	b.rel = b.rel[:0]
+	if lock {
+		b.put(0xF0)
+	}
 	if err := b.encode(mnemonic, ops); err != nil {
 		return fmt.Errorf("%s: %w", line, err)
 	}
@@ -442,8 +455,26 @@ func (b *block) encode(m string, ops []operand) error {
 		return b.encodeCvtsi2sd(ops)
 	case "cvttsd2si":
 		return b.encodeCvttsd2si(ops)
+	case "xadd":
+		return b.encodeRMReg([]byte{0x0F, 0xC1}, ops)
+	case "cmpxchg":
+		return b.encodeRMReg([]byte{0x0F, 0xB1}, ops)
+	case "xchg":
+		return b.encodeRMReg([]byte{0x87}, ops)
 	}
 	return fmt.Errorf("no encoding for %q", m)
+}
+
+// encodeRMReg is an instruction of the form op r/m64, r64: xadd,
+// cmpxchg and xchg, the three the atomics use.
+func (b *block) encodeRMReg(opcode []byte, ops []operand) error {
+	if len(ops) != 2 || ops[1].kind != opReg || (ops[0].kind != opReg && ops[0].kind != opMem) {
+		return fmt.Errorf("wants a register or memory, then a register")
+	}
+	b.prefix(64, ops[1].reg, ops[0])
+	b.put(opcode...)
+	b.modrm(ops[1].reg, ops[0])
+	return nil
 }
 
 func (b *block) encodeArith(rmReg, regRM byte, digit int, ops []operand) error {

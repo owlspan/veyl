@@ -494,10 +494,18 @@ func (l *lowerer) methodCall(fld *Field) (recv string, isMethod bool) {
 	root, plain := fld.X.(*Ident)
 	if plain {
 		slot, known := l.lookup(root.Name)
-		if !known {
-			return "", false
+		var t vty
+		switch {
+		case known:
+			t = l.slotTy[slot]
+		default:
+			// A variable a closure captured is a receiver too.
+			ct, captured := l.captureTy[root.Name]
+			if !captured {
+				return "", false
+			}
+			t = ct
 		}
-		t := l.slotTy[slot]
 		if t.k != kStruct {
 			return "", false
 		}

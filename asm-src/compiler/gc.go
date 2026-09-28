@@ -45,9 +45,10 @@ const (
 	gcTotalSlot  = 3 // bytes ever allocated
 	gcCyclesSlot = 4 // how many times collect has run
 	gcNGlobSlot  = 5 // how many words the globals block has, for the scan
-	gcTasksSlot  = 6 // task batches running, during which nothing collects
+	gcTasksSlot  = 6 // threads running besides main, during which nothing collects
 	gcNextSlot   = 7 // live bytes at which the next automatic collection runs
-	gcReserved   = 8
+	gcLockSlot   = 8 // the allocation lock, taken while other threads run
+	gcReserved   = 9
 )
 
 // rtSlot is the address of one of the runtime's own global words.
@@ -74,6 +75,19 @@ func (l *lowerer) rtBump(i int64, by Reg) {
 // tracking costs one store and no allocation of its own. An allocator
 // that had to allocate to record an allocation would not terminate.
 func (l *lowerer) trackObject(raw, obj, bytes Reg) {
+	// With other threads running, under the allocation lock; see
+	// threads.go. Alone, as it always was.
+	alone := l.newLabel()
+	done := l.newLabel()
+	l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, l.rtLoad(gcTasksSlot), l.constant(0)), Dst: NoReg, Imm: alone})
+	l.trackLocked(raw, bytes)
+	l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+	l.mark(alone)
+	l.trackUnlocked(raw, bytes)
+	l.mark(done)
+}
+
+func (l *lowerer) trackUnlocked(raw, bytes Reg) {
 	l.emit(Instr{Op: OpStoreMem, A: raw, B: l.rtLoad(gcHeadSlot), Imm: objNextOff})
 	l.rtStore(gcHeadSlot, raw)
 

@@ -451,9 +451,7 @@ func (c *Checker) Check(p *Program) {
 	// Pass 3: the top-level statements, which become main().
 	c.curFn = nil
 	c.push()
-	for _, s := range p.Main {
-		c.stmt(s)
-	}
+	c.stmts(p.Main)
 	c.pop()
 
 	// Last, the generic instances all that asked for, in the scope of
@@ -539,9 +537,7 @@ func (c *Checker) checkFn(f *FnDecl) {
 	for _, prm := range f.Params {
 		c.define(prm.Name, prm.T)
 	}
-	for _, s := range f.Body.Stmts {
-		c.stmt(s)
-	}
+	c.stmts(f.Body.Stmts)
 	c.pop()
 	c.curFn = prev
 }
@@ -698,9 +694,7 @@ func (c *Checker) stmt(s Stmt) {
 		}
 		c.push()
 		c.define(st.Var, Int)
-		for _, s := range st.Body.Stmts {
-			c.stmt(s)
-		}
+		c.stmts(st.Body.Stmts)
 		c.pop()
 
 	case *ReturnStmt:
@@ -847,17 +841,13 @@ func (c *Checker) forEach(st *ForStmt) {
 	if st.Var2 != "" {
 		c.define(st.Var2, valT)
 	}
-	for _, s := range st.Body.Stmts {
-		c.stmt(s)
-	}
+	c.stmts(st.Body.Stmts)
 	c.pop()
 }
 
 func (c *Checker) block(b *Block) {
 	c.push()
-	for _, s := range b.Stmts {
-		c.stmt(s)
-	}
+	c.stmts(b.Stmts)
 	c.pop()
 }
 
@@ -1302,9 +1292,7 @@ func (c *Checker) funcLit(x *FuncLit) *Type {
 	for _, prm := range f.Params {
 		c.define(prm.Name, prm.T)
 	}
-	for _, s := range f.Body.Stmts {
-		c.stmt(s)
-	}
+	c.stmts(f.Body.Stmts)
 	c.pop()
 	c.curFn = prev
 
@@ -2354,4 +2342,89 @@ func (c *Checker) enumTypes(t *Type) *Type {
 		return &cp
 	}
 	return t
+}
+
+// stmts checks a list of statements in order, with one rule on top: an
+// `if x == nil { return }` - no else, a body that always leaves - proves
+// x is not nil for the rest of the list, as an `if x != nil { ... }`
+// proves it inside. The early return is how a nil is usually dealt
+// with, and without this the code after it cannot use x at all.
+//
+// Only while nothing later in the list assigns to x: a narrowing that
+// an assignment could quietly undo would let a nil through unchecked.
+func (c *Checker) stmts(list []Stmt) {
+	pushed := 0
+	for i, s := range list {
+		c.stmt(s)
+		st, ok := s.(*IfStmt)
+		if !ok || st.Else != nil || !leaves(st.Then) {
+			continue
+		}
+		_, whenFalse := c.nilChecks(st.Cond)
+		var keep []string
+		for _, name := range whenFalse {
+			if !assignsTo(list[i+1:], name) {
+				keep = append(keep, name)
+			}
+		}
+		if len(keep) > 0 {
+			c.pushNarrow(keep)
+			pushed++
+		}
+	}
+	for ; pushed > 0; pushed-- {
+		c.popNarrow()
+	}
+}
+
+// leaves reports whether a block always ends by leaving: a return, a
+// break or a continue as its last statement.
+func leaves(b *Block) bool {
+	if b == nil || len(b.Stmts) == 0 {
+		return false
+	}
+	switch b.Stmts[len(b.Stmts)-1].(type) {
+	case *ReturnStmt, *BreakStmt, *ContinueStmt:
+		return true
+	}
+	return false
+}
+
+// assignsTo reports whether any of these statements, at any depth,
+// assigns to a name.
+func assignsTo(list []Stmt, name string) bool {
+	for _, s := range list {
+		switch x := s.(type) {
+		case *AssignStmt:
+			if x.TargetName() == name {
+				return true
+			}
+		case *Block:
+			if assignsTo(x.Stmts, name) {
+				return true
+			}
+		case *IfStmt:
+			if assignsTo([]Stmt{x.Then}, name) || (x.Else != nil && assignsTo([]Stmt{x.Else}, name)) {
+				return true
+			}
+		case *WhileStmt:
+			if assignsTo(x.Body.Stmts, name) {
+				return true
+			}
+		case *ForStmt:
+			if assignsTo(x.Body.Stmts, name) {
+				return true
+			}
+		case *MatchStmt:
+			for _, arm := range x.Cases {
+				if assignsTo([]Stmt{arm.Body}, name) {
+					return true
+				}
+			}
+			if x.Else != nil && assignsTo([]Stmt{x.Else}, name) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -43,6 +43,15 @@ func TestEncoderWidths(t *testing.T) {
 		"movsxd rax, dword ptr [rsp+40]",
 		"mov qword ptr [rsp+48], rax",
 		"mov eax, dword ptr [rsp+56]",
+		// atomics, and the register swap the argument scheduler uses
+		"lock xadd qword ptr [rcx], rax",
+		"lock xadd qword ptr [r10], r11",
+		"lock cmpxchg qword ptr [rcx], rdx",
+		"lock cmpxchg qword ptr [r8+16], r9",
+		"xchg qword ptr [rcx], rax",
+		"xchg r8, r9",
+		"sete al",
+		"movzx eax, al",
 	}
 	for _, line := range lines {
 		text := ".intel_syntax noprefix\n.text\n" + line + "\n"

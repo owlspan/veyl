@@ -279,6 +279,9 @@ func compile(source, path string) *Module {
 	if errs := addPrelude(prog, append([]string{source}, imported...)); len(errs) > 0 {
 		report(errs)
 	}
+	if errs := addChannel(prog, append([]string{source}, imported...)); len(errs) > 0 {
+		report(errs)
+	}
 
 	// The shared type checker, with this backend's own library. A
 	// builtin this backend does not have is now an ordinary type error
