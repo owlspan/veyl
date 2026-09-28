@@ -8,7 +8,7 @@ package main
 // A Veyl runtime error explains itself (see where.go). A crash is
 // different: a bad address handed to mem.*, a native function writing
 // where it should not, a stack that ran out. Windows would end the
-// program with no word at all. Instead an unhandled-exception filter,
+// program with no word at all. Instead a vectored exception handler,
 // installed as main starts, says what happened and which of the
 // program's functions it happened in, after flushing what the program
 // had printed so far, and the program ends as before.
@@ -31,7 +31,6 @@ var crashNames = []struct {
 	{0xC0000094, "integer division by zero"},
 	{0xC000001D, "illegal instruction"},
 	{0xC0000096, "privileged instruction"},
-	{0x80000003, "breakpoint"},
 }
 
 // installCrashHandler is the first thing main does.
@@ -40,8 +39,14 @@ func (l *lowerer) installCrashHandler() {
 		return // a guest does not take over its host's crashes
 	}
 	l.mod.needs("crash")
-	l.ccall("SetUnhandledExceptionFilter", []Reg{l.symAddr(fnSym(crashSym))},
-		[]vty{vInt}, vInt, false, false)
+	// A vectored handler, called before Windows looks for a handler up
+	// the stack. An unhandled-exception filter is only reached once the
+	// stack has been unwound through each function's unwind table, and
+	// this compiler writes none, so on Windows the process died before
+	// one was ever called. First in line, so a crash is reported even
+	// with other handlers installed.
+	l.ccall("AddVectoredExceptionHandler", []Reg{l.constant(1), l.symAddr(fnSym(crashSym))},
+		[]vty{vInt, vInt}, vInt, false, false)
 	// A stack overflow runs the handler on what is left of the stack
 	// that overflowed, which is almost nothing; this keeps 64 KB back
 	// for it on the main thread.
@@ -68,17 +73,27 @@ func (l *lowerer) buildCrashHandler() {
 		ripSlot := l.temp(vInt)
 		l.emit(Instr{Op: OpStore, A: rip, Dst: NoReg, Imm: ripSlot})
 
-		l.ccall("fflush", []Reg{l.constant(0)}, []vty{vInt}, vInt, true, false)
-
+		// Only the exceptions that end a program. Everything else - one a
+		// native library raises and catches for itself - goes on to
+		// whatever handles it, as if this were not here.
 		what := l.temp(vStr)
-		l.emit(Instr{Op: OpStore, A: l.strLit("an exception Windows raised"), Dst: NoReg, Imm: what})
+		l.emit(Instr{Op: OpStore, A: l.strLit(""), Dst: NoReg, Imm: what})
+		known := l.temp(vInt)
+		l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: known})
 		for _, c := range crashNames {
 			next := l.newLabel()
 			l.emit(Instr{Op: OpJumpNot, A: l.compare(OpEq, l.load(codeSlot, vInt), l.constant(c.code)),
 				Dst: NoReg, Imm: next})
 			l.emit(Instr{Op: OpStore, A: l.strLit(c.text), Dst: NoReg, Imm: what})
+			l.emit(Instr{Op: OpStore, A: l.constant(1), Dst: NoReg, Imm: known})
 			l.mark(next)
 		}
+		ours := l.newLabel()
+		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpNe, l.load(known, vInt), l.constant(0)), Dst: NoReg, Imm: ours})
+		l.emit(Instr{Op: OpRet, A: l.constant(0), Dst: NoReg}) // EXCEPTION_CONTINUE_SEARCH
+		l.mark(ours)
+
+		l.ccall("fflush", []Reg{l.constant(0)}, []vty{vInt}, vInt, true, false)
 
 		where := l.temp(vStr)
 		l.emit(Instr{Op: OpStore, A: l.strLit("the runtime"), Dst: NoReg, Imm: where})
@@ -114,8 +129,9 @@ func (l *lowerer) buildCrashHandler() {
 		l.emit(Instr{Op: OpConcat, Dst: full, A: head, B: msg})
 		n := l.ccall("strlen", []Reg{full}, []vty{vInt}, vInt, false, false)
 		l.ccall("_write", []Reg{l.constant(2), full, n}, []vty{vInt, vInt, vInt}, vInt, true, false)
-		// EXCEPTION_EXECUTE_HANDLER: end the process, with the exception
-		// code as its exit code, as an unhandled crash always has.
-		l.emit(Instr{Op: OpRet, A: l.constant(1), Dst: NoReg})
+		// End the process with the exception code as its exit code, as
+		// an unhandled crash always has.
+		l.ccall("ExitProcess", []Reg{l.load(codeSlot, vInt)}, []vty{vInt}, vVoid, false, false)
+		l.emit(Instr{Op: OpRet, A: l.constant(0), Dst: NoReg})
 	})
 }
