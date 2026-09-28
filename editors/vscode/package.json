@@ -2,7 +2,7 @@
   "name": "veyl-lang",
   "displayName": "Veyl",
   "description": "Syntax highlighting for the Veyl programming language",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "publisher": "veyl",
   "license": "MIT",
   "engines": {

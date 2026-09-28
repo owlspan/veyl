@@ -3,6 +3,22 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.26.0
+
+**PNG images, with transparency.** `win.image` loads `.png` as well as
+`.bmp`, and `win.draw` blends a PNG by each pixel's alpha, so a sprite
+with a transparent background draws the way it looks in an editor.
+`win.drawScaled` blends too.
+
+The decoder is written in Veyl, in the prelude: DEFLATE, the PNG
+chunks and the five row filters. Every colour type is supported at 8
+bits, and palette images at 1, 2, 4 and 8 bits with a tRNS chunk.
+Interlaced and 16-bit images are refused with a message. Fixtures for
+each case are in `tests/png`, checked against the exact pixels.
+
+An image handle is now a block holding the bitmap, its size and
+whether it has alpha, outside the collector like a window.
+
 ## 0.25.0
 
 **Images.** `win.image` loads a `.bmp`; `win.draw`, `win.drawScaled`
