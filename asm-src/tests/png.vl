@@ -82,4 +82,7 @@ print(win.pixel(c, 1, 1) == win.rgb(255, 0, 0))
 print(win.pixel(c, 6, 6) == win.rgb(255, 255, 255))
 win.freeImage(img)
 must(os.file.delete(path))
-print(errorOf(win.image("missing.png")))
+// Only the start: the rest is the operating system's own wording,
+// which differs between Windows versions and wine.
+let missing = errorOf(win.image("missing.png"))
+print(startsWith(missing, "cannot read \"missing.png\": open missing.png: "))
