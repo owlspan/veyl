@@ -37,6 +37,17 @@ func (c *Checker) collectTemplates(p *Program) {
 	c.genFuncs = map[string]*FnDecl{}
 	c.genStructs = map[string]*StructDecl{}
 	c.genMethods = map[string][]*FnDecl{}
+	c.genEnums = map[string]*EnumDecl{}
+
+	var enums []*EnumDecl
+	for _, e := range p.Enums {
+		if e.TypeParams != nil {
+			c.genEnums[e.Name] = e
+			continue
+		}
+		enums = append(enums, e)
+	}
+	p.Enums = enums
 
 	var structs []*StructDecl
 	for _, d := range p.Structs {
@@ -91,6 +102,9 @@ func (c *Checker) instStruct(name string, at Node) bool {
 	if !ok {
 		return false
 	}
+	if te, isEnum := c.genEnums[base]; isEnum {
+		return c.instEnum(te, name, args, at)
+	}
 	tmpl, ok := c.genStructs[base]
 	if !ok {
 		return false
@@ -132,6 +146,29 @@ func (c *Checker) instStruct(name string, at Node) bool {
 		c.within(name, m.File, func() { c.resolveSig(m) })
 		c.prog.Funcs = append(c.prog.Funcs, m)
 		c.pending = append(c.pending, m)
+	}
+	return true
+}
+
+// instEnum makes an instance of a generic enum, Option<int>.
+func (c *Checker) instEnum(tmpl *EnumDecl, name string, args []string, at Node) bool {
+	if len(args) != len(tmpl.TypeParams) {
+		c.ErrorAt(at, "%s takes %d type argument(s), got %d", tmpl.Name, len(tmpl.TypeParams), len(args))
+		return false
+	}
+	if !c.budget(at) {
+		return false
+	}
+	var e *EnumDecl
+	if !c.instantiate(tmpl.File, tmpl.Toks, len(tmpl.TypeParams), tmpl.TypeParams, args, name, func(ps *Parser) {
+		e = ps.parseEnum()
+	}) || e == nil {
+		return false
+	}
+	e.Name, e.File, e.Pub, e.Data, e.TypeParams, e.Toks = name, tmpl.File, tmpl.Pub, true, nil, nil
+	c.declareEnum(e)
+	if d, ok := c.structs[name]; ok && d.Enum == e {
+		c.within(name, d.File, func() { c.resolveFields(d) })
 	}
 	return true
 }
@@ -360,6 +397,10 @@ func (c *Checker) genericHint(name string) string {
 	if d, ok := c.genStructs[name]; ok {
 		return fmt.Sprintf("%s is generic - say what it holds, as in %s<%s>",
 			name, name, strings.Repeat("int, ", len(d.TypeParams)-1)+"int")
+	}
+	if e, ok := c.genEnums[name]; ok {
+		return fmt.Sprintf("%s is generic - say what it holds, as in %s<%s>",
+			name, name, strings.Repeat("int, ", len(e.TypeParams)-1)+"int")
 	}
 	return ""
 }

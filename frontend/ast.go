@@ -56,6 +56,15 @@ type EnumDecl struct {
 	Variants []string
 	Pub      bool
 	File     string
+
+	// Payloads, parallel to Variants, are the fields a variant carries:
+	// Circle(r: float). A variant with none has nil. An enum with any
+	// payload, or with type parameters, is a data enum; see
+	// dataenums.go.
+	Payloads   [][]Param
+	TypeParams []string
+	Toks       []Token
+	Data       bool
 }
 
 // ImportDecl is `import "helpers.vl"`. The path is relative to the file
@@ -177,6 +186,10 @@ type Call struct {
 	// `print` is not mistaken for the builtin.
 	ViaValue bool
 
+	// Lit is what the checker made of a data enum's variant built with
+	// its payload, Shape.Circle(2.0): the value to build in its place.
+	Lit Expr
+
 	// Method is set by the checker when the callee turned out to be a
 	// method on a struct rather than a function or a library path.
 	// Codegen must not re-derive this: os.file.read and user.rename are
@@ -206,6 +219,10 @@ type Field struct {
 	Span
 	X    Expr
 	Name string
+
+	// Lit is what the checker made of a data enum's variant with no
+	// payload, Shape.Empty: the value to build in its place.
+	Lit Expr
 }
 
 // DottedName flattens a chain of Field nodes rooted at an Ident into
@@ -315,6 +332,9 @@ type StructDecl struct {
 	// a function; see FnDecl.
 	TypeParams []string
 	Toks       []Token
+
+	// Enum is set on the struct a data enum is kept in.
+	Enum *EnumDecl
 }
 
 // ImplBlock is `impl User { fn ... }`. Its methods are hoisted into the
@@ -517,6 +537,13 @@ type MatchStmt struct {
 	Subject Expr
 	Cases   []MatchCase
 	Else    Stmt // nil when there is no else arm
+
+	// Lowered is what the checker made of a match on a data enum: the
+	// same thing as a chain of ifs on the variant, with each arm's names
+	// bound to what it holds. A backend runs this instead when it is set,
+	// having first put the subject in a local named Temp.
+	Lowered Stmt
+	Temp    string
 }
 
 type BreakStmt struct{ Span }

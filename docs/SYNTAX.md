@@ -603,6 +603,86 @@ fn next(s: State) -> State {
 `enum` is only a keyword at the top of a file, before a name and a
 brace, so a variable called `enum` still works.
 
+### Variants that carry values
+
+A variant can hold values, listed like a function's parameters:
+
+```veyl
+enum Shape {
+    Circle(r: float)
+    Rect(w: float, h: float)
+    Empty
+}
+
+let shapes = [Shape.Circle(2.0), Shape.Rect(3.0, 4.5), Shape.Empty]
+print(shapes)          // [Circle(2), Rect(3, 4.5), Empty]
+```
+
+A `match` names the values each variant holds, `_` for one it does not
+need, and without an `else` it has to handle every variant:
+
+```veyl
+fn area(s: Shape) -> float {
+    match s {
+        Shape.Circle(r) => return 3.14159 * r * r
+        Shape.Rect(w, h) => return w * h
+        Shape.Empty => return 0.0
+    }
+    return 0.0
+}
+```
+
+That is the only way to reach what a variant holds: `s.r` is an error,
+because `s` might not be a circle. Two values are equal when they are
+the same variant holding equal values. A value never changes once it
+is built.
+
+A variant can hold the enum itself, which makes trees easy:
+
+```veyl
+enum Expr {
+    Num(n: int)
+    Add(a: Expr, b: Expr)
+    Neg(x: Expr)
+}
+
+fn eval(e: Expr) -> int {
+    match e {
+        Expr.Num(n) => return n
+        Expr.Add(a, b) => return eval(a) + eval(b)
+        Expr.Neg(x) => return -eval(x)
+    }
+    return 0
+}
+```
+
+An enum can be generic, as a struct can. The type arguments come from
+what a variant is given, or from where the value is going:
+
+```veyl
+enum Option<T> {
+    Some(v: T)
+    None
+}
+
+fn indexOf(xs: []str, want: str) -> Option<int> {
+    for i, x in xs {
+        if x == want {
+            return Option.Some(i)
+        }
+    }
+    return Option.None
+}
+
+match indexOf(["a", "b"], "b") {
+    Option.Some(i) => print("at {i}")
+    Option.None => print("not there")
+}
+```
+
+A value of `Option<str>.None` with nothing to say what it holds is
+written with its type: `let none = Option<str>.None`.
+
 ---
 
 ## Generics
@@ -2016,6 +2096,9 @@ ordinary arithmetic:
 | `mem.addr(v)` | `int` | where a `bytes`, `str` or extern struct lives |
 | `mem.protect(p, n, mode)` | `bool` | make pages `"r"`, `"rw"`, `"rx"`, `"rwx"`, `"x"` or `""` (no access) |
 | `mem.scan(p, n, pattern)` | `int` | first match of a byte pattern such as `"48 8B ?? ?? 89"`, or `-1` |
+| `mem.symbol(dll, name)` | `int` | where a DLL exports `name`, loading the DLL if need be, or `0` |
+| `mem.call(p, args...)` | `int` | call native code at `p` and return what it leaves in `rax` |
+| `mem.callF(p, args...)` | `float` | the same, for a function returning a `double` |
 
 ```veyl
 let p = mem.alloc(16)
@@ -2030,6 +2113,27 @@ mem.free(p)
 A block from `mem.alloc` is yours to free. Nothing checks that an
 address is valid: reading or writing one that is not stops the
 program, as it would in C.
+
+`mem.call` is how an address becomes a call - one from `mem.symbol`,
+from `mem.scan`, read out of a table in memory, or handed over by
+native code. Arguments follow the Windows x64 convention: an `int`,
+`bool`, `str`, `bytes` or extern struct is one word, and a `float` a
+`double`. Nothing checks that the address is code or that it takes
+what it is given.
+
+```veyl
+let pow = mem.symbol("msvcrt.dll", "pow")
+print(mem.callF(pow, 2.0, 10.0))     // 1024
+
+let fmt = mem.symbol("msvcrt.dll", "sprintf")
+let buf = mem.alloc(64)
+mem.call(fmt, buf, "%d-%s", 7, "up")
+print(mem.str(buf))                   // 7-up
+```
+
+A C function returning a 32-bit `int` leaves the upper half of `rax`
+undefined, so mask a result that can be negative: `mem.call(f) &
+0xFFFFFFFF`, then sign-extend if needed.
 
 ### `bytes` - raw binary
 
@@ -2836,9 +2940,9 @@ Honest list of what v0.27.0 does not do yet.
 
 - **A callback cannot be a closure.** Native code can call a function
   declared with `fn`, but not one that captured variables.
-- **No way to call a raw function pointer.** An `extern fn` names a
-  symbol; an address from `GetProcAddress` or a game's memory cannot be
-  called yet.
+- **A native call through an address is untyped.** `mem.call` passes
+  words and takes back `rax`; an `extern fn` is still the way to give
+  a native function a checked signature.
 - **No fixed-width number types.** `i32`, `f32` and the rest describe
   memory, in extern structs and the `mem` functions; a Veyl variable is
   still an `int` or a `float`.
@@ -2849,9 +2953,7 @@ Honest list of what v0.27.0 does not do yet.
 - **No namespacing on imports.** Everything `pub` in an imported file
   lands in one flat namespace, so two files exporting the same name
   collide. The error names both files.
-- **Enums carry no data.** An enum value is one of its names; a variant
-  cannot hold a payload the way a tagged union does, and a map cannot
-  be keyed by one.
+- **A map cannot be keyed by an enum.** Keys are still `int` or `str`.
 - **A method cannot be generic by itself.** Its struct can be, and a
   plain function can, but `fn map<U>(self, ...)` inside an impl is
   refused.

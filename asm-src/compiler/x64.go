@@ -733,6 +733,9 @@ func (e *Emitter) instr(in Instr) {
 	case OpCallClosure:
 		e.callClosure(in)
 
+	case OpCallAddr:
+		e.callAddr(in)
+
 	case OpRet:
 		switch {
 		case in.A != NoReg && e.f.Ret.k == kFloat:
@@ -1104,7 +1107,7 @@ func (e *Emitter) callResult(in Instr) {
 // The function's address is read into rax first, before anything can
 // walk over it: argument setup writes rcx, rdx, r8 and r9, and the
 // value being called may itself live in one of those when it was
-// pooled. The stack arguments then take their scratch from r10 rather
+// pooled. The stack arguments then take their scratch from rcx rather
 // than rax, which would destroy the address they exist to serve;
 // argument setup never touches rax.
 //
@@ -1144,15 +1147,33 @@ func (e *Emitter) callClosure(in Instr) {
 
 	for i := len(in.Args) - 1; i >= 4; i-- {
 		// rax holds the function until the end, so the stack arguments
-		// scratch with r10 - read out before env lands there.
-		e.line("mov r10, %s", e.loc(in.Args[i]))
-		e.line("mov qword ptr [rsp+%d], r10", i*8)
+		// scratch with rcx. Not r10: it is a pool register and may hold
+		// one of the four arguments still to be loaded. rcx never holds
+		// a value here and is only written once these are done.
+		e.line("mov rcx, %s", e.loc(in.Args[i]))
+		e.line("mov qword ptr [rsp+%d], rcx", i*8)
 	}
 	e.loadWindowArgs(in)
 
 	e.line("mov r10, qword ptr [rax+%d]", cloEnvOff)
 	e.line("mov r11, qword ptr [rax+%d]", cloCodeOff)
 	e.line("call r11")
+	e.callResult(in)
+}
+
+// callAddr calls native code at a computed address. The address goes
+// to rax before anything else, for the reason callClosure gives: it may
+// sit in a register the arguments are about to overwrite, and argument
+// setup never touches rax.
+func (e *Emitter) callAddr(in Instr) {
+	e.comment("mem.call: the address to rax first, then the arguments")
+	e.line("mov rax, %s", e.loc(in.A))
+	for i := len(in.Args) - 1; i >= 4; i-- {
+		e.line("mov rcx, %s", e.loc(in.Args[i]))
+		e.line("mov qword ptr [rsp+%d], rcx", i*8)
+	}
+	e.loadWindowArgs(in)
+	e.line("call rax")
 	e.callResult(in)
 }
 

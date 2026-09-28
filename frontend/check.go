@@ -38,7 +38,9 @@ type Checker struct {
 	genFuncs   map[string]*FnDecl
 	genStructs map[string]*StructDecl
 	genMethods map[string][]*FnDecl
+	genEnums   map[string]*EnumDecl
 	pending    []*FnDecl
+	matchCount int
 	instances  int
 	instName   string
 	instFile   string
@@ -372,6 +374,15 @@ func (c *Checker) Check(p *Program) {
 	for _, e := range p.Enums {
 		c.declareEnum(e)
 	}
+	// A data enum is a struct from here on, which a backend lowers as
+	// one, so it leaves the list of enums that are ints.
+	plain := p.Enums[:0:0]
+	for _, e := range p.Enums {
+		if !e.Data {
+			plain = append(plain, e)
+		}
+	}
+	p.Enums = plain
 	for _, d := range p.Structs {
 		if d.Extern {
 			c.layout(d, map[string]bool{})
@@ -440,7 +451,9 @@ func (c *Checker) resolveFields(d *StructDecl) {
 		}
 		// A struct cannot contain itself by value: the type would need
 		// infinite space. Through a list or map it is fine.
-		if f.T.Kind == KStruct && f.T.Name == d.Name {
+		// A data enum's variant can hold another of the enum, Mul(a:
+		// Expr, b: Expr): only the variant built holds anything.
+		if f.T.Kind == KStruct && f.T.Name == d.Name && d.Enum == nil {
 			c.ErrorAt(f, "%s cannot contain itself - use []%s if you meant a list of them",
 				d.Name, d.Name)
 			f.T = Unknown
@@ -693,6 +706,10 @@ func (c *Checker) stmt(s Stmt) {
 // subject, and that the subject is something comparable at all.
 func (c *Checker) match(st *MatchStmt) {
 	subj := c.expr(st.Subject)
+	if e := c.dataEnumOf(subj); e != nil {
+		c.matchData(st, subj, e)
+		return
+	}
 	if !subj.IsUnknown() && (subj.IsCollection() || subj.Kind == KStruct) {
 		c.ErrorAt(st.Subject, "cannot match on %s - match compares values, so it needs an int, float, str, bool or enum", subj)
 		subj = Unknown
@@ -880,6 +897,21 @@ func (c *Checker) exprWant(e Expr, want *Type) *Type {
 	if want == nil || want.IsUnknown() {
 		return c.expr(e)
 	}
+	// Option.None where an Option<int> is wanted is that one's None.
+	var named Expr
+	switch x := e.(type) {
+	case *Field:
+		named = x.X
+	case *Call:
+		if f, ok := x.Callee.(*Field); ok {
+			named = f.X
+		}
+	}
+	if g := c.genericEnumNamed(named); g != nil && want.Kind == KStruct {
+		if base, _, ok := SplitGeneric(want.Name); ok && base == g.Name {
+			named.(*Ident).Name = want.Name
+		}
+	}
 	switch x := e.(type) {
 	case *ListLit:
 		if want.Kind != KList {
@@ -1049,6 +1081,17 @@ func (c *Checker) expr(e Expr) *Type {
 // field types `user.name`. A dotted library path never reaches here -
 // the resolver reports those, because they are only valid as a call.
 func (c *Checker) field(x *Field) *Type {
+	if e := c.enumNamed(x.X); e != nil && e.Data {
+		if c.private(e.File, e.Pub) {
+			c.ErrorAt(x, "enum %q is private to %s - mark it 'pub enum %s' to use it from another file",
+				e.Name, baseName(e.File), e.Name)
+		}
+		return c.variantValue(x, e)
+	}
+	if g := c.genericEnumNamed(x.X); g != nil {
+		c.ErrorAt(x, "%s is generic - say what it holds, as in %s<int>.%s", g.Name, g.Name, x.Name)
+		return Unknown
+	}
 	if e := c.enumNamed(x.X); e != nil {
 		for _, v := range e.Variants {
 			if v == x.Name {
@@ -1076,6 +1119,11 @@ func (c *Checker) field(x *Field) *Type {
 	}
 	if recv.Kind != KStruct {
 		c.ErrorAt(x, "%s has no fields, so %q cannot be read from it", recv, x.Name)
+		return Unknown
+	}
+	if d, ok := c.structs[recv.Name]; ok && d.Enum != nil && !strings.HasPrefix(x.Name, "#") &&
+		!strings.Contains(x.Name, ".") {
+		c.ErrorAt(x, "%s is an enum - a match says which variant it is and names what it holds", recv.Name)
 		return Unknown
 	}
 	if t, ok := c.fieldType(recv.Name, x.Name); ok {
@@ -1110,6 +1158,15 @@ func (c *Checker) structLit(x *StructLit) *Type {
 		}
 		x.T = Unknown
 		return Unknown // the resolver already reported it
+	}
+	if d.Enum != nil {
+		for i := range x.Vals {
+			c.expr(x.Vals[i])
+		}
+		c.ErrorAt(x, "%s is an enum - a value of it is one of its variants, as in %s.%s",
+			x.Name, x.Name, d.Enum.Variants[0])
+		x.T = Unknown
+		return Unknown
 	}
 	if c.private(d.File, d.Pub) {
 		c.ErrorAt(x, "struct %q is private to %s - mark it 'pub struct %s' to use it from another file",
@@ -1636,6 +1693,23 @@ func (c *Checker) arithmetic(x *Binary, lt, rt *Type) *Type {
 // ---- calls ----
 
 func (c *Checker) call(x *Call) *Type {
+	// Shape.Circle(2.0): a data enum's variant, built with its values.
+	if fld, ok := x.Callee.(*Field); ok {
+		if e := c.enumNamed(fld.X); e != nil && e.Data {
+			x.T = c.variantCall(x, fld, e, nil)
+			return x.T
+		}
+		if g := c.genericEnumNamed(fld.X); g != nil {
+			e, args := c.inferVariant(x, fld, g)
+			if e == nil {
+				x.T = Unknown
+				return x.T
+			}
+			x.T = c.variantCall(x, fld, e, args)
+			return x.T
+		}
+	}
+
 	// A generic called with its types named, max<int>(a, b), becomes a
 	// call to that instance before anything else looks at it.
 	if name, ok := DottedName(x.Callee); ok && strings.Contains(name, "<") {
@@ -2179,6 +2253,9 @@ func (c *Checker) declareEnum(e *EnumDecl) {
 		seen[v] = true
 	}
 	c.enums[e.Name] = e
+	if e.Data {
+		c.declareData(e)
+	}
 }
 
 // enumNamed is the enum an expression names as a type, as in State.Idle,
@@ -2187,6 +2264,13 @@ func (c *Checker) enumNamed(e Expr) *EnumDecl {
 	id, ok := e.(*Ident)
 	if !ok || c.lookup(id.Name) != nil {
 		return nil
+	}
+	// Option<int>, the instance of a generic enum, made when first named.
+	if strings.Contains(id.Name, "<") {
+		if t := ParseType(id.Name); t != nil && t.Kind == KStruct {
+			id.Name = t.Name
+		}
+		c.instStruct(id.Name, e)
 	}
 	return c.enums[id.Name]
 }
@@ -2200,7 +2284,7 @@ func (c *Checker) enumTypes(t *Type) *Type {
 	}
 	switch t.Kind {
 	case KStruct:
-		if _, ok := c.enums[t.Name]; ok {
+		if e, ok := c.enums[t.Name]; ok && !e.Data {
 			return EnumOf(t.Name)
 		}
 	case KList, KNullable, KResult:

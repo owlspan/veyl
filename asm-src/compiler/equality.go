@@ -40,6 +40,30 @@ func (l *lowerer) deepEqual(n Node, a, b Reg, t vty) (Reg, bool) {
 			// Two views are equal when they look at the same address.
 			return l.compare(OpEq, a, b), true
 		}
+		// A type that holds itself is compared by a function of its own,
+		// which calls itself for what is inside: inlined, it never ends.
+		if l.eqInline == t.name {
+			l.eqInline = ""
+		} else if l.recursiveStruct(t.name) {
+			plain := vStructOf(t.name)
+			ok := true
+			sym := l.helperFunc("__eq_"+t.name, []vty{plain, plain}, vBool, func(args []Reg) {
+				l.eqInline = t.name
+				same, good := l.deepEqual(n, args[0], args[1], plain)
+				if !good {
+					ok = false
+					same = l.boolConst(false)
+				}
+				l.emit(Instr{Op: OpRet, A: same, Dst: NoReg})
+			})
+			if !ok {
+				return NoReg, false
+			}
+			return l.callHelper(sym, []Reg{a, b}, []vty{plain, plain}, vBool), true
+		}
+		if e := dataEnums[t.name]; e != nil {
+			return l.variantEqual(n, a, b, t, e)
+		}
 		return l.structEqual(n, a, b, t)
 	}
 	l.errorAt(n, "%s cannot be compared on the assembly backend yet", t)

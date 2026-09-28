@@ -49,7 +49,7 @@ var raIntRegs = [4]string{"r8", "r9", "r10", "r11"}
 // registers the pool draws from.
 func raBarrier(in *Instr) bool {
 	switch in.Op {
-	case OpCall, OpCallClosure,
+	case OpCall, OpCallClosure, OpCallAddr,
 		OpConcat, OpStrEq, OpStrLen, OpIntToStr, OpFloatToStr,
 		OpAlloc, OpFMod,
 		OpPrintInt, OpPrintFloat, OpPrintStr, OpPrintBool,

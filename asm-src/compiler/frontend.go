@@ -71,7 +71,10 @@ type (
 	Widen        = front.Widen
 )
 
+const TagField = front.TagField
+
 var (
+	PayloadField = front.PayloadField
 	ArityText    = front.ArityText
 	AssignOpText = front.AssignOpText
 	DottedName   = front.DottedName
