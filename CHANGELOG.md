@@ -3,6 +3,30 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.27.0
+
+**Generics.** Functions, structs and their methods take type
+parameters:
+
+    fn largest<T>(xs: []T) -> T { ... }
+    struct Stack<T> { items: []T }
+    impl Stack<T> { fn push(self, x: T) { ... } }
+
+The types come from a call's arguments, or are named where they cannot
+be, as in `mapList<int, str>(none, f)` or `Stack<str>{}`. Any type can
+be one: numbers, strings, lists, maps, functions, nullables, structs,
+enums and other generics, `Stack<Pair<str, int>>` included.
+
+Each set of types a generic is used with is its own copy, compiled as
+if written out by hand, which is how C++ templates work: no boxing and
+no cost at run time. A generic is checked per use, and an error inside
+one names the instance, as in `(in largest<Point>)`. A method cannot
+yet have type parameters of its own.
+
+**Fixes.** `print` and `write` of a nullable showed the address of its
+box; they show the value or `nil`. A method called on another method's
+result, `a.me().get()`, compiles on the assembly backend.
+
 ## 0.26.0
 
 **PNG images, with transparency.** `win.image` loads `.png` as well as
