@@ -428,7 +428,11 @@ func (c *Checker) addMethodTemplate(recv string, f *FnDecl) {
 // the same struct. The call is pointed at it by name. It reports false
 // when there is no such generic method.
 func (c *Checker) genericMethod(x *Call, fld *Field, recv *Type, args []*Type) (*FnDecl, bool) {
-	tmpl, ok := c.genMethodTmpl[recv.Name][fld.Name]
+	base, explicit, named := SplitGeneric(fld.Name)
+	if !named {
+		base = fld.Name
+	}
+	tmpl, ok := c.genMethodTmpl[recv.Name][base]
 	if !ok {
 		return nil, false
 	}
@@ -437,6 +441,15 @@ func (c *Checker) genericMethod(x *Call, fld *Field, recv *Type, args []*Type) (
 		params[p] = true
 	}
 	bind := map[string]*Type{}
+	if named {
+		if len(explicit) != len(tmpl.TypeParams) {
+			c.ErrorAt(x, "%s.%s takes %d type argument(s), got %d", recv.Name, base, len(tmpl.TypeParams), len(explicit))
+			return nil, true
+		}
+		for i, a := range explicit {
+			bind[tmpl.TypeParams[i]] = c.resolveAnnotation(a, x)
+		}
+	}
 	for i := 0; i < len(args) && i+1 < len(tmpl.Params); i++ {
 		unify(ParseType(tmpl.Params[i+1].Type), args[i], params, bind)
 	}

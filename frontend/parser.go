@@ -735,6 +735,9 @@ func (p *Parser) parseFnSignature(kw Token, name string) *FnDecl {
 			} else {
 				p.errorAt(pn, "parameter %q needs a type, like %s: int", pn.Lex, pn.Lex)
 			}
+			if p.match(ASSIGN) {
+				prm.Default = p.grouped(func() Expr { return p.parseExpr(0) })
+			}
 			f.Params = append(f.Params, prm)
 
 			p.skipNewlines()
@@ -1196,7 +1199,17 @@ func (p *Parser) parsePostfix() Expr {
 		case p.check(DOT):
 			dot := p.advance()
 			name := p.expect(IDENT, "a name after '.'")
-			x = &Field{Span: at(dot), X: x, Name: name.Lex}
+			fname := name.Lex
+			// b.map<str>(f): a generic method with its types named.
+			if p.check(LT) && p.peekKind(1) != EOF {
+				save := p.i
+				if args, ok := p.tryTypeArgs(); ok && p.check(LPAREN) {
+					fname = GenericName(fname, args)
+				} else {
+					p.i = save
+				}
+			}
+			x = &Field{Span: at(dot), X: x, Name: fname}
 
 		default:
 			return x

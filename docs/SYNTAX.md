@@ -758,7 +758,8 @@ consequences:
   types is twenty copies in the executable.
 
 A method can have type parameters of its own, besides its struct's.
-Theirs come from the arguments, as a function's do:
+Theirs come from the arguments, as a function's do, or are named at
+the call, as in `bag.empty<str>()`:
 
 ```veyl
 impl Box<T> {
@@ -1164,6 +1165,23 @@ fn bad(n: int) -> int {
     // error: function "bad" must return a value of type int on every path
 }
 ```
+
+### Default values
+
+A parameter can have a default, used when a call leaves it off:
+
+```veyl
+fn greet(name: str, greeting: str = "hello", times: int = 1) -> str {
+    ...
+}
+
+greet("ada")                 // greeting "hello", times 1
+greet("ada", "welcome", 3)
+```
+
+A default is a constant: a number, a string, `true`, `false`, `nil` or
+an enum's variant. Once one parameter has one, every parameter after it
+needs one too. Methods take defaults the same way.
 
 ### Functions are values
 
@@ -3198,8 +3216,6 @@ Honest list of what v0.32.0 does not do yet.
   lands in one flat namespace, so two files exporting the same name
   collide. The error names both files.
 - **A map cannot be keyed by an enum.** Keys are still `int` or `str`.
-- **A generic method's types cannot be named at the call.** They come
-  from the arguments; `b.map<str>(f)` is not accepted.
 - **Garbage collected**, with raw memory beside it: `mem.alloc` and
   extern structs give manual memory and pointers, but nothing checks an
   address, and `unsafe` is still reserved.

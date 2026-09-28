@@ -529,6 +529,7 @@ func (c *Checker) resolveSig(f *FnDecl) {
 	if f.Recv == "" {
 		c.funcs[Qual(f.Pkg, f.Name)] = f
 	}
+	c.checkDefaults(f)
 }
 
 func (c *Checker) checkFn(f *FnDecl) {
@@ -1866,6 +1867,9 @@ func (c *Checker) call(x *Call) *Type {
 		f, name = g, g.Name
 	}
 	c.checkFnPrivacy(x, f)
+	if len(args) < len(f.Params) {
+		args = c.fillDefaults(x, f.Params, args)
+	}
 	// Arity is the resolver's job; only check the arguments we have.
 	n := len(args)
 	if n > len(f.Params) {
@@ -2007,6 +2011,9 @@ func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Typ
 
 	// Params[0] is self, which the receiver supplies.
 	want := m.Params[1:]
+	if len(args) < len(want) {
+		args = c.fillDefaults(x, want, args)
+	}
 	if len(args) != len(want) {
 		c.ErrorAt(x, "%s.%s expects %s, got %d",
 			recv.Name, fld.Name, ArityText(len(want), len(want)), len(args))

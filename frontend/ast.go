@@ -371,6 +371,10 @@ type Param struct {
 	Name string
 	Type string // as written in the source
 	T    *Type  // resolved by the checker
+
+	// Default is the value after `=`, as in greeting: str = "hi", which a
+	// call that leaves the argument off gets a copy of. A constant.
+	Default Expr
 }
 
 type FnDecl struct {
