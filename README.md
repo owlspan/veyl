@@ -118,6 +118,7 @@ pipeline:
   `Channel<T>`
 - `defer`, scoped to the block, and `Builder` for linear string
   building
+- default parameter values: `fn greet(name: str, greeting: str = "hi")`
 - interfaces: `interface Shape { fn area(self) -> float }`, satisfied
   by any struct with the methods, as in Go
 - garbage collected by default, or `gc off` at the top of a file to
