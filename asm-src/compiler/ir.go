@@ -1460,6 +1460,10 @@ func (l *lowerer) stmt(s Stmt) {
 		l.mark(done)
 
 	case *ForStmt:
+		if st.Lowered != nil {
+			l.stmt(st.Lowered) // a loop over a channel; see the checker
+			return
+		}
 		l.forRange(st)
 
 	case *MatchStmt:

@@ -820,6 +820,10 @@ func constKey(e Expr) (string, bool) {
 func (c *Checker) forEach(st *ForStmt) {
 	collT := c.expr(st.Coll)
 	st.CollT = collT
+	if collT.Kind == KStruct && strings.HasPrefix(collT.Name, "Channel<") {
+		c.forChannel(st, collT)
+		return
+	}
 
 	var keyT, valT *Type
 	switch {
@@ -2494,4 +2498,40 @@ func leavesVia(s Stmt) bool {
 		return false
 	}
 	return walk(s, false)
+}
+
+// forChannel checks `for v in ch` by rewriting it as the loop it means:
+//
+//	{
+//	    let #ch = ch
+//	    while true {
+//	        let v = #ch.recv()
+//	        if v == nil { break }
+//	        body
+//	    }
+//	}
+//
+// The early break proves v is not nil for the rest of the body, so v is
+// a plain T there.
+func (c *Checker) forChannel(st *ForStmt, collT *Type) {
+	if st.Var2 != "" {
+		c.ErrorAt(st, "a loop over a channel takes one name: for v in ch")
+		return
+	}
+	if _, ok := c.methods[collT.Name]["recv"]; !ok {
+		c.ErrorAt(st.Coll, "cannot loop over %s", collT)
+		return
+	}
+	c.matchCount++
+	tmp := fmt.Sprintf("#ch%d", c.matchCount)
+	at := st.Span
+	recv := &Call{Span: at, Callee: &Field{Span: at, X: &Ident{Span: at, Name: tmp}, Name: "recv"}}
+	stop := &IfStmt{Span: at,
+		Cond: &Binary{Span: at, Op: EQ, L: &Ident{Span: at, Name: st.Var}, R: &NilLit{Span: at}},
+		Then: &Block{Span: at, Stmts: []Stmt{&BreakStmt{Span: at}}}}
+	body := &Block{Span: at, Stmts: append([]Stmt{&LetStmt{Span: at, Name: st.Var, Value: recv}, stop},
+		st.Body.Stmts...)}
+	loop := &WhileStmt{Span: at, Cond: &BoolLit{Span: at, Val: true}, Body: body}
+	st.Lowered = &Block{Span: at, Stmts: []Stmt{&LetStmt{Span: at, Name: tmp, Value: st.Coll}, loop}}
+	c.stmt(st.Lowered)
 }
