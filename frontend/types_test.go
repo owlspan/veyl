@@ -200,3 +200,24 @@ func TestTypeGo(t *testing.T) {
 		}
 	}
 }
+
+func TestGenericTypeNames(t *testing.T) {
+	cases := map[string]string{
+		"Box<int>":                   "Box<int>",
+		"Box< int >":                 "Box<int>",
+		"Pair<str,[]int>":            "Pair<str, []int>",
+		"Box<Box<int>>":              "Box<Box<int>>",
+		"[]Box<{str: int}>":          "[]Box<{str: int}>",
+		"?Pair<int, fn(int) -> str>": "?Pair<int, fn(int) -> str>",
+		"fn(Box<int>) -> Box<str>":   "fn(Box<int>) -> Box<str>",
+	}
+	for in, want := range cases {
+		got := ParseType(in)
+		if got == nil || got.String() != want {
+			t.Errorf("ParseType(%q) = %v, want %s", in, got, want)
+		}
+	}
+	if ParseType("Box<>") != nil {
+		t.Errorf("Box<> should not parse")
+	}
+}

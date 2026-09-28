@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.26.0** - the language as currently implemented.
+**Version 0.27.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -19,16 +19,17 @@ runtime to install, and building one needs nothing but `veyl.exe`.
 4. [Variables](#variables)
 5. [Types](#types)
 6. [Enums](#enums)
-7. [Operators](#operators)
-8. [Strings and interpolation](#strings-and-interpolation)
-9. [Control flow](#control-flow)
-10. [Functions](#functions)
-11. [Builtin library](#builtin-library)
-12. [Native functions (`extern`)](#native-functions-extern)
-13. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
-14. [Reserved words](#reserved-words)
-15. [Compiler commands](#compiler-commands)
-16. [Known limitations](#known-limitations)
+7. [Generics](#generics)
+8. [Operators](#operators)
+9. [Strings and interpolation](#strings-and-interpolation)
+10. [Control flow](#control-flow)
+11. [Functions](#functions)
+12. [Builtin library](#builtin-library)
+13. [Native functions (`extern`)](#native-functions-extern)
+14. [`win` - windows, drawing and input](#win---windows-drawing-and-input)
+15. [Reserved words](#reserved-words)
+16. [Compiler commands](#compiler-commands)
+17. [Known limitations](#known-limitations)
 
 ---
 
@@ -601,6 +602,86 @@ fn next(s: State) -> State {
 
 `enum` is only a keyword at the top of a file, before a name and a
 brace, so a variable called `enum` still works.
+
+---
+
+## Generics
+
+A function or struct can take types as parameters, written in angle
+brackets after its name:
+
+```veyl
+fn largest<T>(xs: []T) -> T {
+    let best = xs[0]
+    for x in xs {
+        if x > best {
+            best = x
+        }
+    }
+    return best
+}
+
+print(largest([3, 9, 2]))          // 9
+print(largest(["pear", "zoo"]))    // zoo
+```
+
+The types come from the arguments, so a call looks like any other.
+Where the arguments cannot say - an empty list, or a type that appears
+only in the result - name them:
+
+```veyl
+let none: []int = []
+let words = mapList<int, str>(none, fn(x: int) -> str { return str(x) })
+```
+
+A struct names its types the same way, and so does every use of it.
+Methods go in `impl Name<T>`, where `T` means whatever the struct was
+made with:
+
+```veyl
+struct Stack<T> {
+    items: []T
+}
+
+impl Stack<T> {
+    fn push(self, x: T) {
+        push(self.items, x)
+    }
+    fn pop(self) -> T {
+        return pop(self.items)
+    }
+}
+
+let s = Stack<int>{}
+s.push(1)
+let pairs = Stack<Pair<str, int>>{}
+```
+
+Any type can be a type argument: a number, `str`, a list or map, a
+function type, a nullable, another struct, an enum or another generic.
+
+### How it works
+
+Each set of types a generic is used with gets its own copy, checked
+and compiled like code written out by hand: `largest` called on a
+`[]int` and on a `[]str` is two functions, `largest<int>` and
+`largest<str>`, and each is as fast as if it had been written for its
+type. This is how C++ templates work, and it has the same two
+consequences:
+
+- **A generic is checked when it is used, per use.** `x > best` in
+  `largest` is fine for `int` and `str`. With a struct it is an error,
+  reported at the line in `largest` with `(in largest<Point>)` after
+  it. A generic nothing uses is never checked at all.
+- **Every instance is code of its own**, so a generic used with twenty
+  types is twenty copies in the executable.
+
+A method cannot have type parameters of its own yet, only the ones its
+struct has.
+
+`f<A, B>(x)` in an expression is read as a call naming its types, so a
+pair of comparisons written as `f(a < b, c > (d))` needs brackets:
+`f((a < b), c > (d))`.
 
 ---
 
@@ -2749,7 +2830,7 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.26.0 does not do yet.
+Honest list of what v0.27.0 does not do yet.
 
 **The language**
 
@@ -2771,7 +2852,9 @@ Honest list of what v0.26.0 does not do yet.
 - **Enums carry no data.** An enum value is one of its names; a variant
   cannot hold a payload the way a tagged union does, and a map cannot
   be keyed by one.
-- **No generics.** A function works on one set of types.
+- **A method cannot be generic by itself.** Its struct can be, and a
+  plain function can, but `fn map<U>(self, ...)` inside an impl is
+  refused.
 - **Garbage collected**, with raw memory beside it: `mem.alloc` and
   extern structs give manual memory and pointers, but nothing checks an
   address, and `unsafe` is still reserved.

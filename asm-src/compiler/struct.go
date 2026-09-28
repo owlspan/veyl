@@ -521,6 +521,13 @@ func (l *lowerer) staticTypeOf(e Expr) (vty, bool) {
 		}
 		return base.elemType(), true
 	case *Call:
+		// The checker has typed every call, which covers the shapes a
+		// name cannot: a method's result, a.me().get().
+		if x.T != nil && !x.T.IsUnknown() {
+			if t, ok := vtyOf(x.T); ok {
+				return t, true
+			}
+		}
 		name, ok := DottedName(x.Callee)
 		if !ok {
 			return vVoid, false

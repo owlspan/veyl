@@ -169,7 +169,7 @@ func (l *lowerer) taskSpawn(jobs, handles, from, to Reg, entry string, perJob in
 	addr := l.newReg()
 	l.regTy[addr] = vInt
 	l.emit(Instr{Op: OpSymAddr, Dst: addr, A: NoReg, B: NoReg,
-		Sym: "__vy_" + entry, Comment: entry})
+		Sym: fnSym(entry), Comment: entry})
 
 	l.taskLoop(from, to, func(i Reg) {
 		base := l.arith(OpAdd, jobs, l.arith(OpMul, i, l.constant(perJob)))
@@ -250,6 +250,19 @@ func taskShape(elem, ret vty, hasArg bool) string {
 		s = elem.String()
 	}
 	return sanitizeSym(s) + "_" + sanitizeSym(ret.String())
+}
+
+// fnSym is the symbol a Veyl function is emitted under. A generic
+// instance's name, max<int> or Box<str>.get, holds characters no
+// assembler takes in a symbol, so a name with any is spelled out in hex;
+// every other name is kept as it is.
+func fnSym(name string) string {
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.') {
+			return "__vy_" + sanitizeSym(name)
+		}
+	}
+	return "__vy_" + name
 }
 
 func sanitizeSym(s string) string {

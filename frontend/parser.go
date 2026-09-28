@@ -22,6 +22,10 @@ type Parser struct {
 	// left by one already reported.
 	stmtErrMark int
 
+	// pendingGT is the second half of a `>>` that closed one type
+	// argument list and still has another to close: Box<Box<int>>.
+	pendingGT int
+
 	Errors []string
 }
 
@@ -286,9 +290,13 @@ func (p *Parser) parseImport() *ImportDecl {
 // parseStruct reads `struct User { name: str, age: int }`. Fields are
 // separated by line breaks or commas, whichever the author prefers.
 func (p *Parser) parseStruct() *StructDecl {
+	start := p.i
 	kw := p.advance() // 'struct'
 	name := p.expect(IDENT, "a struct name")
 	d := &StructDecl{Span: at(kw), Name: name.Lex}
+	if p.check(LT) {
+		d.TypeParams = p.typeParams()
+	}
 
 	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
@@ -312,6 +320,9 @@ func (p *Parser) parseStruct() *StructDecl {
 		}
 	}
 	p.expectClose(RBRACE, open, "'}'", "struct")
+	if d.TypeParams != nil {
+		d.Toks = append([]Token(nil), p.toks[start:p.i]...)
+	}
 	p.endStmt()
 	return d
 }
@@ -408,6 +419,10 @@ func (p *Parser) parseImpl() *ImplBlock {
 	kw := p.advance() // 'impl'
 	name := p.expect(IDENT, "a struct name after 'impl'")
 	b := &ImplBlock{Span: at(kw), Type: name.Lex}
+	var params []string
+	if p.check(LT) {
+		params = p.typeParams()
+	}
 
 	open := p.expect(LBRACE, "'{'")
 	p.skipNewlines()
@@ -423,9 +438,18 @@ func (p *Parser) parseImpl() *ImplBlock {
 			p.advance()
 
 		case p.check(FN):
+			start := p.i
 			m := p.parseFn()
 			if m != nil {
 				m.Recv = b.Type
+				if m.TypeParams != nil {
+					p.errorAt(p.toks[start], "a method cannot have type parameters of its own yet - "+
+						"put them on the struct, or make %s a plain function", m.Name)
+				}
+				if params != nil {
+					m.RecvParams = params
+					m.Toks = append([]Token(nil), p.toks[start:p.i]...)
+				}
 				b.Methods = append(b.Methods, m)
 			}
 
@@ -444,15 +468,102 @@ func (p *Parser) parseImpl() *ImplBlock {
 }
 
 func (p *Parser) parseFn() *FnDecl {
+	start := p.i
 	kw := p.advance() // 'fn'
 	name := p.expect(IDENT, "a function name")
+	var params []string
+	if p.check(LT) {
+		params = p.typeParams()
+	}
 	f := p.parseFnSignature(kw, name.Lex)
 	if f == nil {
 		return nil
 	}
 	f.Body = p.parseBlock()
+	if params != nil {
+		f.TypeParams = params
+		f.Toks = append([]Token(nil), p.toks[start:p.i]...)
+	}
 	p.endStmt()
 	return f
+}
+
+// typeParams reads the `<T, U>` after a generic declaration's name.
+func (p *Parser) typeParams() []string {
+	open := p.advance() // '<'
+	params := []string{}
+	for {
+		t := p.expect(IDENT, "a type parameter name, as in <T>")
+		if t.Kind != IDENT {
+			break
+		}
+		for _, q := range params {
+			if q == t.Lex {
+				p.errorAt(t, "type parameter %s is listed twice", t.Lex)
+			}
+		}
+		params = append(params, t.Lex)
+		if !p.match(COMMA) {
+			break
+		}
+	}
+	if !p.closeAngle() {
+		p.errorAt(p.cur(), "expected '>' to close the '<' at %d:%d, found %s", open.Line, open.Col, describe(p.cur()))
+	}
+	return params
+}
+
+// closeAngle consumes one '>', which may be half of a '>>'.
+func (p *Parser) closeAngle() bool {
+	switch {
+	case p.pendingGT > 0:
+		p.pendingGT--
+		return true
+	case p.check(GT):
+		p.advance()
+		return true
+	case p.check(SHR):
+		p.advance()
+		p.pendingGT++
+		return true
+	}
+	return false
+}
+
+// typeArgs reads `<int, []str>` after a generic type's name and returns
+// the arguments as written.
+func (p *Parser) typeArgs() ([]string, bool) {
+	p.advance() // '<'
+	var args []string
+	for {
+		args = append(args, p.parseTypeRef())
+		if !p.match(COMMA) {
+			break
+		}
+	}
+	return args, p.closeAngle()
+}
+
+// tryTypeArgs reads `<int>` after a name in an expression, which is
+// either a generic struct literal, Box<int>{v: 1}, or a call naming its
+// types, max<int>(a, b). Anything else - a comparison - puts the parser
+// back where it was.
+func (p *Parser) tryTypeArgs() ([]string, bool) {
+	i, errs, gt := p.i, len(p.Errors), p.pendingGT
+	args, ok := p.typeArgs()
+	if ok && p.pendingGT == 0 && len(p.Errors) == errs &&
+		(p.check(LPAREN) || p.check(LBRACE) && p.noBrace == 0) {
+		return args, true
+	}
+	p.i, p.Errors, p.pendingGT = i, p.Errors[:errs], gt
+	return nil, false
+}
+
+// GenericName is how an instance of a generic is named: Box<int>,
+// Pair<str, []int>. The spelling is canonical - one space after each
+// comma - so the same types always make the same name.
+func GenericName(base string, args []string) string {
+	return base + "<" + strings.Join(args, ", ") + ">"
 }
 
 // parseExtern reads a native function declaration:
@@ -597,7 +708,16 @@ func (p *Parser) parseTypeRef() string {
 		base = "{" + key + ": " + val + "}"
 
 	default:
-		base = p.expect(IDENT, "a type name").Lex
+		name := p.expect(IDENT, "a type name")
+		base = name.Lex
+		if p.check(LT) {
+			args, ok := p.typeArgs()
+			if !ok {
+				p.errorAt(p.cur(), "expected '>' to close the type arguments of %s, found %s",
+					name.Lex, describe(p.cur()))
+			}
+			base = GenericName(name.Lex, args)
+		}
 	}
 
 	// A trailing `!` makes it a result type: str! is a str or a failure.
@@ -1038,6 +1158,11 @@ func (p *Parser) parsePrimary() Expr {
 
 	case IDENT:
 		p.advance()
+		if p.check(LT) {
+			if args, ok := p.tryTypeArgs(); ok {
+				return &Ident{Span: at(t), Name: GenericName(t.Lex, args)}
+			}
+		}
 		return &Ident{Span: at(t), Name: t.Lex}
 
 	case SELF:

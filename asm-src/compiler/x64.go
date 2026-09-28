@@ -405,7 +405,7 @@ func (e *Emitter) function(f *Func) {
 	}
 	name := f.Name
 	if name != "main" {
-		name = "__vy_" + name // no chance of colliding with libc
+		name = fnSym(name) // no chance of colliding with libc
 	}
 
 	e.b.WriteString("\n")
@@ -683,20 +683,20 @@ func (e *Emitter) instr(in Instr) {
 		e.put(in.Dst, "rdx")
 
 	case OpLabel:
-		e.label(fmt.Sprintf(".L%s_%d", e.f.Name, in.Imm))
+		e.label(fmt.Sprintf(".L%s_%d", e.labelBase(), in.Imm))
 
 	case OpJump:
-		e.line("jmp .L%s_%d", e.f.Name, in.Imm)
+		e.line("jmp .L%s_%d", e.labelBase(), in.Imm)
 
 	case OpJumpIf:
 		e.line("mov rax, %s", e.loc(in.A))
 		e.line("test rax, rax")
-		e.line("jne .L%s_%d", e.f.Name, in.Imm)
+		e.line("jne .L%s_%d", e.labelBase(), in.Imm)
 
 	case OpJumpNot:
 		e.line("mov rax, %s", e.loc(in.A))
 		e.line("test rax, rax")
-		e.line("je .L%s_%d", e.f.Name, in.Imm)
+		e.line("je .L%s_%d", e.labelBase(), in.Imm)
 
 	case OpParam:
 		if in.Imm < 4 {
@@ -975,7 +975,7 @@ func (e *Emitter) call(in Instr) {
 	if in.Extern {
 		e.line("call %s", in.Sym)
 	} else {
-		e.line("call __vy_%s", in.Sym)
+		e.line("call %s", fnSym(in.Sym))
 	}
 	e.callResult(in)
 }
@@ -1588,4 +1588,14 @@ __vy_floattostr:
     ret
 `)
 	}
+}
+
+// labelBase is the function's name as it goes into its local labels,
+// which is the symbol less its prefix: plain for a plain name, spelled
+// out for a generic instance's.
+func (e *Emitter) labelBase() string {
+	if e.f.Name == "main" {
+		return "main"
+	}
+	return strings.TrimPrefix(fnSym(e.f.Name), "__vy_")
 }
