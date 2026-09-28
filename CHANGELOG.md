@@ -3,6 +3,13 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.35.0
+
+**Looping over a channel.** `for v in ch` takes every value a channel
+carries, waiting for each, and ends once the channel is closed and
+drained - the loop a worker or a consumer is written as. Inside it `v`
+is a plain value, not a nullable.
+
 ## 0.34.0
 
 **Runtime errors say where.** An index out of range or a failed `must`
