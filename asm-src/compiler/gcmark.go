@@ -27,7 +27,13 @@ func (l *lowerer) emitCollector() {
 		return
 	}
 	l.helperFunc(collectSym, nil, vVoid, func([]Reg) {
+		// Never while another thread runs: its stack is not scanned, so
+		// what only it holds would look dead. See threads.go.
+		busy := l.newLabel()
+		l.emit(Instr{Op: OpJumpNot, A: l.compare(OpEq, l.rtLoad(gcTasksSlot), l.constant(0)),
+			Dst: NoReg, Imm: busy})
 		l.collectBody()
+		l.mark(busy)
 		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
 	})
 }

@@ -505,6 +505,14 @@ const (
 	// what is called is a number the program worked out.
 	OpCallAddr
 
+	// The atomics, each one locked instruction. OpAtomicAdd adds B to the
+	// word at A and gives what was there; OpAtomicSwap stores B and gives
+	// what was there; OpAtomicCAS stores Args[2] if the word at Args[0]
+	// holds Args[1], and says whether it did.
+	OpAtomicAdd
+	OpAtomicSwap
+	OpAtomicCAS
+
 	// Raw memory at a width. Imm is one of the mem* kinds below, which
 	// says how many bytes, whether a narrow integer is sign-extended,
 	// and whether the value is a float. Dst is an int or a float to
@@ -833,8 +841,8 @@ type lowerer struct {
 
 	// gcOff is a program that said `gc off`: it frees with delete, and
 	// nothing collects, not even mem.collect.
-	gcOff bool
-	eqInline   string
+	gcOff    bool
+	eqInline string
 
 	// autoGC is automatic collection: on, except in a DLL, whose
 	// functions the host may call on threads of its own, and when
@@ -2298,6 +2306,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		return r
 	}
 
+	if r, handled := l.threadBuiltin(c, name); handled {
+		return r
+	}
 	if r, handled := l.rawMemBuiltin(c, name); handled {
 		return r
 	}

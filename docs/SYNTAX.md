@@ -1906,11 +1906,6 @@ let pages = task.map(urls, fn(u: str) -> str {
 Everything has finished by the time the call returns. There is no way
 to start work that outlives the statement that started it.
 
-**There are no goroutines or channels**, deliberately. Veyl has no
-mutexes, no atomics and no way to talk about ownership, so raw shared
-memory would be the one place the compiler stops helping - every other
-sharp edge in the language is either checked or removed.
-
 **The one thing it cannot check is what your function touches.** A
 function passed to `task.map` runs on several threads at once, so it
 should compute a value from its argument rather than change something
@@ -1930,7 +1925,95 @@ task.each(paths, fn(p: str) {
 ```
 
 That is a real limit of this design, not an oversight - enforcing it
-needs an ownership system Veyl does not have.
+needs an ownership system Veyl does not have. A mutex, below, is how to
+share something safely.
+
+### `thread` and `atomic` - threads of your own
+
+`thread.spawn` starts a function on a new thread and returns straight
+away; `thread.join` waits for it. The function can be a closure, and
+sees what it captured:
+
+```veyl
+let hits = atomic.new(0)
+let workers: []int = []
+for id in 0..8 {
+    push(workers, thread.spawn(fn() {
+        for i in 0..10000 {
+            atomic.add(hits, 1)
+        }
+    }))
+}
+for t in workers {
+    thread.join(t)
+}
+print(atomic.get(hits))     // 80000
+```
+
+| Function | Returns | Description |
+| --- | --- | --- |
+| `thread.spawn(f)` | `int` | run `f`, a `fn()`, on a new thread; the result is its handle |
+| `thread.join(t)` | - | wait for a thread to finish |
+| `thread.id()` / `thread.cores()` | `int` | this thread's id / how many cores there are |
+| `thread.mutex()` | `int` | a new mutex |
+| `thread.lock(m)` / `thread.unlock(m)` | - | take and release it; one thread at a time |
+| `thread.cond()` | `int` | a condition variable |
+| `thread.wait(c, m)` | - | release `m`, sleep until notified, take `m` back |
+| `thread.notify(c)` / `thread.notifyAll(c)` | - | wake one waiter / all of them |
+| `atomic.new(v)` | `int` | the address of a new word holding `v` |
+| `atomic.add(p, n)` | `int` | add `n`, giving the new value |
+| `atomic.get(p)` / `atomic.set(p, v)` | `int` / - | read, write |
+| `atomic.swap(p, v)` | `int` | write `v`, giving the old value |
+| `atomic.cas(p, old, new)` | `bool` | write `new` only if the word holds `old` |
+
+The `atomic` functions work on any word-aligned address, including one
+from `mem.alloc`. Each is a single locked instruction.
+
+### Channels
+
+A `Channel<T>` carries values from one thread to another, in order:
+
+```veyl
+let jobs = channel<int>()
+let done = channel<str>()
+
+let worker = thread.spawn(fn() {
+    while true {
+        let j = jobs.recv()
+        if j == nil {
+            break           // closed, and everything taken
+        }
+        done.send("{j} squared is {j * j}")
+    }
+})
+
+for n in 0..3 {
+    jobs.send(n)
+}
+jobs.close()
+thread.join(worker)
+```
+
+`send` adds a value and wakes a receiver. `recv` gives the next one,
+waiting if there is none, and `nil` once the channel is closed and
+empty. `close` says no more are coming; sending after it stops the
+program. `pending` is how many are waiting to be received. A channel
+can be passed around and captured freely: every copy is the same
+channel.
+
+### Threads and the collector
+
+The collector looks at one stack, the one it runs on, so it never runs
+while any thread besides main is alive - not automatically, and not by
+`mem.collect()`, which then does nothing. Allocation carries on as
+normal, under a lock taken only while other threads are running, so a
+program without threads pays nothing for them. A long-lived thread that
+allocates heavily grows the heap until it finishes; a program that
+needs threads and bounded memory both can say `gc off` and `delete`
+what it is done with.
+
+Nothing checks what a thread touches. Two threads changing the same
+list without a mutex is a race, as in C++.
 
 ---
 
