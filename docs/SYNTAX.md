@@ -2126,6 +2126,46 @@ print("took {time.millis() - started} ms")
 
 ---
 
+### Collected, or by hand
+
+A program is garbage collected unless it says otherwise: values are
+freed once nothing refers to them, and there is nothing to think about.
+
+A program that wants to manage its own memory, as in C++, says so on
+a line of its own at the top of the file:
+
+```veyl
+gc off
+
+let xs = [1, 2, 3]
+push(xs, 4)
+print(xs)
+delete(xs)
+```
+
+Then nothing is ever collected - not in the background, and not by
+`mem.collect()`, which becomes an error - and `delete(x)` frees a list,
+map, struct, string or `bytes` the moment it is called. There are no
+collection pauses, and memory is released exactly where the program
+says.
+
+`delete` frees the value itself and not what it refers to: deleting a
+list of strings frees the list, and each string is deleted on its own.
+Nothing checks that a deleted value is not used again, or deleted
+twice, which is the same bargain C++ makes. A string written in the
+program is part of the executable, and deleting one does nothing.
+
+Strings that exist only in passing are freed as they are used, since
+nothing could name them to delete them: the pieces of `"a" + str(i) +
+"b"`, the parts of an interpolation, and a string built only to be
+printed. A string that is kept - in a variable, a list or a field - is
+the program's to delete.
+
+`gc off` goes in the file that is built, not one it imports, and
+`delete` is only allowed in a program that says `gc off`: under the
+collector, an object freed by hand would still be on the list the next
+collection walks.
+
 ### `mem` - memory
 
 Veyl collects its own values. The collector runs by itself when the

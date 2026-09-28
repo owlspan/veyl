@@ -233,6 +233,21 @@ func (p *Parser) ParseProgram() *Program {
 				d.Pub, d.File = pub, p.file
 				prog.Ifaces = append(prog.Ifaces, d)
 			}
+		case p.check(IDENT) && p.cur().Lex == "gc" && p.peekKind(1) == IDENT &&
+			(p.peekKind(2) == NEWLINE || p.peekKind(2) == EOF):
+			// `gc off` or `gc on`, for the whole program. Only a keyword
+			// in exactly this shape, so gc stays usable as a name.
+			kw := p.advance()
+			mode := p.advance()
+			if mode.Lex != "off" && mode.Lex != "on" {
+				p.errorAt(mode, "gc is either on or off, as in: gc off")
+			} else if prog.GC != "" {
+				p.errorAt(kw, "gc is already set for this file, at line %d", prog.GCAt.Line)
+			} else {
+				prog.GC = mode.Lex
+				prog.GCAt = at(kw)
+			}
+			p.endStmt()
 		case p.check(IDENT) && p.cur().Lex == "var" && p.peekKind(1) == IDENT:
 			// `var` is a mutable global: visible inside functions, like
 			// a const, and assignable, like a let. It is only a keyword

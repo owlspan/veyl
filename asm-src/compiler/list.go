@@ -243,6 +243,9 @@ func (l *lowerer) listPush(list, val Reg) {
 
 	l.emit(Instr{Op: OpStoreMem, A: list, B: newCap, Imm: listCapOff})
 	l.emit(Instr{Op: OpStoreMem, A: list, B: fresh, Imm: listDataOff})
+	if l.gcOff {
+		l.freeObject(old) // no collector will; see gcoff.go
+	}
 
 	l.mark(ready)
 

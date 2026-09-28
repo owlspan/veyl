@@ -151,7 +151,13 @@ func (l *lowerer) memBuiltin(c *Call, name string) (Reg, bool) {
 	case "mem.goroutines":
 		// The main thread, and one more for each task batch in flight.
 		return l.arith(OpAdd, l.rtLoad(gcTasksSlot), l.constant(1)), true
+	case "delete":
+		return l.deleteValue(c), true
 	case "mem.collect":
+		if l.gcOff {
+			l.errorAt(c, "this program says gc off, so nothing is collected - free a value with delete")
+			return l.void(), true
+		}
 		l.collect()
 		return l.void(), true
 	}
