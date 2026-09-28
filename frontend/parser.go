@@ -533,10 +533,6 @@ func (p *Parser) parseImpl() *ImplBlock {
 			m := p.parseFn()
 			if m != nil {
 				m.Recv = b.Type
-				if m.TypeParams != nil {
-					p.errorAt(p.toks[start], "a method cannot have type parameters of its own yet - "+
-						"put them on the struct, or make %s a plain function", m.Name)
-				}
 				if params != nil {
 					m.RecvParams = params
 					m.Toks = append([]Token(nil), p.toks[start:p.i]...)
@@ -843,6 +839,14 @@ func (p *Parser) parseStmt() Stmt {
 		return &ContinueStmt{Span: at(t)}
 	case RETURN:
 		return p.parseReturn()
+	case DEFER:
+		// `defer stmt`: stmt runs when this block is left.
+		kw := p.advance()
+		body := p.parseStmt()
+		if body == nil {
+			return nil
+		}
+		return &DeferStmt{Span: at(kw), Body: body}
 	case LBRACE:
 		return p.parseBlock()
 	case FN:

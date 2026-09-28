@@ -209,9 +209,10 @@ func (l *lowerer) liftFunc(fd *FnDecl, t vty, captured []capture) string {
 		l.storeLocal(slot, d)
 	}
 
-	for _, st := range fd.Body.Stmts {
-		l.stmt(st)
-	}
+	savedDefers := l.defers
+	l.defers = nil
+	l.stmtList(fd.Body.Stmts)
+	l.defers = savedDefers
 	l.popScope()
 	l.endFunction(ret)
 

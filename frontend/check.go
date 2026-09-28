@@ -39,13 +39,16 @@ type Checker struct {
 	genStructs map[string]*StructDecl
 	genMethods map[string][]*FnDecl
 	genEnums   map[string]*EnumDecl
-	ifaces     map[string]*InterfaceDecl
-	dispatch   []*FnDecl
-	pending    []*FnDecl
-	matchCount int
-	instances  int
-	instName   string
-	instFile   string
+	// genMethodTmpl holds methods with type parameters of their own, by
+	// the struct they are on, then by name.
+	genMethodTmpl map[string]map[string]*FnDecl
+	ifaces        map[string]*InterfaceDecl
+	dispatch      []*FnDecl
+	pending       []*FnDecl
+	matchCount    int
+	instances     int
+	instName      string
+	instFile      string
 }
 
 func NewChecker(file string, lib Library) *Checker {
@@ -592,6 +595,18 @@ func externScalar(t *Type) bool {
 
 func (c *Checker) stmt(s Stmt) {
 	switch st := s.(type) {
+
+	case *DeferStmt:
+		// A deferred statement runs on the way out, so it cannot itself
+		// be a way out: a return in one would say where to go while
+		// already going somewhere.
+		if leavesVia(st.Body) {
+			c.ErrorAt(st, "a deferred statement cannot return, break or continue")
+		}
+		if _, isLet := st.Body.(*LetStmt); isLet {
+			c.ErrorAt(st, "a deferred let would declare a name nothing after it can see")
+		}
+		c.stmt(st.Body)
 
 	case *LetStmt:
 		annot := c.resolveAnnotation(st.Type, st)
@@ -1966,6 +1981,14 @@ func rootIdent(e Expr) (string, bool) {
 func (c *Checker) methodCall(x *Call, fld *Field, recv *Type, args []*Type) *Type {
 	m, ok := c.methods[recv.Name][fld.Name]
 	if !ok {
+		if g, generic := c.genericMethod(x, fld, recv, args); generic {
+			if g == nil {
+				return Unknown
+			}
+			m, ok = g, true
+		}
+	}
+	if !ok {
 		if ft, isField := c.fieldType(recv.Name, fld.Name); isField {
 			// A field holding a function is callable, it is just not a
 			// method - no receiver is passed.
@@ -2427,4 +2450,41 @@ func assignsTo(list []Stmt, name string) bool {
 		}
 	}
 	return false
+}
+
+// leavesVia reports whether a statement contains a return, or a break
+// or continue that is not inside a loop of its own.
+func leavesVia(s Stmt) bool {
+	var walk func(s Stmt, inLoop bool) bool
+	walk = func(s Stmt, inLoop bool) bool {
+		switch x := s.(type) {
+		case *ReturnStmt:
+			return true
+		case *BreakStmt, *ContinueStmt:
+			return !inLoop
+		case *Block:
+			for _, t := range x.Stmts {
+				if walk(t, inLoop) {
+					return true
+				}
+			}
+		case *IfStmt:
+			return walk(x.Then, inLoop) || (x.Else != nil && walk(x.Else, inLoop))
+		case *WhileStmt:
+			return walk(x.Body, true)
+		case *ForStmt:
+			return walk(x.Body, true)
+		case *MatchStmt:
+			for _, arm := range x.Cases {
+				if walk(arm.Body, inLoop) {
+					return true
+				}
+			}
+			return x.Else != nil && walk(x.Else, inLoop)
+		case *DeferStmt:
+			return walk(x.Body, inLoop)
+		}
+		return false
+	}
+	return walk(s, false)
 }

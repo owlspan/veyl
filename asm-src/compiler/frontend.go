@@ -24,6 +24,7 @@ type (
 	Call         = front.Call
 	Checker      = front.Checker
 	ContinueStmt = front.ContinueStmt
+	DeferStmt    = front.DeferStmt
 	EmptyLibrary = front.EmptyLibrary
 	Expr         = front.Expr
 	ExprStmt     = front.ExprStmt

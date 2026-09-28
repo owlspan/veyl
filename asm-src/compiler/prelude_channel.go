@@ -104,11 +104,111 @@ impl Channel<T> {
 }
 `
 
+// Builder puts a string together from pieces in time proportional to
+// its length. `s = s + piece` in a loop copies all of s each time, which
+// is quadratic; a Builder keeps the pieces and joins them once, when the
+// string is asked for, and keeps the result as its one piece so asking
+// again is free.
+//
+//	let sb = Builder{}
+//	for i in 0..1000 {
+//	    sb.add("{i},")
+//	}
+//	print(sb.str())
+const builderSource = `
+struct Builder {
+    parts: []str
+}
+
+impl Builder {
+    fn add(self, s: str) {
+        push(self.parts, s)
+    }
+
+    fn addLine(self, s: str) {
+        push(self.parts, s)
+        push(self.parts, "\n")
+    }
+
+    fn str(self) -> str {
+        let n = len(self.parts)
+        if n == 0 {
+            return ""
+        }
+        if n == 1 {
+            return self.parts[0]
+        }
+        let s = join(self.parts, "")
+        while len(self.parts) > 0 {
+            pop(self.parts)
+        }
+        push(self.parts, s)
+        return s
+    }
+
+    fn len(self) -> int {
+        return len(self.str())
+    }
+
+    fn clear(self) {
+        while len(self.parts) > 0 {
+            pop(self.parts)
+        }
+    }
+}
+`
+
+var (
+	builderOnce sync.Once
+	builderProg *Program
+	builderErrs []string
+)
+
 var (
 	channelOnce sync.Once
 	channelProg *Program
 	channelErrs []string
 )
+
+// addLibrary folds in the library types written in Veyl that the
+// program names: Channel<T> and Builder.
+func addLibrary(prog *Program, sources []string) []string {
+	if errs := addChannel(prog, sources); len(errs) > 0 {
+		return errs
+	}
+	return addBuilder(prog, sources)
+}
+
+func addBuilder(prog *Program, sources []string) []string {
+	named := false
+	for _, src := range sources {
+		if mentions(src, "Builder") {
+			named = true
+			break
+		}
+	}
+	if !named {
+		return nil
+	}
+	builderOnce.Do(func() {
+		lx := NewLexer("<prelude>", builderSource)
+		ps := NewParser("<prelude>", lx.Scan())
+		builderProg = ps.ParseProgram()
+		builderErrs = append(append([]string{}, lx.Errors...), ps.Errors...)
+	})
+	if len(builderErrs) > 0 {
+		return builderErrs
+	}
+	for _, d := range builderProg.Structs {
+		d.File = "<prelude>"
+		prog.Structs = append(prog.Structs, d)
+	}
+	for _, f := range builderProg.Funcs {
+		f.File = "<prelude>"
+		prog.Funcs = append(prog.Funcs, f)
+	}
+	return nil
+}
 
 // addChannel folds Channel<T> into a program that mentions one.
 func addChannel(prog *Program, sources []string) []string {

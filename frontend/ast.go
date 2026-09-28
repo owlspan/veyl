@@ -566,6 +566,16 @@ type MatchStmt struct {
 	Temp    string
 }
 
+// DeferStmt is `defer stmt`: stmt runs when the block the defer is in
+// is left, however it is left - its end, a return, a break or a
+// continue - after anything deferred later in the same block.
+type DeferStmt struct {
+	Span
+	Body Stmt
+}
+
+func (*DeferStmt) stmtNode() {}
+
 type BreakStmt struct{ Span }
 
 type ContinueStmt struct{ Span }

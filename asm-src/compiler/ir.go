@@ -821,6 +821,10 @@ type lowerer struct {
 	regTy    map[Reg]vty
 
 	loops []loopTarget
+
+	// defers holds, for each block being lowered, the statements it has
+	// deferred so far; see defer.go.
+	defers [][]Stmt
 	sigs  map[string]sig
 
 	// externFns holds the native functions the program declared with
@@ -888,6 +892,10 @@ type lowerer struct {
 type loopTarget struct {
 	brk  int64
 	cont int64
+
+	// defers is how many blocks of deferred statements were open when
+	// the loop began: a break or continue runs the ones opened since.
+	defers int
 }
 
 // Lower turns the parsed program into a module. It reports its own
@@ -1019,9 +1027,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		done[g.Name] = true
 		l.globalInit(g)
 	}
-	for _, st := range p.Main {
-		l.stmt(st)
-	}
+	l.stmtList(p.Main)
 	l.popScope()
 	l.seal()
 
@@ -1094,9 +1100,8 @@ func (l *lowerer) function(fd *FnDecl) {
 		l.storeLocal(slot, d)
 	}
 
-	for _, st := range fd.Body.Stmts {
-		l.stmt(st)
-	}
+	l.defers = nil
+	l.stmtList(fd.Body.Stmts)
 	l.popScope()
 
 	l.endFunction(s.ret)
@@ -1404,10 +1409,14 @@ func (l *lowerer) stmt(s Stmt) {
 
 	case *Block:
 		l.pushScope()
-		for _, inner := range st.Stmts {
-			l.stmt(inner)
-		}
+		l.stmtList(st.Stmts)
 		l.popScope()
+
+	case *DeferStmt:
+		// Recorded, not lowered: it is lowered at each way out of its
+		// block. See defer.go.
+		top := len(l.defers) - 1
+		l.defers[top] = append(l.defers[top], st.Body)
 
 	case *IfStmt:
 		cond := l.expr(st.Cond)
@@ -1433,7 +1442,7 @@ func (l *lowerer) stmt(s Stmt) {
 		l.mark(top)
 		cond := l.expr(st.Cond)
 		l.emit(Instr{Op: OpJumpNot, A: cond, Dst: NoReg, Imm: done, Comment: "while"})
-		l.loops = append(l.loops, loopTarget{brk: done, cont: top})
+		l.loops = append(l.loops, loopTarget{brk: done, cont: top, defers: len(l.defers)})
 		l.stmt(st.Body)
 		l.loops = l.loops[:len(l.loops)-1]
 		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: top})
@@ -1460,6 +1469,7 @@ func (l *lowerer) stmt(s Stmt) {
 			// A bare `return` from a function declared void! still owes
 			// the caller a result to inspect, so it returns a successful
 			// one. Anywhere else it returns nothing at all.
+			l.runDefers(0)
 			if l.fn.Ret.res {
 				l.emit(Instr{Op: OpRet, A: l.resOk(l.constant(0), l.fn.Ret),
 					Dst: NoReg, Comment: "return ok"})
@@ -1482,6 +1492,14 @@ func (l *lowerer) stmt(s Stmt) {
 		if l.fn.Ret.k == kFloat && !l.fn.Ret.res && l.regTy[v].k == kInt {
 			v = l.toFloat(v)
 		}
+		if l.hasDefers(0) {
+			// The value is worked out first, as a deferred statement
+			// could change what it reads; it waits in a slot meanwhile.
+			slot := l.temp(l.regTy[v])
+			l.emit(Instr{Op: OpStore, A: v, Dst: NoReg, Imm: slot})
+			l.runDefers(0)
+			v = l.load(slot, l.regTy[v])
+		}
 		l.emit(Instr{Op: OpRet, A: v, Dst: NoReg, Comment: "return"})
 
 	case *BreakStmt:
@@ -1489,6 +1507,7 @@ func (l *lowerer) stmt(s Stmt) {
 			l.errorAt(st, "break outside a loop")
 			return
 		}
+		l.runDefers(l.loops[len(l.loops)-1].defers)
 		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg,
 			Imm: l.loops[len(l.loops)-1].brk, Comment: "break"})
 
@@ -1497,6 +1516,7 @@ func (l *lowerer) stmt(s Stmt) {
 			l.errorAt(st, "continue outside a loop")
 			return
 		}
+		l.runDefers(l.loops[len(l.loops)-1].defers)
 		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg,
 			Imm: l.loops[len(l.loops)-1].cont, Comment: "continue"})
 
@@ -1763,7 +1783,7 @@ func (l *lowerer) forRange(st *ForStmt) {
 
 	// continue jumps to the increment, not the test, or the counter
 	// never advances and the loop never ends.
-	l.loops = append(l.loops, loopTarget{brk: done, cont: cont})
+	l.loops = append(l.loops, loopTarget{brk: done, cont: cont, defers: len(l.defers)})
 	l.stmt(st.Body)
 	l.loops = l.loops[:len(l.loops)-1]
 
@@ -3438,6 +3458,8 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 	// already being built.
 	savedFn, savedSlots, savedRegs := l.fn, l.slotTy, l.regTy
 	savedScopes, savedLoops, savedBuf := l.scopes, l.loops, l.buf
+	savedDefers := l.defers
+	l.defers = nil
 	savedInHelper := l.inHelper
 	l.inHelper = true
 
@@ -3462,6 +3484,7 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 
 	l.fn, l.slotTy, l.regTy = savedFn, savedSlots, savedRegs
 	l.scopes, l.loops, l.buf = savedScopes, savedLoops, savedBuf
+	l.defers = savedDefers
 	l.inHelper = savedInHelper
 	return name
 }

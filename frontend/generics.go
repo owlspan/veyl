@@ -38,6 +38,7 @@ func (c *Checker) collectTemplates(p *Program) {
 	c.genStructs = map[string]*StructDecl{}
 	c.genMethods = map[string][]*FnDecl{}
 	c.genEnums = map[string]*EnumDecl{}
+	c.genMethodTmpl = map[string]map[string]*FnDecl{}
 
 	var enums []*EnumDecl
 	for _, e := range p.Enums {
@@ -64,6 +65,9 @@ func (c *Checker) collectTemplates(p *Program) {
 			c.genMethods[f.Recv] = append(c.genMethods[f.Recv], f)
 		case f.TypeParams != nil && f.Recv == "":
 			c.genFuncs[Qual(f.Pkg, f.Name)] = f
+		case f.TypeParams != nil:
+			// A generic method on a plain struct.
+			c.addMethodTemplate(f.Recv, f)
 		default:
 			if f.Recv != "" {
 				if _, generic := c.genStructs[f.Recv]; generic {
@@ -136,6 +140,12 @@ func (c *Checker) instStruct(name string, at Node) bool {
 		if !c.instantiate(mt.File, mt.Toks, 0, mt.RecvParams, args, name, func(ps *Parser) {
 			m = ps.parseFn()
 		}) || m == nil {
+			continue
+		}
+		if m.TypeParams != nil {
+			// map<U> on a Box<int>: T is settled, U waits for a call.
+			m.Recv, m.File, m.Pub, m.Pkg = name, mt.File, mt.Pub, mt.Pkg
+			c.addMethodTemplate(name, m)
 			continue
 		}
 		m.Recv, m.File, m.Pub, m.Pkg, m.Instance = name, mt.File, mt.Pub, mt.Pkg, true
@@ -403,4 +413,65 @@ func (c *Checker) genericHint(name string) string {
 			name, name, strings.Repeat("int, ", len(e.TypeParams)-1)+"int")
 	}
 	return ""
+}
+
+func (c *Checker) addMethodTemplate(recv string, f *FnDecl) {
+	if c.genMethodTmpl[recv] == nil {
+		c.genMethodTmpl[recv] = map[string]*FnDecl{}
+	}
+	c.genMethodTmpl[recv][f.Name] = f
+}
+
+// genericMethod handles a call to a method with type parameters of its
+// own, as genericCall does a function: the types come from the
+// arguments, and the instance, map<str>, is a method like any other on
+// the same struct. The call is pointed at it by name. It reports false
+// when there is no such generic method.
+func (c *Checker) genericMethod(x *Call, fld *Field, recv *Type, args []*Type) (*FnDecl, bool) {
+	tmpl, ok := c.genMethodTmpl[recv.Name][fld.Name]
+	if !ok {
+		return nil, false
+	}
+	params := map[string]bool{}
+	for _, p := range tmpl.TypeParams {
+		params[p] = true
+	}
+	bind := map[string]*Type{}
+	for i := 0; i < len(args) && i+1 < len(tmpl.Params); i++ {
+		unify(ParseType(tmpl.Params[i+1].Type), args[i], params, bind)
+	}
+	names := make([]string, len(tmpl.TypeParams))
+	for i, p := range tmpl.TypeParams {
+		t := bind[p]
+		if t == nil || t.IsUnknown() {
+			if !anyUnknown(args) {
+				c.ErrorAt(x, "cannot tell what %s is from the arguments to %s.%s", p, recv.Name, fld.Name)
+			}
+			return nil, true
+		}
+		names[i] = t.String()
+	}
+	inst := GenericName(tmpl.Name, names)
+	m, done := c.methods[recv.Name][inst]
+	if !done {
+		if !c.budget(x) {
+			return nil, true
+		}
+		m = &FnDecl{}
+		if !c.instantiate(tmpl.File, tmpl.Toks, len(tmpl.TypeParams), tmpl.TypeParams, names, inst, func(ps *Parser) {
+			m = ps.parseFn()
+		}) || m == nil {
+			return nil, true
+		}
+		m.Name, m.Recv, m.File, m.Pub, m.Pkg, m.Instance = inst, recv.Name, tmpl.File, tmpl.Pub, tmpl.Pkg, true
+		c.within(recv.Name+"."+inst, m.File, func() { c.resolveSig(m) })
+		if c.methods[recv.Name] == nil {
+			c.methods[recv.Name] = map[string]*FnDecl{}
+		}
+		c.methods[recv.Name][inst] = m
+		c.prog.Funcs = append(c.prog.Funcs, m)
+		c.pending = append(c.pending, m)
+	}
+	fld.Name = inst
+	return m, true
 }

@@ -116,6 +116,8 @@ pipeline:
 - `mem.call` and `mem.symbol`: call native code at any address
 - threads: `thread.spawn`, mutexes, condition variables, atomics and
   `Channel<T>`
+- `defer`, scoped to the block, and `Builder` for linear string
+  building
 - interfaces: `interface Shape { fn area(self) -> float }`, satisfied
   by any struct with the methods, as in Go
 - garbage collected by default, or `gc off` at the top of a file to
@@ -540,7 +542,7 @@ Together they make a nested arithmetic loop about 45% faster than
   inside a DLL - which needs every thread's stack, not only the
   collector's own.
 - **Appending in place.** `s = s + x` in a loop still copies `s` each
-  time; pushing the pieces and calling `join` once is linear.
+  time; a `Builder` is linear.
 - **Hash maps.** Lookups are a binary search now, but an insert still
   moves every later entry to keep the keys sorted.
 - **Closures as callbacks.**
