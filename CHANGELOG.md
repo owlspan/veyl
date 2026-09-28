@@ -3,6 +3,25 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.32.0
+
+**defer.** `defer stmt` runs stmt when its block is left - at its end,
+on a `return`, or on a `break` or `continue` - latest first. It belongs
+to the block, as in Zig and Swift, so `defer delete(xs)` in a `gc off`
+loop frees each trip's list on that trip, and `defer thread.unlock(m)`
+releases a lock on every way out of a function.
+
+**Builder.** A string put together from pieces in linear time, where
+`s = s + piece` in a loop is quadratic: `add`, `addLine`, `str`, `len`
+and `clear`.
+
+**Generic methods.** A method can have type parameters of its own,
+`fn map<U>(self, f: fn(T) -> U) -> Box<U>`, on a generic struct or a
+plain one, taken from the call's arguments.
+
+**Also.** An error reported twice at the same place, as a call used as
+a receiver could be, is reported once.
+
 ## 0.31.0
 
 **Threads.** `thread.spawn(f)` runs a function - a closure, with what
