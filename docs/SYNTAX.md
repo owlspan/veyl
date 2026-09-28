@@ -1,6 +1,6 @@
 # Veyl Language Reference
 
-**Version 0.25.0** - the language as currently implemented.
+**Version 0.26.0** - the language as currently implemented.
 
 Veyl compiles straight to x86-64 and writes the Windows executable
 itself. A finished program is a single self-contained `.exe` with no
@@ -2539,31 +2539,41 @@ including its title bar, so `win.open("x", 640, 400)` gives you exactly
 
 ### Images
 
-Images are `.bmp` files, drawn into the back buffer like everything
-else.
+Images are `.png` or `.bmp` files, drawn into the back buffer like
+everything else. A PNG keeps its transparency: every pixel is blended
+with what is already there by its own alpha.
 
 | Function | Returns | Description |
 | --- | --- | --- |
-| `win.image(path)` | `int!` | load a `.bmp`; the result is an image handle |
+| `win.image(path)` | `int!` | load a `.png` or `.bmp`; the result is an image handle |
 | `win.imageWidth(img)` `win.imageHeight(img)` | `int` | its size in pixels |
 | `win.draw(w, img, x, y)` | | draw it at its own size |
 | `win.drawScaled(w, img, x, y, width, height)` | | draw it stretched to a size |
-| `win.drawKeyed(w, img, x, y, colour)` | | draw it with every pixel of one colour left out |
+| `win.drawKeyed(w, img, x, y, colour)` | | draw it with every pixel of one colour left out, ignoring alpha |
 | `win.freeImage(img)` | | release it |
 
-`drawKeyed` is how a sprite gets a transparent background: paint the
-background one colour nobody uses - magenta, `win.rgb(255, 0, 255)`, is
-the tradition - and name that colour when drawing.
+A PNG with a transparent background needs nothing more than `draw`:
 
 ```veyl
-let player = must(win.image("player.bmp"))
+let player = must(win.image("player.png"))
 while win.poll(w) {
     win.clear(w, bg)
-    win.drawKeyed(w, player, x, y, win.rgb(255, 0, 255))
+    win.draw(w, player, x, y)
     win.present(w)
     sleep(16)
 }
 ```
+
+A `.bmp` has no alpha. `drawKeyed` is how one gets a transparent
+background: paint the background one colour nobody uses - magenta,
+`win.rgb(255, 0, 255)`, is the tradition - and name that colour when
+drawing.
+
+PNGs are decoded by Veyl itself. Every colour type is supported at 8
+bits a sample, and palette images at 1, 2, 4 and 8 bits; interlaced and
+16-bit PNGs are refused with a message saying so. Decoding is not fast
+- about half a second for a large, noisy 512x512 image - so load images
+once, before the game loop.
 
 ### Measuring text
 
@@ -2597,9 +2607,8 @@ last `present`.
 
 ### What it does not do yet
 
-Images are `.bmp` only - no PNG or JPEG - and have no alpha channel
-beyond one colour key. One font, at the system size. One window per
-program.
+No JPEG, and no interlaced or 16-bit PNG. One font, at the system
+size. One window per program.
 
 Working examples are in `examples/gui/`: `pong.vl` is a playable game
 in about 130 lines, `widgets.vl` exercises the widget set, and
@@ -2740,7 +2749,7 @@ checker, so it is only reported once every type error is fixed.
 
 ## Known limitations
 
-Honest list of what v0.25.0 does not do yet.
+Honest list of what v0.26.0 does not do yet.
 
 **The language**
 

@@ -94,7 +94,8 @@ pipeline:
 
 - `net` TCP sockets and an `http` server and client, through WinSock
 - `win`: a window with a game loop, drawing, keyboard and mouse,
-  immediate-mode widgets, `.bmp` images with a colour key, text
+  immediate-mode widgets, `.png` images with alpha and `.bmp` with a
+  colour key, a PNG decoder written in Veyl, text
   measurement, and off-screen canvases; `sound` plays a WAV
 - `extern fn`: declare a function that lives in a DLL and call it -
   the Windows API, the C runtime, or any library a package ships
@@ -227,6 +228,7 @@ asm-src/
     memlib.go       raw memory: alloc, free, reads and writes by width
     views.go        extern structs, C layouts at an address
     winmedia.go     images, canvases, text measurement and sound
+    prelude_png.go  the PNG decoder and DEFLATE, in Veyl
     callback.go     Veyl functions called from native code
     dll.go          DLL output: the entry point and the export table
     encode*.go      x86-64 text -> machine code

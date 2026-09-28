@@ -16,5 +16,5 @@ true
 true
 true
 true
-cannot load nope.bmp - an image has to be a readable .bmp file
+cannot load nope.bmp - an image has to be a readable .bmp or .png file
 false

@@ -247,20 +247,23 @@ var sigs = map[string]front.Signature{
 	"win.resizable": {Params: []*Type{Int, Bool}, Ret: Void},
 
 	// Canvases, images, text measurement and sound; see winmedia.go.
-	"win.canvas":      {Params: []*Type{Int, Int}, Ret: Int},
-	"win.pixel":       {Params: []*Type{Int, Int, Int}, Ret: Int},
-	"win.image":       {Params: []*Type{Str}, Ret: ResultOf(Int)},
-	"win.imageWidth":  {Params: []*Type{Int}, Ret: Int},
-	"win.imageHeight": {Params: []*Type{Int}, Ret: Int},
-	"win.freeImage":   {Params: []*Type{Int}, Ret: Void},
-	"win.draw":        {Params: []*Type{Int, Int, Int, Int}, Ret: Void},
-	"win.drawScaled":  {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Void},
-	"win.drawKeyed":   {Params: []*Type{Int, Int, Int, Int, Int}, Ret: Void},
-	"win.textWidth":   {Params: []*Type{Int, Str}, Ret: Int},
-	"win.textHeight":  {Params: []*Type{Int}, Ret: Int},
-	"sound.play":      {Params: []*Type{Str}, Ret: Bool},
-	"sound.loop":      {Params: []*Type{Str}, Ret: Bool},
-	"sound.stop":      {Ret: Void},
+	"win.canvas": {Params: []*Type{Int, Int}, Ret: Int},
+	"win.pixel":  {Params: []*Type{Int, Int, Int}, Ret: Int},
+	"win.image":  {Params: []*Type{Str}, Ret: ResultOf(Int)},
+	// Private to the prelude's win.image; see winmedia.go.
+	"__imageFromBMP":    {Params: []*Type{Str}, Ret: Int},
+	"__imageFromPixels": {Params: []*Type{Bytes}, Ret: Int},
+	"win.imageWidth":    {Params: []*Type{Int}, Ret: Int},
+	"win.imageHeight":   {Params: []*Type{Int}, Ret: Int},
+	"win.freeImage":     {Params: []*Type{Int}, Ret: Void},
+	"win.draw":          {Params: []*Type{Int, Int, Int, Int}, Ret: Void},
+	"win.drawScaled":    {Params: []*Type{Int, Int, Int, Int, Int, Int}, Ret: Void},
+	"win.drawKeyed":     {Params: []*Type{Int, Int, Int, Int, Int}, Ret: Void},
+	"win.textWidth":     {Params: []*Type{Int, Str}, Ret: Int},
+	"win.textHeight":    {Params: []*Type{Int}, Ret: Int},
+	"sound.play":        {Params: []*Type{Str}, Ret: Bool},
+	"sound.loop":        {Params: []*Type{Str}, Ret: Bool},
+	"sound.stop":        {Ret: Void},
 
 	// The widgets, written in Veyl in the prelude on top of the above.
 	// SQLite. A connection is an opaque int handle, and every value
