@@ -278,7 +278,7 @@ func (l *lowerer) elemAddr(list, idx Reg) Reg {
 
 	l.mark(bad)
 	l.mod.needs("bounds")
-	l.emit(Instr{Op: OpBoundsFail, A: idx, B: length, Dst: NoReg})
+	l.emit(Instr{Op: OpBoundsFail, A: idx, B: length, Dst: NoReg, Imm: l.where()})
 
 	l.mark(ok)
 	data := l.field(list, listDataOff, vInt)

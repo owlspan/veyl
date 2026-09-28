@@ -48,7 +48,8 @@ const (
 	gcTasksSlot  = 6 // threads running besides main, during which nothing collects
 	gcNextSlot   = 7 // live bytes at which the next automatic collection runs
 	gcLockSlot   = 8 // the allocation lock, taken while other threads run
-	gcReserved   = 9
+	gcWhereSlot  = 9 // where a runtime error happened, as a string; see where.go
+	gcReserved   = 10
 )
 
 // rtSlot is the address of one of the runtime's own global words.

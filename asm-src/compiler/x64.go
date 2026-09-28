@@ -185,6 +185,8 @@ func Emit(m *Module) string {
 	e.b.WriteString("    .asciz \"%lld\"\n")
 	e.label("__fmt_str_raw")
 	e.b.WriteString("    .asciz \"%s\"\n")
+	e.label("__fmt_at")
+	e.b.WriteString("    .asciz \"    at %s\\n\"\n")
 	e.label("__fmt_bounds")
 	e.b.WriteString("    .asciz \"runtime error: index %lld is out of range for a list of length %lld\\n\"\n")
 	e.label("__fmt_must")
@@ -263,6 +265,12 @@ func Emit(m *Module) string {
 		for _, x := range m.Exports {
 			e.thunk(x.Thunk)
 		}
+	}
+	if m.Helpers["crash"] {
+		// Where the program's code ends, for the crash handler to tell
+		// an address in it from one in a DLL.
+		e.label("__vy_text_end")
+		e.line("ret")
 	}
 
 	return e.b.String()
@@ -1011,11 +1019,13 @@ func (e *Emitter) instr(in Instr) {
 		e.line("mov byte ptr [rax+rcx], dl")
 
 	case OpBoundsFail:
+		e.where(in)
 		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("mov rdx, %s", e.loc(in.B))
 		e.line("call __vy_bounds")
 
 	case OpMustFail:
+		e.where(in)
 		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("call __vy_must")
 
@@ -1392,9 +1402,14 @@ __vy_bounds:
     mov ecx, 2
     lea rdx, [rbp-200]
     call _write
+    call __vy_where
     mov ecx, 1
     call exit
 `)
+	}
+
+	if e.mod.Helpers["must"] || e.mod.Helpers["bounds"] {
+		e.b.WriteString(whereRoutine)
 	}
 
 	if e.mod.Helpers["must"] {
@@ -1429,6 +1444,7 @@ __vy_must:
     mov ecx, 2
     lea rdx, [rbp-200]
     call _write
+    call __vy_where
     mov ecx, 1
     call exit
 `)

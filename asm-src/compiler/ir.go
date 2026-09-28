@@ -848,6 +848,12 @@ type lowerer struct {
 	// built, so the next writeStruct of it is that function's own body.
 	inlineOnce string
 
+	// Where the code being lowered came from, for runtime errors to say;
+	// see where.go.
+	curFile   string
+	curLine   int
+	fnDisplay string
+
 	// gcOff is a program that said `gc off`: it frees with delete, and
 	// nothing collects, not even mem.collect.
 	gcOff    bool
@@ -1001,6 +1007,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 	// main last, so it reads as the entry point at the bottom of the
 	// listing the way it does in the source.
 	l.fn = &Func{Name: "main", Ret: vVoid}
+	l.curFile, l.fnDisplay = file, "the top level"
 	l.slotTy = map[int64]vty{}
 	l.regTy = map[Reg]vty{}
 	l.boxed = map[int64]bool{}
@@ -1016,6 +1023,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 	l.mod.NGlobals = len(l.globals) + gcReserved
 	l.rtStore(gcNGlobSlot, l.constant(int64(l.mod.NGlobals)))
 	l.rtStore(gcNextSlot, l.constant(gcFirst))
+	l.installCrashHandler()
 	// The globals' values are computed here, at the top of main, and
 	// written into static storage. Every user function is reached from
 	// main, so nothing can read one before this runs.
@@ -1031,6 +1039,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 	l.popScope()
 	l.seal()
 
+	l.buildCrashHandler()
 	l.checkLabels()
 	return l.mod, l.errs
 }
@@ -1075,6 +1084,7 @@ func (l *lowerer) function(fd *FnDecl) {
 	}
 
 	l.fn = &Func{Name: name, NParams: len(fd.Params), ParamTypes: s.params, Ret: s.ret}
+	l.curFile, l.fnDisplay = fd.File, name
 	l.slotTy = map[int64]vty{}
 	l.regTy = map[Reg]vty{}
 	l.boxed = map[int64]bool{}
@@ -1345,6 +1355,7 @@ func (l *lowerer) mark(label int64) {
 // ---- statements ----
 
 func (l *lowerer) stmt(s Stmt) {
+	l.curLine, _ = s.Pos()
 	// Stress mode. Not inside a helper: the collector is written in the
 	// IR itself, and collecting on the way into collecting would not
 	// terminate.
@@ -3460,6 +3471,8 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 	savedScopes, savedLoops, savedBuf := l.scopes, l.loops, l.buf
 	savedDefers := l.defers
 	l.defers = nil
+	savedFile, savedLine, savedDisplay := l.curFile, l.curLine, l.fnDisplay
+	l.curFile = "" // the compiler's own code has no line of the program's
 	savedInHelper := l.inHelper
 	l.inHelper = true
 
@@ -3485,6 +3498,7 @@ func (l *lowerer) helperFunc(name string, params []vty, ret vty, body func(args 
 	l.fn, l.slotTy, l.regTy = savedFn, savedSlots, savedRegs
 	l.scopes, l.loops, l.buf = savedScopes, savedLoops, savedBuf
 	l.defers = savedDefers
+	l.curFile, l.curLine, l.fnDisplay = savedFile, savedLine, savedDisplay
 	l.inHelper = savedInHelper
 	return name
 }

@@ -87,7 +87,7 @@ func (l *lowerer) mathBuiltin(c *Call, name string) (Reg, bool) {
 			return l.junk(), true
 		}
 		l.emit(Instr{Op: OpMustFail, A: reason, Dst: NoReg, B: NoReg,
-			Comment: "__abort()"})
+			Imm: l.where(), Comment: "__abort()"})
 		// Nothing runs after it, but the lowerer still needs a register
 		// to hand back to whatever asked for the value.
 		if name == "__abortStr" {

@@ -156,7 +156,7 @@ func (l *lowerer) mustExpr(r Reg, t vty) Reg {
 	ok := l.newLabel()
 	l.emit(Instr{Op: OpJumpIf, A: l.resIsOk(r), Dst: NoReg, Imm: ok})
 	l.emit(Instr{Op: OpMustFail, A: l.resErr(r), Dst: NoReg, B: NoReg,
-		Comment: "must failed"})
+		Imm: l.where(), Comment: "must failed"})
 	l.mark(ok)
 	return l.resValue(r, t)
 }
