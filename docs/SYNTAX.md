@@ -2084,6 +2084,15 @@ jobs.close()
 thread.join(worker)
 ```
 
+A `for` loop takes every value a channel carries, waiting for each, and
+ends once the channel is closed and empty:
+
+```veyl
+for line in results {
+    print(line)
+}
+```
+
 `send` adds a value and wakes a receiver. `recv` gives the next one,
 waiting if there is none, and `nil` once the channel is closed and
 empty. `close` says no more are coming; sending after it stops the

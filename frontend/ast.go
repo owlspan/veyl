@@ -540,6 +540,11 @@ type ForStmt struct {
 	// collection form
 	Coll  Expr
 	CollT *Type // the collection's type, filled in by the checker
+
+	// Lowered is what the checker made of a loop over a channel: a
+	// while that receives until the channel is closed and drained. A
+	// backend runs this instead when it is set.
+	Lowered Stmt
 }
 
 // MatchCase is one arm: `1, 2 => body`.
