@@ -163,6 +163,9 @@ func Emit(m *Module) string {
 	}
 
 	e.b.WriteString("\n    .section .rdata\n")
+	if e.mod.Helpers["rodata"] {
+		e.label("__rodata_begin") // see delete, in gcoff.go
+	}
 	e.label("__fmt_int")
 	e.b.WriteString("    .asciz \"%lld\\n\"\n")
 	e.label("__fmt_str")
@@ -190,6 +193,10 @@ func Emit(m *Module) string {
 	for i, s := range m.Strings {
 		e.label(fmt.Sprintf("__str%d", i))
 		e.b.WriteString("    .asciz \"" + escapeAsm(s) + "\"\n")
+	}
+	if e.mod.Helpers["rodata"] {
+		e.label("__rodata_end")
+		e.b.WriteString("    .asciz \"\"\n")
 	}
 
 	// Top-level consts. Writable, so they cannot live in .rdata beside

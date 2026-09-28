@@ -830,6 +830,10 @@ type lowerer struct {
 	// inlineOnce is a recursive struct whose rendering function is being
 	// built, so the next writeStruct of it is that function's own body.
 	inlineOnce string
+
+	// gcOff is a program that said `gc off`: it frees with delete, and
+	// nothing collects, not even mem.collect.
+	gcOff bool
 	eqInline   string
 
 	// autoGC is automatic collection: on, except in a DLL, whose
@@ -890,7 +894,8 @@ func Lower(p *Program, file string) (*Module, []string) {
 		globalTy:  map[int64]vty{},
 		buf:       -1,
 		gcStress:  os.Getenv("VEYL_GC_STRESS") != "",
-		autoGC:    !lowerForDLL && os.Getenv("VEYL_GC") != "off",
+		autoGC:    !lowerForDLL && os.Getenv("VEYL_GC") != "off" && p.GC != "off",
+		gcOff:     p.GC == "off",
 	}
 
 	// Struct layouts before signatures, because a parameter or a return
@@ -2020,6 +2025,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 			l.emit(Instr{Op: OpPrintBool, A: a, Dst: NoReg, Comment: "print"})
 		case kStr:
 			l.emit(Instr{Op: OpPrintStr, A: a, Dst: NoReg, Comment: "print"})
+			if l.gcOff && freshStr(c.Args[0]) {
+				l.freeObject(a) // a temporary; see gcoff.go
+			}
 		case kBytes:
 			l.mod.needs("write")
 			l.renderBytes(a)
@@ -2044,6 +2052,9 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		switch l.regTy[a].k {
 		case kStr:
 			l.emit(Instr{Op: OpWriteStr, A: a, Dst: NoReg, Comment: "write"})
+			if l.gcOff && freshStr(c.Args[0]) {
+				l.freeObject(a)
+			}
 		case kFloat:
 			l.mod.needs("floattostr")
 			l.emit(Instr{Op: OpWriteFloat, A: a, Dst: NoReg, Comment: "write"})
@@ -2729,6 +2740,9 @@ func (l *lowerer) binary(x *Binary) Reg {
 			d := l.newReg()
 			l.regTy[d] = vStr
 			l.emit(Instr{Op: OpConcat, Dst: d, A: a, B: b})
+			if l.gcOff {
+				l.freeTemps(x.L, a, x.R, b)
+			}
 			return d
 		case EQ, NEQ:
 			l.mod.needs("streq")
@@ -2905,10 +2919,14 @@ func (l *lowerer) shortCircuit(x *Binary) Reg {
 func (l *lowerer) interp(x *Interp) Reg {
 	var acc Reg
 	first := true
+	// Under gc off, which pieces are strings made here and nowhere
+	// else, and so freed once they are joined: see freeTemps.
+	accFresh := false
 
-	add := func(r Reg) {
+	add := func(r Reg, fresh bool) {
 		if first {
 			acc = r
+			accFresh = fresh
 			first = false
 			return
 		}
@@ -2916,7 +2934,16 @@ func (l *lowerer) interp(x *Interp) Reg {
 		d := l.newReg()
 		l.regTy[d] = vStr
 		l.emit(Instr{Op: OpConcat, Dst: d, A: acc, B: r})
+		if l.gcOff {
+			if accFresh {
+				l.freeObject(acc)
+			}
+			if fresh {
+				l.freeObject(r)
+			}
+		}
 		acc = d
+		accFresh = true
 	}
 
 	for _, part := range x.Parts {
@@ -2925,10 +2952,13 @@ func (l *lowerer) interp(x *Interp) Reg {
 			l.regTy[d] = vStr
 			l.emit(Instr{Op: OpStr, Dst: d, A: NoReg, B: NoReg,
 				Imm: l.mod.intern(part.Lit)})
-			add(d)
+			add(d, false)
 		}
 		if part.X != nil {
-			add(l.toStr(l.expr(part.X), x))
+			v := l.expr(part.X)
+			t := l.regTy[v]
+			fresh := freshStr(part.X) || (t.k == kInt && !isEnum(t) && !t.null && !t.res)
+			add(l.toStr(v, x), fresh)
 		}
 	}
 

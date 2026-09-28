@@ -412,6 +412,7 @@ var sigs = map[string]front.Signature{
 	"mem.collections":  {Ret: Int},
 	"mem.goroutines":   {Ret: Int},
 	"mem.collect":      {Ret: Void},
+	"delete":           {Params: []*Type{Any}, Ret: Void},
 	"os.file.readOr":   {Params: []*Type{Str, Str}, Ret: Str},
 	"os.path.base":     {Params: []*Type{Str}, Ret: Str},
 	"os.path.dir":      {Params: []*Type{Str}, Ret: Str},

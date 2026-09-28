@@ -47,6 +47,11 @@ type Program struct {
 	// MainFile is the absolute path of the file the compiler was invoked
 	// on, as opposed to anything it pulled in.
 	MainFile string
+
+	// GC is "off" when the file says `gc off`: nothing is collected,
+	// and delete frees a value by hand. "" is the default, collected.
+	GC   string
+	GCAt Span
 }
 
 // EnumDecl is `enum State { Idle, Running, Done }`. A variant is

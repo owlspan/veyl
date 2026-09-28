@@ -116,6 +116,8 @@ pipeline:
 - `mem.call` and `mem.symbol`: call native code at any address
 - interfaces: `interface Shape { fn area(self) -> float }`, satisfied
   by any struct with the methods, as in Go
+- garbage collected by default, or `gc off` at the top of a file to
+  free memory by hand with `delete`, as in C++
 
 - `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
   `padRight`, and the constants `INF` and `NAN`, with comparisons that

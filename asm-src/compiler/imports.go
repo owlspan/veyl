@@ -137,6 +137,12 @@ func (l *importLoader) load(imp *ImportDecl, target string) (*Program, bool) {
 				"move this statement into the program that imports it", name, line, col))
 	}
 
+	if sub.GC != "" {
+		l.errors = append(l.errors, fmt.Sprintf(
+			"%s:%d:%d: gc %s is for the whole program, so it goes in the file you build, not one it imports",
+			name, sub.GCAt.Line, sub.GCAt.Col, sub.GC))
+	}
+
 	stampImportedFile(sub, target)
 	return sub, true
 }
