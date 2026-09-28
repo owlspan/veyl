@@ -513,6 +513,11 @@ const (
 	OpAtomicSwap
 	OpAtomicCAS
 
+	// OpGCPoll is a statement's check of the heap against the next
+	// collection's threshold, calling Sym, the gcmaybe helper, when it is
+	// over.
+	OpGCPoll
+
 	// Raw memory at a width. Imm is one of the mem* kinds below, which
 	// says how many bytes, whether a narrow integer is sign-extended,
 	// and whether the value is a float. Dst is an int or a float to
@@ -901,7 +906,7 @@ func Lower(p *Program, file string) (*Module, []string) {
 		globals:   map[string]int64{},
 		globalTy:  map[int64]vty{},
 		buf:       -1,
-		gcStress:  os.Getenv("VEYL_GC_STRESS") != "",
+		gcStress:  os.Getenv("VEYL_GC_STRESS") != "" && p.GC != "off",
 		autoGC:    !lowerForDLL && os.Getenv("VEYL_GC") != "off" && p.GC != "off",
 		gcOff:     p.GC == "off",
 	}

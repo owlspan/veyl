@@ -119,9 +119,6 @@ var gcFirst = func() int64 {
 // already reachable from one of those, which is also what stress mode
 // relies on.
 func (l *lowerer) maybeCollect() {
-	skip := l.newLabel()
-	over := l.compare(OpGt, l.rtLoad(gcBytesSlot), l.rtLoad(gcNextSlot))
-	l.emit(Instr{Op: OpJumpNot, A: over, Dst: NoReg, Imm: skip})
 	name := l.helperFunc("gcmaybe", nil, vVoid, func([]Reg) {
 		// Not while tasks run: the collector reads only the stack it
 		// runs on, and a pointer on another thread's would be missed.
@@ -140,8 +137,10 @@ func (l *lowerer) maybeCollect() {
 		l.rtStore(gcNextSlot, l.pick(l.compare(OpGt, twice, floor), twice, floor, vInt))
 		l.emit(Instr{Op: OpRet, A: NoReg, Dst: NoReg})
 	})
-	l.callHelper(name, nil, nil, vVoid)
-	l.mark(skip)
+	// One instruction here, expanded by the emitter into the compare and
+	// the call, so the optimiser can see it whole and drop the ones no
+	// allocation can have made necessary: see dropPolls in opt.go.
+	l.emit(Instr{Op: OpGCPoll, Dst: NoReg, A: NoReg, B: NoReg, Sym: name})
 }
 
 // memBuiltin lowers the mem library.
