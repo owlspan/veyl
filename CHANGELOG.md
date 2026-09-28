@@ -3,6 +3,18 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.33.0
+
+**Default parameter values.** `fn greet(name: str, greeting: str =
+"hello")` can be called as `greet("ada")`. A default is a constant - a
+number, a string, `true`, `false`, `nil` or an enum's variant - and
+every parameter after one with a default has one too. Methods take
+them as well. A call that leaves arguments off gets a copy of each
+default written into it, so nothing past the checker changed.
+
+**Naming a generic method's types.** `bag.empty<str>()` or
+`b.map<str>(f)`, for when the arguments cannot say.
+
 ## 0.32.0
 
 **defer.** `defer stmt` runs stmt when its block is left - at its end,
