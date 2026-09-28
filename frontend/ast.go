@@ -310,6 +310,11 @@ type StructDecl struct {
 	Extern bool
 	Size   int
 	Align  int
+
+	// TypeParams and Toks make a generic struct a template, as they do
+	// a function; see FnDecl.
+	TypeParams []string
+	Toks       []Token
 }
 
 // ImplBlock is `impl User { fn ... }`. Its methods are hoisted into the
@@ -372,6 +377,20 @@ type FnDecl struct {
 	// Export marks `export fn`: in a DLL build the function is in the
 	// export table under its own name, callable from native code.
 	Export bool
+
+	// TypeParams are the names in `fn max<T>(...)`. A function with any
+	// is a template: it is never checked or compiled as written, only
+	// copied out once per set of types it is called with. See
+	// generics.go. RecvParams are the same for a method in `impl Box<T>`,
+	// whose type parameters belong to the struct.
+	TypeParams []string
+	RecvParams []string
+
+	// Toks is a template's source, from `fn` to the end of the body.
+	Toks []Token
+
+	// Instance marks a copy made from a template.
+	Instance bool
 }
 
 // ---- statements ----

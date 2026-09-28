@@ -68,7 +68,7 @@ func exportOf(fd *FnDecl) Export {
 	}
 	return Export{
 		Name:  fd.Name,
-		Thunk: Thunk{Sym: "__vy_export_" + sanitizeSym(fd.Name), Target: "__vy_" + fd.Name, Widen: widen},
+		Thunk: Thunk{Sym: "__vy_export_" + sanitizeSym(fd.Name), Target: fnSym(fd.Name), Widen: widen},
 	}
 }
 

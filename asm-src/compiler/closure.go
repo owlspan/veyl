@@ -109,7 +109,7 @@ func (l *lowerer) makeClosure(code string, captured []capture) Reg {
 
 	addr := l.newReg()
 	l.regTy[addr] = vInt
-	l.emit(Instr{Op: OpSymAddr, Dst: addr, A: NoReg, B: NoReg, Sym: "__vy_" + code,
+	l.emit(Instr{Op: OpSymAddr, Dst: addr, A: NoReg, B: NoReg, Sym: fnSym(code),
 		Comment: code})
 	l.emit(Instr{Op: OpStoreMem, A: clo, B: addr, Dst: NoReg, Imm: cloCodeOff})
 	return clo

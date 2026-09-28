@@ -109,6 +109,8 @@ pipeline:
   every `export fn`
 - `var` globals every function can change, and enums, with a `match`
   on one checked for every variant
+- generics: `fn largest<T>(xs: []T) -> T`, `struct Stack<T>` and
+  `impl Stack<T>`, each use compiled to its own copy as in C++
 
 - `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
   `padRight`, and the constants `INF` and `NAN`, with comparisons that
@@ -120,7 +122,7 @@ is caught by the lowerer rather than the checker. Everything absent is
 a compile error naming it, never wrong output.
 
 What the Go backend does not have: `extern fn` and callbacks, raw
-memory and `extern struct`, DLLs, `var` globals, enums, and the `\xHH`
+memory and `extern struct`, DLLs, `var` globals, enums, generics, and the `\xHH`
 and `\u{...}` string escapes. The differential suite
 compares programs both backends can run; the extern demos sit in
 `examples/ffi/`, and programs that need the escapes or feed standard

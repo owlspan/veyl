@@ -487,6 +487,21 @@ func ParseType(s string) *Type {
 		}
 	}
 
+	// Box<int>: an instance of a generic struct. Its name is rebuilt from
+	// the parsed arguments, so however it was spaced it names the same
+	// struct.
+	if base, args, ok := SplitGeneric(s); ok {
+		canon := make([]string, len(args))
+		for i, a := range args {
+			t := ParseType(a)
+			if t == nil {
+				return nil
+			}
+			canon[i] = t.String()
+		}
+		return StructOf(GenericName(base, canon))
+	}
+
 	// Anything else that looks like a name is taken to be a struct. The
 	// checker owns the question of whether that struct was declared -
 	// this function has no table to consult.
@@ -524,6 +539,13 @@ func splitTopLevel(s string, sep byte) []string {
 			depth++
 		case ')', ']', '}':
 			depth--
+		case '<':
+			depth++
+		case '>':
+			// The arrow of a function type is not a closing bracket.
+			if i == 0 || s[i-1] != '-' {
+				depth--
+			}
 		case sep:
 			if depth == 0 {
 				parts = append(parts, strings.TrimSpace(s[start:i]))
@@ -532,6 +554,19 @@ func splitTopLevel(s string, sep byte) []string {
 		}
 	}
 	return append(parts, strings.TrimSpace(s[start:]))
+}
+
+// SplitGeneric takes Box<int, str> apart into Box and [int, str].
+func SplitGeneric(s string) (string, []string, bool) {
+	open := strings.IndexByte(s, '<')
+	if open <= 0 || !strings.HasSuffix(s, ">") || !isTypeName(s[:open]) {
+		return "", nil, false
+	}
+	inner := strings.TrimSpace(s[open+1 : len(s)-1])
+	if inner == "" {
+		return "", nil, false
+	}
+	return s[:open], splitTopLevel(inner, ','), true
 }
 
 func isTypeName(s string) bool {

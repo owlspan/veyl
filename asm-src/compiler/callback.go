@@ -127,7 +127,7 @@ func (l *lowerer) callbackArg(e Expr, want vty, widen []widenArg) Reg {
 		}
 	}
 	if !known {
-		l.mod.Thunks = append(l.mod.Thunks, Thunk{Sym: sym, Target: "__vy_" + id.Name, Widen: widen})
+		l.mod.Thunks = append(l.mod.Thunks, Thunk{Sym: sym, Target: fnSym(id.Name), Widen: widen})
 	}
 
 	d := l.newReg()

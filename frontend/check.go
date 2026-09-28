@@ -30,6 +30,18 @@ type Checker struct {
 	// lib is the backend's set of builtins. The checker never assumes
 	// which backend it is serving; see library.go.
 	lib Library
+
+	// Generics; see generics.go. Templates by name, the instances whose
+	// bodies are still to be checked, and which instance, if any, the
+	// code being checked belongs to.
+	prog       *Program
+	genFuncs   map[string]*FnDecl
+	genStructs map[string]*StructDecl
+	genMethods map[string][]*FnDecl
+	pending    []*FnDecl
+	instances  int
+	instName   string
+	instFile   string
 }
 
 func NewChecker(file string, lib Library) *Checker {
@@ -89,8 +101,11 @@ func (c *Checker) pkg() string {
 
 func (c *Checker) ErrorAt(n Node, format string, args ...any) {
 	line, col := n.Pos()
-	c.Errors = append(c.Errors,
-		fmt.Sprintf("%s:%d:%d: %s", c.useFile(), line, col, fmt.Sprintf(format, args...)))
+	msg := fmt.Sprintf(format, args...)
+	if c.instName != "" {
+		msg += " (in " + c.instName + ")"
+	}
+	c.Errors = append(c.Errors, fmt.Sprintf("%s:%d:%d: %s", c.useFile(), line, col, msg))
 }
 
 // useFile is the file the code being checked is in: the function's, the
@@ -99,6 +114,8 @@ func (c *Checker) ErrorAt(n Node, format string, args ...any) {
 // it is actually in.
 func (c *Checker) useFile() string {
 	switch {
+	case c.instFile != "":
+		return c.instFile
 	case c.curFn != nil && c.curFn.File != "":
 		return c.curFn.File
 	case c.curGlob != nil && c.curGlob.File != "":
@@ -288,8 +305,12 @@ func (c *Checker) resolveAnnotation(text string, n Node) *Type {
 		return Unknown
 	}
 	t = c.enumTypes(t)
-	if bad := c.undeclaredStruct(t); bad != "" {
-		c.ErrorAt(n, "unknown type %q", bad)
+	if bad := c.undeclaredStruct(t, n); bad != "" {
+		if hint := c.genericHint(bad); hint != "" {
+			c.ErrorAt(n, "%s", hint)
+		} else {
+			c.ErrorAt(n, "unknown type %q", bad)
+		}
 		return Unknown
 	}
 	return t
@@ -298,22 +319,40 @@ func (c *Checker) resolveAnnotation(text string, n Node) *Type {
 // undeclaredStruct returns the name of the first struct inside a type
 // that was never declared, so `[]Widget` reports Widget rather than the
 // whole type.
-func (c *Checker) undeclaredStruct(t *Type) string {
+//
+// A generic struct's instance, Box<int>, is made here the first time a
+// type names it.
+func (c *Checker) undeclaredStruct(t *Type, n Node) string {
 	if t == nil {
 		return ""
 	}
 	switch t.Kind {
 	case KStruct:
-		if _, ok := c.structs[t.Name]; !ok {
+		if _, ok := c.structs[t.Name]; !ok && !c.instStruct(t.Name, n) {
 			return t.Name
 		}
 	case KList:
-		return c.undeclaredStruct(t.Elem)
+		return c.undeclaredStruct(t.Elem, n)
 	case KMap:
-		if bad := c.undeclaredStruct(t.Key); bad != "" {
+		if bad := c.undeclaredStruct(t.Key, n); bad != "" {
 			return bad
 		}
-		return c.undeclaredStruct(t.Elem)
+		return c.undeclaredStruct(t.Elem, n)
+	case KNullable, KResult:
+		if t.Elem != nil && strings.Contains(t.Elem.String(), "<") {
+			return c.undeclaredStruct(t.Elem, n)
+		}
+	case KFunc:
+		for _, p := range t.Params {
+			if strings.Contains(p.String(), "<") {
+				if bad := c.undeclaredStruct(p, n); bad != "" {
+					return bad
+				}
+			}
+		}
+		if t.Elem != nil && strings.Contains(t.Elem.String(), "<") {
+			return c.undeclaredStruct(t.Elem, n)
+		}
 	}
 	return ""
 }
@@ -321,6 +360,9 @@ func (c *Checker) undeclaredStruct(t *Type) string {
 // ---- entry point ----
 
 func (c *Checker) Check(p *Program) {
+	c.prog = p
+	c.collectTemplates(p)
+
 	// Pass 0: register struct names before resolving anything, so a field
 	// may refer to a struct declared further down the file - including
 	// itself, through a list.
@@ -335,23 +377,10 @@ func (c *Checker) Check(p *Program) {
 			c.layout(d, map[string]bool{})
 			continue
 		}
-		for i := range d.Fields {
-			f := &d.Fields[i]
-			f.T = c.resolveAnnotation(f.Type, f)
-			if f.T == nil {
-				f.T = Unknown
-			}
-			// A struct cannot contain itself by value: the type would need
-			// infinite space. Through a list or map it is fine.
-			if f.T.Kind == KStruct && f.T.Name == d.Name {
-				c.ErrorAt(f, "%s cannot contain itself - use []%s if you meant a list of them",
-					d.Name, d.Name)
-				f.T = Unknown
-			}
-		}
+		c.resolveFields(d)
 	}
 	for _, f := range p.Funcs {
-		if f.Recv == "" {
+		if f.Recv == "" || f.Instance {
 			continue
 		}
 		if c.methods[f.Recv] == nil {
@@ -373,50 +402,15 @@ func (c *Checker) Check(p *Program) {
 	// Pass 1: resolve every signature before checking any body, so calls
 	// to functions declared later in the file type-check correctly.
 	for _, f := range p.Funcs {
-		// The entry point is the top-level statements, which each backend
-		// wraps in a generated main. A function the author named main
-		// collides with it: the Go backend refuses the generated file
-		// with "main redeclared", and the assembly one linked the empty
-		// wrapper over the real body and ran nothing. Saying it here
-		// points at the author's line instead.
-		if f.Name == "main" && f.Recv == "" {
-			c.ErrorAt(f, "a program starts at its top-level statements, which are already "+
-				"called main - rename this function or move its body to the top level")
-		}
-		for i := range f.Params {
-			prm := &f.Params[i]
-			// `self` takes its type from the impl block, not an annotation.
-			if i == 0 && f.Recv != "" && prm.Name == "self" {
-				prm.T = StructOf(f.Recv)
-				continue
-			}
-			prm.T = c.resolveAnnotation(prm.Type, prm)
-			if prm.T == nil {
-				prm.T = Unknown
-			}
-		}
-		if f.Ret == "" {
-			f.RetT = Void
-		} else {
-			f.RetT = c.resolveAnnotation(f.Ret, f)
-		}
-		if f.Export {
-			c.checkExportDecl(f)
-		}
-		if f.Extern {
-			c.checkExternDecl(f)
-		} else if f.Variadic {
-			c.ErrorAt(f, "'...' is only allowed on an extern declaration")
-		}
-		if f.Recv == "" {
-			c.funcs[Qual(f.Pkg, f.Name)] = f
+		if !f.Instance {
+			c.resolveSig(f)
 		}
 	}
 
 	// Pass 2: each function body, in its own scope. An extern has no
 	// body to check - it names code that lives outside the program.
 	for _, f := range p.Funcs {
-		if f.Extern {
+		if f.Extern || f.Instance {
 			continue
 		}
 		c.checkFn(f)
@@ -429,7 +423,72 @@ func (c *Checker) Check(p *Program) {
 		c.stmt(s)
 	}
 	c.pop()
+
+	// Last, the generic instances all that asked for, in the scope of
+	// the globals alone.
+	c.checkPending()
 	c.pop() // globals
+}
+
+// resolveFields gives each field of a struct its type.
+func (c *Checker) resolveFields(d *StructDecl) {
+	for i := range d.Fields {
+		f := &d.Fields[i]
+		f.T = c.resolveAnnotation(f.Type, f)
+		if f.T == nil {
+			f.T = Unknown
+		}
+		// A struct cannot contain itself by value: the type would need
+		// infinite space. Through a list or map it is fine.
+		if f.T.Kind == KStruct && f.T.Name == d.Name {
+			c.ErrorAt(f, "%s cannot contain itself - use []%s if you meant a list of them",
+				d.Name, d.Name)
+			f.T = Unknown
+		}
+	}
+}
+
+// resolveSig gives a function's parameters and result their types, and
+// files it under its name.
+func (c *Checker) resolveSig(f *FnDecl) {
+	// The entry point is the top-level statements, which each backend
+	// wraps in a generated main. A function the author named main
+	// collides with it: the Go backend refuses the generated file
+	// with "main redeclared", and the assembly one linked the empty
+	// wrapper over the real body and ran nothing. Saying it here
+	// points at the author's line instead.
+	if f.Name == "main" && f.Recv == "" {
+		c.ErrorAt(f, "a program starts at its top-level statements, which are already "+
+			"called main - rename this function or move its body to the top level")
+	}
+	for i := range f.Params {
+		prm := &f.Params[i]
+		// `self` takes its type from the impl block, not an annotation.
+		if i == 0 && f.Recv != "" && prm.Name == "self" {
+			prm.T = StructOf(f.Recv)
+			continue
+		}
+		prm.T = c.resolveAnnotation(prm.Type, prm)
+		if prm.T == nil {
+			prm.T = Unknown
+		}
+	}
+	if f.Ret == "" {
+		f.RetT = Void
+	} else {
+		f.RetT = c.resolveAnnotation(f.Ret, f)
+	}
+	if f.Export {
+		c.checkExportDecl(f)
+	}
+	if f.Extern {
+		c.checkExternDecl(f)
+	} else if f.Variadic {
+		c.ErrorAt(f, "'...' is only allowed on an extern declaration")
+	}
+	if f.Recv == "" {
+		c.funcs[Qual(f.Pkg, f.Name)] = f
+	}
 }
 
 func (c *Checker) checkFn(f *FnDecl) {
@@ -1035,8 +1094,17 @@ func (c *Checker) field(x *Field) *Type {
 // and any left out take their zero value - but a name that is not a
 // field at all, or given twice, is an error.
 func (c *Checker) structLit(x *StructLit) *Type {
+	if strings.Contains(x.Name, "<") {
+		if t := ParseType(x.Name); t != nil && t.Kind == KStruct {
+			x.Name = t.Name
+		}
+		c.instStruct(x.Name, x)
+	}
 	d, ok := c.structs[x.Name]
 	if !ok {
+		if hint := c.genericHint(x.Name); hint != "" {
+			c.ErrorAt(x, "%s", hint)
+		}
 		for i := range x.Vals {
 			c.expr(x.Vals[i])
 		}
@@ -1568,6 +1636,18 @@ func (c *Checker) arithmetic(x *Binary, lt, rt *Type) *Type {
 // ---- calls ----
 
 func (c *Checker) call(x *Call) *Type {
+	// A generic called with its types named, max<int>(a, b), becomes a
+	// call to that instance before anything else looks at it.
+	if name, ok := DottedName(x.Callee); ok && strings.Contains(name, "<") {
+		if f, generic := c.genericCall(x, name, nil); generic && f == nil {
+			for i := range x.Args {
+				c.expr(x.Args[i])
+			}
+			x.T = Unknown
+			return x.T
+		}
+	}
+
 	// Arguments are typed with the parameter type as a hint, so an empty
 	// collection literal passed straight to a function knows what it is.
 	// That means working out the callee first.
@@ -1650,7 +1730,15 @@ func (c *Checker) call(x *Call) *Type {
 		f, isUser = c.funcs[Qual(c.pkg(), name)]
 	}
 	if !isUser {
-		return Unknown // the resolver reported it
+		g, generic := c.genericCall(x, name, args)
+		if !generic {
+			return Unknown // the resolver reported it
+		}
+		if g == nil {
+			x.T = Unknown
+			return x.T
+		}
+		f, name = g, g.Name
 	}
 	c.checkFnPrivacy(x, f)
 	// Arity is the resolver's job; only check the arguments we have.
@@ -2059,7 +2147,8 @@ func (c *Checker) globalNamed(name string) *LetStmt {
 }
 
 func (c *Checker) checkFnPrivacy(at Node, f *FnDecl) {
-	if f.Recv == "" && c.private(f.File, f.Pub) {
+	// An instance was checked as its template, under the name written.
+	if f.Recv == "" && !f.Instance && c.private(f.File, f.Pub) {
 		c.ErrorAt(at, "%q is private to %s - mark it 'pub fn %s' to use it from another file",
 			f.Name, baseName(f.File), f.Name)
 	}

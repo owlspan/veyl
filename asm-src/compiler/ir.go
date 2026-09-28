@@ -1975,6 +1975,12 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		if isEnum(l.regTy[a]) {
 			a = l.enumName(a)
 		}
+		// A nullable is the value or nil, unquoted, as interpolation
+		// shows it; the word it is held in is a box's address.
+		if t := l.regTy[a]; t.null && !t.res {
+			l.emit(Instr{Op: OpPrintStr, A: l.strOfNull(c, a, t), Dst: NoReg, Comment: "print"})
+			return l.void()
+		}
 		switch l.regTy[a].k {
 		case kStruct:
 			l.mod.needs("write")
@@ -2007,6 +2013,10 @@ func (l *lowerer) builtin(c *Call, name string) Reg {
 		a := l.expr(c.Args[0])
 		if isEnum(l.regTy[a]) {
 			a = l.enumName(a)
+		}
+		if t := l.regTy[a]; t.null && !t.res {
+			l.emit(Instr{Op: OpWriteStr, A: l.strOfNull(c, a, t), Dst: NoReg, Comment: "write"})
+			return l.void()
 		}
 		switch l.regTy[a].k {
 		case kStr:
