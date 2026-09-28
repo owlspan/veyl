@@ -114,6 +114,8 @@ pipeline:
 - enums whose variants carry values, `Circle(r: float)`, taken apart
   by a `match`; recursive ones for trees, generic ones like `Option<T>`
 - `mem.call` and `mem.symbol`: call native code at any address
+- interfaces: `interface Shape { fn area(self) -> float }`, satisfied
+  by any struct with the methods, as in Go
 
 - `input`, `pause`, `toFloat`, `isFloat`, `count`, `padLeft` and
   `padRight`, and the constants `INF` and `NAN`, with comparisons that
@@ -125,7 +127,7 @@ is caught by the lowerer rather than the checker. Everything absent is
 a compile error naming it, never wrong output.
 
 What the Go backend does not have: `extern fn` and callbacks, raw
-memory and `extern struct`, DLLs, `var` globals, enums, generics, and the `\xHH`
+memory and `extern struct`, DLLs, `var` globals, enums, generics, interfaces, and the `\xHH`
 and `\u{...}` string escapes. The differential suite
 compares programs both backends can run; the extern demos sit in
 `examples/ffi/`, and programs that need the escapes or feed standard

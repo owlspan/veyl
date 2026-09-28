@@ -166,7 +166,7 @@ func (p *Parser) ParseProgram() *Program {
 			pub = true
 			switch {
 			case p.check(FN), p.check(STRUCT), p.check(CONST), p.check(EXTERN):
-			case p.check(IDENT) && (p.cur().Lex == "var" || p.cur().Lex == "enum"):
+			case p.check(IDENT) && (p.cur().Lex == "var" || p.cur().Lex == "enum" || p.cur().Lex == "interface"):
 			default:
 				p.errorAt(kw, "'pub' can only go before fn, struct, const, var or extern")
 			}
@@ -226,6 +226,12 @@ func (p *Parser) ParseProgram() *Program {
 			if d := p.parseEnum(); d != nil {
 				d.Pub, d.File = pub, p.file
 				prog.Enums = append(prog.Enums, d)
+			}
+		case p.check(IDENT) && p.cur().Lex == "interface" && p.peekKind(1) == IDENT && p.peekKind(2) == LBRACE:
+			// Like `enum`, only a keyword here.
+			if d := p.parseInterface(); d != nil {
+				d.Pub, d.File = pub, p.file
+				prog.Ifaces = append(prog.Ifaces, d)
 			}
 		case p.check(IDENT) && p.cur().Lex == "var" && p.peekKind(1) == IDENT:
 			// `var` is a mutable global: visible inside functions, like
@@ -440,6 +446,45 @@ func (p *Parser) parseEnum() *EnumDecl {
 		d.Data = true
 		d.Toks = append([]Token(nil), p.toks[start:p.i]...)
 	}
+	p.endStmt()
+	return d
+}
+
+// parseInterface reads `interface Name { fn m(self, x: int) -> str }`:
+// method signatures with no bodies, each taking self first.
+func (p *Parser) parseInterface() *InterfaceDecl {
+	kw := p.advance() // 'interface'
+	name := p.expect(IDENT, "an interface name")
+	d := &InterfaceDecl{Span: at(kw), Name: name.Lex}
+	open := p.expect(LBRACE, "'{'")
+	p.skipNewlines()
+	for !p.check(RBRACE) && !p.check(EOF) {
+		before := p.i
+		if !p.check(FN) {
+			p.errorAt(p.cur(), "an interface lists methods, as in fn area(self) -> float")
+			p.synchronize()
+		} else {
+			fk := p.advance()
+			mn := p.expect(IDENT, "a method name")
+			if m := p.parseFnSignature(fk, mn.Lex); m != nil {
+				if len(m.Params) == 0 || m.Params[0].Name != "self" || m.Params[0].Type != "" {
+					p.errorAt(mn, "%s needs self first, as in fn %s(self)", mn.Lex, mn.Lex)
+				}
+				if p.check(LBRACE) {
+					p.errorAt(p.cur(), "an interface's methods have no body - the structs give them")
+					p.parseBlock()
+				}
+				m.Recv = d.Name
+				d.Methods = append(d.Methods, m)
+			}
+		}
+		p.match(COMMA)
+		p.skipNewlines()
+		if p.i == before {
+			p.advance()
+		}
+	}
+	p.expectClose(RBRACE, open, "'}'", "interface")
 	p.endStmt()
 	return d
 }

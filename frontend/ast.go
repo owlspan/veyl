@@ -40,6 +40,7 @@ type Program struct {
 	Funcs   []*FnDecl
 	Globals []*LetStmt // top-level const and var, visible everywhere
 	Enums   []*EnumDecl
+	Ifaces  []*InterfaceDecl
 	Main    []Stmt // top-level statements of the main file only
 	Imports []*ImportDecl
 
@@ -65,6 +66,20 @@ type EnumDecl struct {
 	TypeParams []string
 	Toks       []Token
 	Data       bool
+
+	// Interface marks the enum an interface is kept in, whose variants
+	// are the structs converted to it; see interfaces.go.
+	Interface bool
+}
+
+// InterfaceDecl is `interface Shape { fn area(self) -> float }`: the
+// methods a struct needs to be used as one.
+type InterfaceDecl struct {
+	Span
+	Name    string
+	Methods []*FnDecl // signatures only
+	Pub     bool
+	File    string
 }
 
 // ImportDecl is `import "helpers.vl"`. The path is relative to the file

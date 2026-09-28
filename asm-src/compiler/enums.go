@@ -90,6 +90,14 @@ func (l *lowerer) writeVariant(n Node, v Reg, lay *structLayout, e *EnumDecl) {
 	for i, name := range e.Variants {
 		next := l.newLabel()
 		l.emit(Instr{Op: OpJumpNot, A: l.compare(OpEq, tag, l.constant(int64(i))), Dst: NoReg, Imm: next})
+		if e.Interface {
+			// An interface prints as the struct it holds.
+			f, _ := fieldOf(PayloadField(name, e.Payloads[i][0].Name))
+			l.writeValue(n, l.loadField(v, f), f.t)
+			l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+			l.mark(next)
+			continue
+		}
 		l.writeLit(name)
 		if e.Payloads[i] != nil {
 			l.writeLit("(")
@@ -149,6 +157,19 @@ func (l *lowerer) variantEqual(n Node, a, b Reg, t vty, e *EnumDecl) (Reg, bool)
 // list slot nobody gave one: its first variant that holds nothing, or
 // failing that its first, holding zeros.
 func (l *lowerer) zeroVariant(n Node, lay *structLayout, e *EnumDecl, depth int) Reg {
+	if e.Interface || len(e.Variants) == 0 {
+		// No struct at all: tag -1, which no method and no match takes.
+		obj := l.allocStruct(lay)
+		for _, f := range lay.fields {
+			v := l.constant(-1)
+			if f.name != TagField {
+				v = l.constant(0)
+			}
+			l.regTy[v] = f.t
+			l.emit(Instr{Op: OpStoreMem, A: obj, B: v, Imm: f.off})
+		}
+		return obj
+	}
 	pick := 0
 	for i, p := range e.Payloads {
 		if p == nil {
