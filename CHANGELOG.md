@@ -3,6 +3,33 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.31.0
+
+**Threads.** `thread.spawn(f)` runs a function - a closure, with what
+it captured - on a new thread, and `thread.join` waits for it. With
+them: `thread.mutex`, `lock` and `unlock`; `thread.cond`, `wait`,
+`notify` and `notifyAll`; and `atomic.new`, `add`, `get`, `set`,
+`swap` and `cas`, each a single locked instruction.
+
+**Channels.** `channel<T>()` makes a `Channel<T>` that carries values
+between threads in order: `send`, `recv` (a `?T`, `nil` once closed and
+drained), `close` and `pending`. Copies of one are the same channel.
+
+The collector scans one stack, so it waits while any thread besides
+main is alive. Allocation takes a lock only then, so a program without
+threads pays nothing for it - and two `task.map` threads allocating at
+the same moment, which could corrupt the heap before, cannot now.
+
+**Faster code.** The busiest integer locals live in callee-saved
+registers for their whole function, the collection check at each
+statement is dropped wherever nothing can have allocated since the last
+one, and a compare feeding a branch becomes one compare and one jump.
+A nested arithmetic loop runs about 45% faster.
+
+**Also.** After `if x == nil { return }`, a nullable `x` is known not to
+be nil for the rest of the block. A method can be called on a variable
+a closure captured.
+
 ## 0.30.0
 
 **Memory by hand, when you want it.** A program is still garbage
