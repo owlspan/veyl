@@ -3,6 +3,21 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.34.0
+
+**Runtime errors say where.** An index out of range or a failed `must`
+prints the same first line as before, then the file, line and function:
+`at game.vl:42 in update`. Each place that can fail knows its statement
+when it is compiled and hands the location over only when it fails, so
+a program that runs normally pays nothing for it.
+
+**Crashes are reported.** An access violation - a bad address given to
+`mem.*`, native code writing where it should not - used to end the
+program silently. An exception handler installed as `main` starts now
+flushes what the program printed, says what kind of crash it was and
+which function it happened in, or that it was in native code, and ends
+the program as before.
+
 ## 0.33.0
 
 **Default parameter values.** `fn greet(name: str, greeting: str =
