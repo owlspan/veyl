@@ -3,6 +3,31 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.29.0
+
+**Interfaces.** An interface lists methods, and any struct that has
+them, with the same types, is one - nothing on the struct says so:
+
+    interface Shape {
+        fn area(self) -> float
+        fn name(self) -> str
+    }
+
+    let shapes: []Shape = [Square{side: 2.0}, Circle{r: 1.0}]
+    for s in shapes {
+        print("{s.name()}: {s.area()}")
+    }
+
+A struct becomes the interface wherever one is wanted: an argument, a
+typed `let`, a list or map element, a return, `push` or `==`. A struct
+missing a method is an error naming the method, or the types that
+differ. A method that changes `self` changes the value the interface
+holds, and a `match` gets the struct back: `Shape.Circle(c) => ...`.
+
+Since the whole program is compiled at once, an interface is kept as a
+tagged value over the structs used as it, and a call is a branch on
+the tag - no vtable, and nothing allocated beyond the value.
+
 ## 0.28.0
 
 **Enums that carry values.** A variant lists what it holds, and a
