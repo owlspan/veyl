@@ -544,8 +544,11 @@ Together they make a nested arithmetic loop about 45% faster than
 - **Collection across threads**, so it can run while threads work and
   inside a DLL - which needs every thread's stack, not only the
   collector's own.
-- **Appending in place.** `s = s + x` in a loop still copies `s` each
-  time; a `Builder` is linear.
+- **Unwind tables** (`.pdata`), so native debuggers and Windows' own
+  stack walking understand Veyl frames - which would also let a stack
+  overflow be reported reliably.
+- **A language server**, for completion and go-to-definition in
+  editors.
 - **Hash maps.** Lookups are a binary search now, but an insert still
   moves every later entry to keep the keys sorted.
 - **Closures as callbacks.**
