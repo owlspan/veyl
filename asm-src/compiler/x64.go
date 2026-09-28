@@ -49,6 +49,14 @@ type Emitter struct {
 	// frame slot as before, and a nil map - the pass switched off - is
 	// the every-value-in-a-slot emitter this file started as.
 	homes map[Reg]string
+
+	// promoted maps the frame slots kept in callee-saved registers, and
+	// saved is the registers this function saves and restores; see
+	// promote.go.
+	promoted map[int64]string
+	saved    []string
+
+	polls int // numbers each OpGCPoll's local label
 }
 
 // Windows x64 calling convention.
@@ -95,6 +103,9 @@ func (e *Emitter) comment(text string) {
 // arithmetic: after `push rbp` rsp is 16-byte aligned, and subtracting a
 // multiple of 16 leaves it that way for every call in the body.
 func (e *Emitter) slotAddr(slot int64) string {
+	if r, ok := e.promoted[slot]; ok {
+		return r // see promote.go
+	}
 	return fmt.Sprintf("qword ptr [rbp-%d]", (slot+1)*8)
 }
 
@@ -143,7 +154,7 @@ func (e *Emitter) outgoing() int {
 }
 
 func (e *Emitter) frameSize() int {
-	n := (e.f.NSlots + e.f.NRegs) * 8
+	n := (e.f.NSlots + e.f.NRegs + len(e.saved)) * 8
 	n += e.outgoing()
 	if n%16 != 0 {
 		n += 16 - n%16
@@ -405,11 +416,16 @@ func (e *Emitter) reserve(bytes int) {
 
 func (e *Emitter) function(f *Func) {
 	e.f = f
+	e.promoted = nil
 	if envOff("VEYL_NORA") || envOff("VEYL_NOOPT") {
 		e.homes = nil
 	} else {
 		e.homes = allocateRegs(f)
+		if !envOff("VEYL_NOPROMOTE") {
+			e.promoted = promoteSlots(f)
+		}
 	}
+	e.saved = e.savedRegs()
 	name := f.Name
 	if name != "main" {
 		name = fnSym(name) // no chance of colliding with libc
@@ -422,6 +438,9 @@ func (e *Emitter) function(f *Func) {
 	e.line("push rbp")
 	e.line("mov rbp, rsp")
 	e.reserve(e.frameSize())
+	for i, r := range e.saved {
+		e.line("mov %s, %s", e.saveAt(i), r)
+	}
 
 	if f.Env {
 		// The environment arrived in r10, which anything at all may
@@ -452,7 +471,13 @@ func (e *Emitter) function(f *Func) {
 		e.line("call _setmode")
 	}
 
-	for _, in := range f.Code {
+	uses := regUses(f)
+	for i := 0; i < len(f.Code); i++ {
+		in := f.Code[i]
+		if i+1 < len(f.Code) && e.fuseBranch(in, f.Code[i+1], uses) {
+			i++
+			continue
+		}
 		e.instr(in)
 	}
 
@@ -743,6 +768,16 @@ func (e *Emitter) instr(in Instr) {
 	case OpCallAddr:
 		e.callAddr(in)
 
+	case OpGCPoll:
+		e.polls++
+		skip := fmt.Sprintf(".L%s_poll%d", e.labelBase(), e.polls)
+		e.line("lea rcx, __globals[rip]")
+		e.line("mov rax, qword ptr [rcx+%d]", gcBytesSlot*wordSize)
+		e.line("cmp rax, qword ptr [rcx+%d]", gcNextSlot*wordSize)
+		e.line("jle %s", skip)
+		e.line("call %s", fnSym(in.Sym))
+		e.label(skip)
+
 	case OpAtomicAdd, OpAtomicSwap:
 		e.line("mov rcx, %s", e.loc(in.A))
 		e.line("mov rax, %s", e.loc(in.B))
@@ -774,6 +809,9 @@ func (e *Emitter) instr(in Instr) {
 			e.line("mov rax, %s", e.loc(in.A))
 		default:
 			e.line("xor eax, eax")
+		}
+		for i, r := range e.saved {
+			e.line("mov %s, %s", r, e.saveAt(i))
 		}
 		e.line("mov rsp, rbp")
 		e.line("pop rbp")

@@ -43,6 +43,9 @@ func Optimize(m *Module) {
 				dce(fn)
 			}
 		}
+		if !envOff("VEYL_NOPOLLS") {
+			dropPolls(fn)
+		}
 		if !envOff("VEYL_NOSLOTPACK") {
 			packSlots(fn)
 		}
@@ -759,4 +762,136 @@ func packSlots(fn *Func) {
 		}
 	}
 	fn.NSlots = int(next)
+}
+
+// ---- collection checks ----
+
+// dropPolls removes each statement's collection check that no path can
+// reach having allocated since the last one.
+//
+// A check asks whether the heap has grown past the threshold. If nothing
+// has allocated since the previous check said no, the answer is still
+// no, so the check can go. A loop doing arithmetic had one at every
+// statement of every trip round; now it has none.
+//
+// This is a forward dataflow over the function's blocks, with one bit:
+// might something have been allocated since the last check? It starts
+// set, since the caller may have allocated before calling. Anything
+// raBarrier names - a call, an allocation, a helper - sets it, since
+// all of those can allocate; a check clears it. Where paths join, a
+// block's bit is set if any way in has it set, so a loop's back edge
+// carries an allocation in its body round to the check at its top.
+func dropPolls(fn *Func) {
+	code := fn.Code
+	n := len(code)
+	if n == 0 {
+		return
+	}
+
+	// Blocks start at the first instruction, at every label and after
+	// every jump or return.
+	starts := map[int]bool{0: true}
+	labelAt := map[int64]int{}
+	for i, in := range code {
+		switch in.Op {
+		case OpLabel:
+			starts[i] = true
+			labelAt[in.Imm] = i
+		case OpJump, OpJumpIf, OpJumpNot, OpRet:
+			if i+1 < n {
+				starts[i+1] = true
+			}
+		}
+	}
+	var order []int
+	for i := 0; i < n; i++ {
+		if starts[i] {
+			order = append(order, i)
+		}
+	}
+	blockOf := map[int]int{}
+	ends := make([]int, len(order))
+	for b, s := range order {
+		e := n
+		if b+1 < len(order) {
+			e = order[b+1]
+		}
+		ends[b] = e
+		blockOf[s] = b
+	}
+
+	succ := make([][]int, len(order))
+	for b, s := range order {
+		last := code[ends[b]-1]
+		fall := b + 1
+		switch last.Op {
+		case OpRet:
+		case OpJump:
+			if at, ok := labelAt[last.Imm]; ok {
+				succ[b] = append(succ[b], blockOf[at])
+			}
+		case OpJumpIf, OpJumpNot:
+			if at, ok := labelAt[last.Imm]; ok {
+				succ[b] = append(succ[b], blockOf[at])
+			}
+			if fall < len(order) {
+				succ[b] = append(succ[b], fall)
+			}
+		default:
+			if fall < len(order) {
+				succ[b] = append(succ[b], fall)
+			}
+		}
+		_ = s
+	}
+
+	transfer := func(b int, dirty bool, drop map[int]bool) bool {
+		for i := order[b]; i < ends[b]; i++ {
+			in := &code[i]
+			switch {
+			case in.Op == OpGCPoll:
+				if !dirty && drop != nil {
+					drop[i] = true
+				}
+				dirty = false
+			case raBarrier(in):
+				dirty = true
+			}
+		}
+		return dirty
+	}
+
+	in := make([]bool, len(order))
+	seen := make([]bool, len(order))
+	in[0], seen[0] = true, true
+	work := []int{0}
+	for len(work) > 0 {
+		b := work[len(work)-1]
+		work = work[:len(work)-1]
+		out := transfer(b, in[b], nil)
+		for _, s := range succ[b] {
+			if !seen[s] || (out && !in[s]) {
+				seen[s] = true
+				in[s] = in[s] || out
+				work = append(work, s)
+			}
+		}
+	}
+
+	drop := map[int]bool{}
+	for b := range order {
+		if seen[b] {
+			transfer(b, in[b], drop)
+		}
+	}
+	if len(drop) == 0 {
+		return
+	}
+	kept := code[:0]
+	for i, in := range code {
+		if !drop[i] {
+			kept = append(kept, in)
+		}
+	}
+	fn.Code = kept
 }

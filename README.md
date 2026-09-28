@@ -114,6 +114,8 @@ pipeline:
 - enums whose variants carry values, `Circle(r: float)`, taken apart
   by a `match`; recursive ones for trees, generic ones like `Option<T>`
 - `mem.call` and `mem.symbol`: call native code at any address
+- threads: `thread.spawn`, mutexes, condition variables, atomics and
+  `Channel<T>`
 - interfaces: `interface Shape { fn area(self) -> float }`, satisfied
   by any struct with the methods, as in Go
 - garbage collected by default, or `gc off` at the top of a file to
@@ -500,9 +502,11 @@ to keep doing it however small frames get.
 
 **11. The collector. Done.** Mark and sweep, conservative over the
 roots and precise over the heap, because the object header from step 1
-says which words of a block are pointers. It runs only when
-`mem.collect()` asks; see [What it does not have](#what-it-does-not-have)
-for why automatic collection is not on yet.
+says which words of a block are pointers. It runs on its own once the
+heap has doubled since the last collection, checked at statement
+boundaries, and whenever `mem.collect()` asks. It never runs while a
+thread besides main is alive, since it scans one stack; a program can
+also turn it off entirely with `gc off`.
 
 **12. The byte writer and PE emitter. Done.** `encode.go` turns each
 line of assembly into machine code, checked byte for byte against GNU
@@ -512,14 +516,27 @@ landed. `VEYL_LINK=mingw` still takes the old route through `gcc`.
 
 **13. Optimisation.** Constant and branch folding, dead code
 elimination, redundant load elimination, slot packing, an assembly
-peephole and the register allocator from step 10. `VEYL_NOOPT=1` turns
-all of it off.
+peephole and the register allocator from step 10. On top of those:
+
+- **Slot promotion.** The busiest integer and bool locals of each
+  function live in rbx, rsi, rdi and r12-r15 for its whole life, across
+  calls and loops, instead of in frame slots. Off with
+  `VEYL_NOPROMOTE=1`.
+- **Collection checks where they can matter.** Each statement's check
+  of the heap is dropped when no path reaches it having allocated since
+  the last one, so a loop that only does arithmetic has none. Off with
+  `VEYL_NOPOLLS=1`.
+- **Fused branches.** A compare whose only reader is the branch after
+  it becomes one `cmp` and one conditional jump.
+
+Together they make a nested arithmetic loop about 45% faster than
+0.30.0 did. `VEYL_NOOPT=1` turns all of it off.
 
 ## What comes next
 
 - **A resolver**, so a misspelled name is reported alongside type
   errors rather than after them.
-- **Collection across threads**, so it can run while tasks work and
+- **Collection across threads**, so it can run while threads work and
   inside a DLL - which needs every thread's stack, not only the
   collector's own.
 - **Appending in place.** `s = s + x` in a loop still copies `s` each

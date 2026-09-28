@@ -28,6 +28,10 @@ var (
 	peepStore = regexp.MustCompile(`^    mov qword ptr \[rbp-(\d+)\], rax$`)
 	peepLoad  = regexp.MustCompile(`^    mov rax, qword ptr \[rbp-(\d+)\]$`)
 	peepImm   = regexp.MustCompile(`^    mov rax, (\d+)$`)
+
+	// The same for a register: mov r8, rax then mov rax, r8.
+	peepToReg   = regexp.MustCompile(`^    mov (r8|r9|r10|r11|rbx|rsi|rdi|r12|r13|r14|r15), rax$`)
+	peepFromReg = regexp.MustCompile(`^    mov rax, (r8|r9|r10|r11|rbx|rsi|rdi|r12|r13|r14|r15)$`)
 )
 
 func peephole(text string) string {
@@ -38,6 +42,9 @@ func peephole(text string) string {
 	for _, ln := range lines {
 		if m := peepLoad.FindStringSubmatch(ln); m != nil && stored == m[1] {
 			continue // the value is in rax already
+		}
+		if m := peepFromReg.FindStringSubmatch(ln); m != nil && stored == m[1] {
+			continue
 		}
 
 		if m := peepImm.FindStringSubmatch(ln); m != nil {
@@ -52,6 +59,8 @@ func peephole(text string) string {
 
 		out = append(out, ln)
 		if m := peepStore.FindStringSubmatch(ln); m != nil {
+			stored = m[1]
+		} else if m := peepToReg.FindStringSubmatch(ln); m != nil {
 			stored = m[1]
 		} else {
 			stored = ""
