@@ -1,0 +1,19 @@
+../tests/png/rgba_f4_z0.png: exact
+../tests/png/rgba_f-1_z9.png: exact
+../tests/png/rgb.png: exact
+../tests/png/grey.png: exact
+../tests/png/greya.png: exact
+../tests/png/pal1.png: exact
+../tests/png/pal2.png: exact
+../tests/png/pal4.png: exact
+../tests/png/pal8.png: exact
+../tests/png/pillow.png: exact
+../tests/png/deep.png uses 16-bit samples; only 8-bit images, and palette images at 1, 2, 4 or 8, are supported
+2x2
+true
+0 128 100
+true
+true
+true
+true
+cannot read "missing.png": open missing.png: File not found.

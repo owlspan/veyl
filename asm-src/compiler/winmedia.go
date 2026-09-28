@@ -28,7 +28,7 @@ const (
 	sndFilename  = 0x00020000
 )
 
-var msimg32Syms = []string{"TransparentBlt"}
+var msimg32Syms = []string{"TransparentBlt", "AlphaBlend"}
 var winmmSyms = []string{"PlaySoundA"}
 
 func (l *lowerer) mediaBuiltin(c *Call, name string) (Reg, bool) {
@@ -66,44 +66,67 @@ func (l *lowerer) mediaBuiltin(c *Call, name string) (Reg, bool) {
 		return l.ccall("GetPixel", []Reg{l.field(a[0], winMemDCAt, vInt), a[1], a[2]},
 			i3, vInt, true, false), true
 
-	case "win.image":
+	case "__imageFromBMP":
+		// A .bmp through Windows' own loader, or 0.
 		if !arity(1) {
 			return l.junk(), true
 		}
 		path := l.expr(c.Args[0])
-		t := vResultOf(vInt)
 		h := l.ccall("LoadImageA",
 			[]Reg{l.constant(0), path, l.constant(imageBitmap), l.constant(0), l.constant(0),
 				l.constant(lrLoadFromFile | lrCreateDIB)},
 			[]vty{vInt, vStr, vInt, vInt, vInt, vInt}, vInt, false, false)
-		out := l.temp(t)
-		bad, done := l.newLabel(), l.newLabel()
+		out := l.temp(vInt)
+		l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: out})
+		bad := l.newLabel()
 		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, h, l.constant(0)), Dst: NoReg, Imm: bad})
-		l.emit(Instr{Op: OpStore, A: l.resOk(h, t), Dst: NoReg, Imm: out})
-		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+		l.emit(Instr{Op: OpStore, A: l.imageBlock(h, l.bitmapDim(h, bmWidthAt), l.bitmapDim(h, bmHeightAt), 0),
+			Dst: NoReg, Imm: out})
 		l.mark(bad)
-		reason := l.concatAll(l.strLit("cannot load "), path,
-			l.strLit(" - an image has to be a readable .bmp file"))
-		l.emit(Instr{Op: OpStore, A: l.resFail(reason, t), Dst: NoReg, Imm: out})
-		l.mark(done)
-		return l.load(out, t), true
+		return l.load(out, vInt), true
+
+	case "__imageFromPixels":
+		// Decoded pixels, as prelude_png.go lays them out, into a
+		// 32-bit bitmap that is drawn with its alpha.
+		if !arity(1) {
+			return l.junk(), true
+		}
+		px := l.bytesArg(c, 0)
+		w := l.loadWidth(px, memU32)
+		h := l.loadWidth(l.arith(OpAdd, px, l.constant(4)), memU32)
+		bits := l.ptrPair()
+		bmp := l.ccall("CreateDIBSection",
+			[]Reg{l.constant(0), l.bitmapInfo32(w, h), l.constant(0), bits, l.constant(0), l.constant(0)},
+			[]vty{vInt, vInt, vInt, vInt, vInt, vInt}, vInt, false, false)
+		out := l.temp(vInt)
+		l.emit(Instr{Op: OpStore, A: l.constant(0), Dst: NoReg, Imm: out})
+		bad := l.newLabel()
+		l.emit(Instr{Op: OpJumpIf, A: l.compare(OpEq, bmp, l.constant(0)), Dst: NoReg, Imm: bad})
+		l.ccall("memmove", []Reg{l.loadPtr(bits), l.arith(OpAdd, px, l.constant(8)),
+			l.arith(OpMul, l.arith(OpMul, w, h), l.constant(4))},
+			[]vty{vInt, vInt, vInt}, vInt, false, false)
+		l.emit(Instr{Op: OpStore, A: l.imageBlock(bmp, w, h, 1), Dst: NoReg, Imm: out})
+		l.mark(bad)
+		return l.load(out, vInt), true
 
 	case "win.imageWidth", "win.imageHeight":
 		if !arity(1) {
 			return l.junk(), true
 		}
 		img := l.expr(c.Args[0])
-		off := int64(bmWidthAt)
+		off := int64(imgWidthAt)
 		if name == "win.imageHeight" {
-			off = bmHeightAt
+			off = imgHeightAt
 		}
-		return l.imageDim(img, off), true
+		return l.field(img, off, vInt), true
 
 	case "win.freeImage":
 		if !arity(1) {
 			return l.junk(), true
 		}
-		l.ccall("DeleteObject", []Reg{l.expr(c.Args[0])}, []vty{vInt}, vInt, true, false)
+		img := l.expr(c.Args[0])
+		l.ccall("DeleteObject", []Reg{l.field(img, imgBitmapAt, vInt)}, []vty{vInt}, vInt, true, false)
+		l.ccall("free", []Reg{img}, []vty{vInt}, vVoid, false, false)
 		return l.void(), true
 
 	case "win.draw":
@@ -192,37 +215,85 @@ func (l *lowerer) ptrPair() Reg {
 	return p
 }
 
-// imageDim reads one dimension of a bitmap out of GetObject's BITMAP.
-func (l *lowerer) imageDim(img Reg, off int64) Reg {
+// An image is a block outside the collector, for the same reason a
+// window is: the handle is an int. It holds the bitmap, its size, and
+// whether it carries alpha, which decides how it is drawn.
+const (
+	imgBitmapAt = 0
+	imgWidthAt  = 8
+	imgHeightAt = 16
+	imgAlphaAt  = 24
+	imgBlockLen = 32
+
+	// BLENDFUNCTION, passed by value as one DWORD: AC_SRC_OVER, no
+	// flags, full constant alpha, AC_SRC_ALPHA.
+	blendPerPixel = 0x01FF0000
+)
+
+func (l *lowerer) imageBlock(bmp, w, h Reg, alpha int64) Reg {
+	b := l.ccall("calloc", []Reg{l.constant(1), l.constant(imgBlockLen)},
+		[]vty{vInt, vInt}, vInt, false, false)
+	l.emit(Instr{Op: OpStoreMem, A: b, B: bmp, Imm: imgBitmapAt})
+	l.emit(Instr{Op: OpStoreMem, A: b, B: w, Imm: imgWidthAt})
+	l.emit(Instr{Op: OpStoreMem, A: b, B: h, Imm: imgHeightAt})
+	l.emit(Instr{Op: OpStoreMem, A: b, B: l.constant(alpha), Imm: imgAlphaAt})
+	return b
+}
+
+// bitmapDim reads one dimension of a bitmap out of GetObject's BITMAP.
+func (l *lowerer) bitmapDim(bmp Reg, off int64) Reg {
 	buf := l.allocObj(l.constant(bitmapStructSize), tagBytes)
-	l.ccall("GetObjectA", []Reg{img, l.constant(bitmapStructSize), buf},
+	l.ccall("GetObjectA", []Reg{bmp, l.constant(bitmapStructSize), buf},
 		[]vty{vInt, vInt, vInt}, vInt, true, false)
 	return l.loadWidth(l.arith(OpAdd, buf, l.constant(off)), memI32)
 }
 
+// bitmapInfo32 is a BITMAPINFOHEADER for a 32-bit image, rows top down.
+func (l *lowerer) bitmapInfo32(width, height Reg) Reg {
+	bmi := l.allocObj(l.constant(48), tagBytes)
+	l.ccall("memset", []Reg{bmi, l.constant(0), l.constant(48)}, []vty{vInt, vInt, vInt}, vInt, false, false)
+	l.storeWidth(bmi, l.constant(40), memI32)
+	l.storeWidth(l.arith(OpAdd, bmi, l.constant(4)), width, memI32)
+	l.storeWidth(l.arith(OpAdd, bmi, l.constant(8)), l.arith(OpSub, l.constant(0), height), memI32)
+	l.storeWidth(l.arith(OpAdd, bmi, l.constant(12)), l.constant(1), memU16)
+	l.storeWidth(l.arith(OpAdd, bmi, l.constant(14)), l.constant(32), memU16)
+	return bmi
+}
+
 // drawImage copies an image into a window's back buffer at x, y: at its
 // own size, stretched to dw by dh when those are given, or with every
-// pixel of the key colour left out when key is.
+// pixel of the key colour left out when key is. An image with alpha is
+// blended instead, unless it is being colour-keyed.
 func (l *lowerer) drawImage(w, img, x, y, dw, dh, key Reg) {
 	dst := l.field(w, winMemDCAt, vInt)
 	src := l.ccall("CreateCompatibleDC", []Reg{dst}, []vty{vInt}, vInt, false, false)
-	old := l.ccall("SelectObject", []Reg{src, img}, []vty{vInt, vInt}, vInt, false, false)
-	iw := l.imageDim(img, bmWidthAt)
-	ih := l.imageDim(img, bmHeightAt)
+	old := l.ccall("SelectObject", []Reg{src, l.field(img, imgBitmapAt, vInt)},
+		[]vty{vInt, vInt}, vInt, false, false)
+	iw := l.field(img, imgWidthAt, vInt)
+	ih := l.field(img, imgHeightAt, vInt)
+	if dw == NoReg {
+		dw, dh = iw, ih
+	}
 	nine := []vty{vInt, vInt, vInt, vInt, vInt, vInt, vInt, vInt, vInt}
+	eleven := append(append([]vty{}, nine...), vInt, vInt)
 	switch {
 	case key != NoReg:
 		l.ccall("TransparentBlt",
 			[]Reg{dst, x, y, iw, ih, src, l.constant(0), l.constant(0), iw, ih, key},
-			append(nine, vInt, vInt), vInt, true, false)
-	case dw != NoReg:
+			eleven, vInt, true, false)
+	default:
+		plain, done := l.newLabel(), l.newLabel()
+		alpha := l.compare(OpNe, l.field(img, imgAlphaAt, vInt), l.constant(0))
+		l.emit(Instr{Op: OpJumpNot, A: alpha, Dst: NoReg, Imm: plain})
+		l.ccall("AlphaBlend",
+			[]Reg{dst, x, y, dw, dh, src, l.constant(0), l.constant(0), iw, ih, l.constant(blendPerPixel)},
+			eleven, vInt, true, false)
+		l.emit(Instr{Op: OpJump, A: NoReg, Dst: NoReg, Imm: done})
+		l.mark(plain)
 		l.ccall("StretchBlt",
 			[]Reg{dst, x, y, dw, dh, src, l.constant(0), l.constant(0), iw, ih, l.constant(srcCopy)},
-			append(nine, vInt, vInt), vInt, true, false)
-	default:
-		l.ccall("BitBlt",
-			[]Reg{dst, x, y, iw, ih, src, l.constant(0), l.constant(0), l.constant(srcCopy)},
-			nine, vInt, true, false)
+			eleven, vInt, true, false)
+		l.mark(done)
 	}
 	l.ccall("SelectObject", []Reg{src, old}, []vty{vInt, vInt}, vInt, false, false)
 	l.ccall("DeleteDC", []Reg{src}, []vty{vInt}, vInt, true, false)
@@ -239,15 +310,7 @@ func (l *lowerer) winCanvas(width, height Reg) Reg {
 	mem := l.ccall("CreateCompatibleDC", []Reg{l.constant(0)}, []vty{vInt}, vInt, false, false)
 	l.emit(Instr{Op: OpStoreMem, A: w, B: mem, Imm: winMemDCAt})
 
-	// BITMAPINFOHEADER: size, width, height (negative: rows top down),
-	// planes, bits per pixel, and zero for everything after.
-	bmi := l.allocObj(l.constant(48), tagBytes)
-	l.ccall("memset", []Reg{bmi, l.constant(0), l.constant(48)}, []vty{vInt, vInt, vInt}, vInt, false, false)
-	l.storeWidth(bmi, l.constant(40), memI32)
-	l.storeWidth(l.arith(OpAdd, bmi, l.constant(4)), width, memI32)
-	l.storeWidth(l.arith(OpAdd, bmi, l.constant(8)), l.arith(OpSub, l.constant(0), height), memI32)
-	l.storeWidth(l.arith(OpAdd, bmi, l.constant(12)), l.constant(1), memU16)
-	l.storeWidth(l.arith(OpAdd, bmi, l.constant(14)), l.constant(32), memU16)
+	bmi := l.bitmapInfo32(width, height)
 	bits := l.ptrPair()
 	bmp := l.ccall("CreateDIBSection",
 		[]Reg{mem, bmi, l.constant(0), bits, l.constant(0), l.constant(0)},

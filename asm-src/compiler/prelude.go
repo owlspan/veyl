@@ -195,6 +195,8 @@ var preludeOf = map[string]string{
 	"chars":    "__vy_chars",
 
 	"mem.scan": "__vy_memScan",
+
+	"win.image": "__vy_winImage",
 }
 
 // preludeDefaults supplies the trailing arguments a call may leave off,
@@ -453,4 +455,5 @@ var preludeSource = strings.Join([]string{
 	preludeUI,
 	preludeRe,
 	preludeText,
+	preludePNG,
 }, "\n")
