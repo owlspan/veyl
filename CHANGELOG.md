@@ -3,6 +3,27 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.30.0
+
+**Memory by hand, when you want it.** A program is still garbage
+collected by default. One that starts with
+
+    gc off
+
+is never collected, and frees what it is done with itself:
+
+    let xs = [1, 2, 3]
+    ...
+    delete(xs)
+
+`delete` frees a list, map, struct, string or `bytes` at once, with no
+collector running and no pauses, the way C++ does. It frees the value,
+not what the value refers to, and nothing checks for a use after
+delete. Strings made only in passing - the pieces of `a + str(i)`, the
+parts of an interpolation, a string built only to be printed - are
+freed as they are used, and a list that outgrows its space frees the
+old one, so a loop of made-and-deleted values runs in constant memory.
+
 ## 0.29.0
 
 **Interfaces.** An interface lists methods, and any struct that has
