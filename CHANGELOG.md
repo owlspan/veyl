@@ -3,6 +3,43 @@
 Each release on GitHub carries the installer and the section below for
 its version.
 
+## 0.28.0
+
+**Enums that carry values.** A variant lists what it holds, and a
+`match` names it:
+
+    enum Shape {
+        Circle(r: float)
+        Rect(w: float, h: float)
+        Empty
+    }
+
+    match s {
+        Shape.Circle(r) => print(3.14159 * r * r)
+        Shape.Rect(w, h) => print(w * h)
+        Shape.Empty => print(0)
+    }
+
+A match without an `else` has to handle every variant, `_` skips a
+value, and a variant can hold the enum itself, so a tree is an enum.
+Generic enums work too: `enum Option<T> { Some(v: T), None }`, with the
+type taken from the value given, `Option.Some(3)`, or from where it is
+going, `return Option.None`. Values print as their variant,
+`Circle(2)`, and compare equal when they are the same variant holding
+the same values.
+
+**Calling an address.** `mem.symbol(dll, name)` finds an export, and
+`mem.call(p, args...)` calls native code at any address, with
+`mem.callF` for one returning a `double`: something found by
+`mem.scan`, read from a vtable or handed over by a host.
+
+**Fixes.** Printing or comparing a type that holds itself, such as
+`struct Node { kids: []Node }`, sent the compiler into a loop until it
+ran out of memory; such types now print and compare through a function
+of their own. A call through a function value with more than four
+arguments could pass the wrong value in the third, when the register
+allocator had kept that value in r10.
+
 ## 0.27.0
 
 **Generics.** Functions, structs and their methods take type
