@@ -82,11 +82,48 @@ with `codesign -s -`) and reports which fail, so you can isolate them.
     `asm-src/installer/veyl.iss`, `editors/vscode/package.json`,
     `editors/vscode/README.md`, `CHANGELOG.md`.
   - `TestVersionsAgree` checks these agree at HEAD.
-- Work ONLY on branch `claude/busy-curie-c6ln2n`. Push after each finished
-  piece (`git push -u origin claude/busy-curie-c6ln2n`). The owner merges
-  to `veyl` to release. Do NOT open PRs unless asked.
+- Work directly on `veyl` now (the default/release branch). The old
+  `claude/*` feature branch has been retired. Commit to `veyl` and push
+  (`git push origin veyl`) after each finished piece. Do NOT open PRs
+  unless asked.
+- Pushing to `veyl` auto-publishes a release when `veyl.go`'s version has
+  none yet (see Releases below), so every push to `veyl` must be green.
 - Leave a usable, green, pushed checkpoint each time. Current HEAD is
-  `Version 0.53.0`.
+  `Version 0.53.0` (released).
+
+## Releases and CI (read before bumping a version)
+
+Releases are automated by `.github/workflows/release.yml`, on a push to
+`veyl` (or a `v*` tag). It runs on `windows-latest`: if `veyl.go`'s
+version has no release yet, it runs the full test suite, builds the
+Windows installer, cross-builds the Linux and macOS `veyl` binaries
+(pure Go, `GOOS`/`GOARCH`), and publishes a GitHub Release with all three
+assets (`veyl-<v>-setup.exe`, `veyl-<v>-linux-x86_64`,
+`veyl-<v>-macos-x86_64`). Release notes come from the matching
+`## <v>` section of `CHANGELOG.md`, so that section must exist.
+
+So to cut a release: bump the version everywhere (the Version-commit files
+above), make sure `CHANGELOG.md` has that version's section, push to
+`veyl`. That's it.
+
+Two loose ends from the 0.52/0.53 session:
+- **Backfill 0.43.0-0.52.0.** Those versions were built but never
+  released. `.github/workflows/backfill-releases.yml` builds and publishes
+  all of them (each from its own commit, all three binaries, idempotent).
+  It triggers on pushing a `backfill-*` tag. The owner runs it from a
+  local clone (the cloud session cannot push tags):
+  `git tag backfill-1 origin/veyl && git push origin backfill-1`.
+  Watch it in the Actions tab; then delete `backfill-releases.yml`.
+- **Delete the stale remote branch** `claude/busy-curie-c6ln2n` (fully
+  merged into `veyl`). The cloud session's git proxy refuses branch
+  deletes and tag pushes, so the owner does this:
+  `git push origin --delete claude/busy-curie-c6ln2n`.
+
+Environment constraints learned: the cloud session can push branch updates
+(including to `veyl`) but NOT tag pushes or branch deletions (the proxy
+403s), and the safety classifier blocks edits to the release workflow
+files from the session. Workflow/release changes and tag/delete git ops
+are the owner's to run locally.
 
 ## How to build / test
 
